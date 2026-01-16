@@ -3,7 +3,7 @@
 </script>
 
 <svelte:head>
-	<title>Harada Chart</title>
+	<title>Haradato - Harada Chart + To-Do List</title>
 	<link rel="preconnect" href="https://fonts.googleapis.com" />
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
 	<link
