@@ -3,7 +3,7 @@ Harada chart with to-do list back-end
 
 # TODO
 - Export / import as .md file
-- Continuous save to cloud
+- Supabase login + save to cloud on change (live updates?)
 - Todo lists behind each square
 - Todo list view
   - Filter by central square / sub-squares

@@ -237,7 +237,7 @@
 		<!-- Grid -->
 		<div class="overflow-x-auto rounded-2xl border border-slate-700/50 bg-slate-900/50 p-2 md:p-4">
       <h1 class="mb-2 bg-gradient-to-r from-violet-400 via-fuchsia-400 to-violet-400 bg-clip-text text-xl font-bold tracking-tight text-transparent md:text-2xl">
-      Harada Chart
+      Haradato
     </h1>
         <div
 				class="mx-auto grid min-w-[600px] gap-0.5 md:gap-1"
