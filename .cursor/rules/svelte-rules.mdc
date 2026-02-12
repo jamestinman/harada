@@ -1,0 +1,56 @@
+---
+alwaysApply: true
+---
+
+---
+description: 
+alwaysApply: true
+---
+
+This is a Svelte 5 project, so use the guidance in cursor/svelte-llms.md when needed to guide changes
+
+## Svelte 5 rules
+For the new app, always use Svelte 5 syntax.
+Svelte 5 gotchas:
+- on:click is now onclick, on:mouseover is now onmouseover, etc.
+- the `$state` rune is only available inside `.svelte` and `.svelte.js/ts` files.
+- onclick|stopPropagation does not work (using vertical bar is not allowed in this context)
+- use `let { post } = $props();` instead of `export let post;`
+
+### Typescript
+Use TypeScript only sparingly e.g. for complex bespoke objects but avoid being overly verbose e.g. we don't need to mark-up type for HTML events etc.
+Data structures are defined using TypeScript in /src/lib/types/game.d.ts - make sure you use these as reference and keep these up-to-date.
+
+### Styling
+Always use TailwindCSS unless something very specific is required that Tailwind cannot handle.
+
+### Utilities
+Utilities and pure functions live under /src/libs
+Import with e.g.:
+import { chapters } from '$lib/chapters';
+
+### State management
+Use Svelte stores for managing state, and store these under /src/stores e.g.
+
+```js
+// $stores/user.svelte.js
+class UserStore {
+  var user = $state();
+}
+export const userStore = new UserStore();
+```
+
+## Use of forms
+In general, avoid using <form> tags instead use inputs / selects etc that are bound to variables or parts of an object.
+If forms must be used, note that Svelte does not like vertical bars e.g. 'onsubmit|preventDefault' is not a valid attribute name.
+
+### ENV vars
+Environment variables should be imported individually, e.g.:
+```js
+  import { PUBLIC_WS_ENDPOINT, ANOTHER_VAR } from '$env/static/public';
+  import { A_PRIVATE_VAR } from '$env/static/private';
+  console.log(PUBLIC_WS_ENDPOINT);
+```
+
+## TROUBLESHOOTING
+When passing Svelte 5 $state variables to native bridged code you can get a "DataCloneError: The object can not be cloned." error so you need to use the ... spread operator to copy the object (see: https://stackoverflow.com/questions/79317063/state-object-could-not-be-cloned )

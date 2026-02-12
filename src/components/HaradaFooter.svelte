@@ -28,6 +28,6 @@
       <span>Done</span>
     </span>
   </div>
-  <p>Your data is saved automatically in your browser's local storage.</p>
+  <p>Your Harada chart and to-do items are saved automatically in your browser's local storage.</p>
 
 </div>

@@ -1,1 +1,6 @@
 @import 'tailwindcss';
+
+/* select arrows (v) naturally style too far to right so we use the outline instead of the border to give extra space */
+select {
+  @apply p-2 rounded border-r-8 border-transparent outline outline-orange-300;
+}
