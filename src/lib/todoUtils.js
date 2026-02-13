@@ -11,6 +11,7 @@ export function defaultTodo() {
 		title: '',
 		markdown: '',
 		status: 'todo',
+		parentId: null,
 		createdAt: Date.now()
 	};
 }
@@ -160,4 +161,75 @@ export function canonicalGoalIndex(index) {
 		return getLinkedGoalIndex(index) ?? index;
 	}
 	return index;
+}
+
+// Get the parent goal index in the hierarchy:
+// - Outer block centers (like B2) → main goal (E5, index 40)
+// - Center sub-goals (like D4) → their linked outer block center → main goal (E5, index 40)
+// - Main goal (E5, index 40) → null (no parent)
+export function getParentGoalIndex(index) {
+	if (typeof index !== 'number' || index < 0 || index > 80) return null;
+	
+	// Main goal has no parent
+	if (isMainGoalIndex(index)) {
+		return null;
+	}
+	
+	// Center sub-goals: get their linked outer block center, then its parent
+	if (isCenterSubGoalIndex(index)) {
+		const linkedOuter = getLinkedGoalIndex(index);
+		if (linkedOuter !== null) {
+			// The outer block center's parent is the main goal
+			return 40;
+		}
+		return null;
+	}
+	
+	// Outer block centers: parent is the main goal
+	if (isOuterBlockCenterIndex(index)) {
+		return 40;
+	}
+	
+	// Other cells have no parent
+	return null;
+}
+
+// Get all sub-goal indices for a given goal index:
+// - Main goal (40) → all outer block centers + their linked center sub-goals
+// - Outer block centers → their linked center sub-goal
+// - Center sub-goals → empty array (no sub-goals)
+// - Other cells → empty array (no sub-goals)
+export function getSubGoalIndices(index) {
+	if (typeof index !== 'number' || index < 0 || index > 80) return [];
+	
+	const canonical = canonicalGoalIndex(index);
+	const subGoals = [];
+	
+	// Main goal: get all outer block centers and their linked center sub-goals
+	if (isMainGoalIndex(canonical)) {
+		// Outer block centers are at positions where row % 3 === 1 && col % 3 === 1 (excluding main goal)
+		for (let i = 0; i < 81; i++) {
+			if (isOuterBlockCenterIndex(i)) {
+				subGoals.push(i);
+				// Also add the linked center sub-goal
+				const linkedCenter = getLinkedGoalIndex(i);
+				if (linkedCenter !== null) {
+					subGoals.push(linkedCenter);
+				}
+			}
+		}
+		return subGoals;
+	}
+	
+	// Outer block centers: get their linked center sub-goal
+	if (isOuterBlockCenterIndex(canonical)) {
+		const linkedCenter = getLinkedGoalIndex(canonical);
+		if (linkedCenter !== null) {
+			subGoals.push(linkedCenter);
+		}
+		return subGoals;
+	}
+	
+	// Center sub-goals and other cells have no sub-goals
+	return [];
 }

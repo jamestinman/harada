@@ -1,28 +1,131 @@
 <script>
 	import { indexToNomenclature } from '$lib/todoUtils.js';
 	import SquareMap from './SquareMap.svelte';
+	import { ArrowRightToLine, ArrowLeftFromLine } from 'lucide-svelte';
 
 	let { 
 		todo,
 		onUpdate,
 		onDelete,
 		onToggleStatus,
-		allGoals = []
+		allGoals = [],
+		onCreateNext = null,
+		onDeletePrevious = null,
+		onMakeSubtask = null,
+		onOutdent = null,
+		allTodos = [],
+		indentLevel = 0,
+		canIndent = false,
+		canOutdent = false,
+		onTitleFocus = null
 	} = $props();
 
 	let isEditing = $state(false);
+	let isEditingTitle = $state(false);
 	let showMobileEditor = $state(false);
 	let editTitle = $state('');
 	let editMarkdown = $state('');
 	let editGoalIndex = $state(null);
+	let titleInputElement = $state(null);
+	let isCreatingNext = $state(false);
 
 	const hasNotes = $derived((todo.markdown || '').trim().length > 0);
+	const showOutdentAction = $derived(!canIndent && canOutdent);
+	const isNewEmptyTodo = $derived(
+		(!todo.title || todo.title.trim() === '') && 
+		todo.createdAt && 
+		Date.now() - todo.createdAt < 1000 // Created within last second
+	);
+
+	// Auto-start editing if this is a new empty todo
+	$effect(() => {
+		if (isNewEmptyTodo && !isEditingTitle && !isEditing) {
+			startEditingTitle();
+		}
+	});
 
 	function handleCheckbox() {
 		onToggleStatus();
 	}
 
-	function startEditing() {
+	function startEditingTitle() {
+		editTitle = todo.title || '';
+		isEditingTitle = true;
+		if (onTitleFocus) onTitleFocus(todo.id);
+		// Focus the input after it renders
+		setTimeout(() => {
+			if (titleInputElement) {
+				titleInputElement.focus();
+				titleInputElement.select();
+			}
+		}, 0);
+	}
+
+	function saveTitle() {
+		if (isCreatingNext) return; // Don't save if we're creating next
+		if (editTitle.trim() !== (todo.title || '').trim()) {
+			onUpdate({ title: editTitle.trim() });
+		}
+		isEditingTitle = false;
+	}
+
+	function handleTitleKeydown(e) {
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			isCreatingNext = true;
+			saveTitle();
+			// Create new todo below and focus it
+			if (onCreateNext) {
+				const newTodo = onCreateNext();
+				if (newTodo) {
+					// The new todo will auto-start editing via the effect
+					// Just ensure focus happens after a brief delay for DOM update
+					setTimeout(() => {
+						const nextInput = document.querySelector(`[data-todo-id="${newTodo.id}"]`);
+						if (nextInput) {
+							nextInput.focus();
+							nextInput.select();
+						}
+						isCreatingNext = false;
+					}, 100);
+				} else {
+					isCreatingNext = false;
+				}
+			} else {
+				isCreatingNext = false;
+			}
+		} else if ((e.metaKey || e.ctrlKey) && e.code === 'BracketRight') {
+			e.preventDefault();
+			if (onMakeSubtask && canIndent) {
+				onMakeSubtask();
+			}
+		} else if ((e.metaKey || e.ctrlKey) && e.code === 'BracketLeft') {
+			e.preventDefault();
+			if (onOutdent && canOutdent) {
+				onOutdent();
+			}
+		} else if (e.key === 'Backspace' || e.key === 'Delete') {
+			// If title is empty or will be empty after this keypress, delete and focus previous
+			const trimmedTitle = editTitle.trim();
+			const isCurrentlyEmpty = trimmedTitle === '';
+			// For backspace: if length is 0 or 1, it will be empty after
+			// For delete: if already empty, delete
+			const willBeEmptyAfterKeypress = 
+				(e.key === 'Backspace' && editTitle.length <= 1) ||
+				(e.key === 'Delete' && isCurrentlyEmpty);
+			
+			if ((isCurrentlyEmpty || willBeEmptyAfterKeypress) && onDeletePrevious) {
+				e.preventDefault();
+				onDeletePrevious();
+			}
+		} else if (e.key === 'Escape') {
+			e.preventDefault();
+			isEditingTitle = false;
+			editTitle = todo.title || '';
+		}
+	}
+
+	function startEditingNotes() {
 		editTitle = todo.title || '';
 		editMarkdown = todo.markdown || '';
 		editGoalIndex = todo.goalIndex;
@@ -51,17 +154,15 @@
 	}
 
 	function handleDelete() {
-		if (confirm('Delete this todo?')) {
-			onDelete();
-			isEditing = false;
-			showMobileEditor = false;
-		}
+		onDelete();
+		isEditing = false;
+		showMobileEditor = false;
 	}
 </script>
 
 <!-- Compact single-line view -->
 {#if !isEditing}
-	<div class="group flex items-center gap-2 rounded-lg border border-slate-700/50 bg-slate-950/40 px-3 py-2 transition hover:border-slate-600 hover:bg-slate-900/50">
+	<div data-todo-item-id={todo.id} class="group flex items-center gap-2 rounded-lg border border-slate-700/50 bg-slate-950/40 px-3 py-2 transition hover:border-slate-600 hover:bg-slate-900/50" style="margin-left: {indentLevel * 1.5}rem;">
 		<!-- Checkbox -->
 		<button
 			type="button"
@@ -69,47 +170,97 @@
 			class={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border-2 transition ${
 				todo.status === 'done'
 					? 'border-emerald-500 bg-emerald-500 text-white'
-					: todo.status === 'underway'
-						? 'border-yellow-500 bg-yellow-500/20'
-						: 'border-slate-600 hover:border-slate-500'
+					: 'border-slate-600 hover:border-slate-500'
 			}`}
-			title={todo.status === 'done' ? 'Mark as to-do' : todo.status === 'underway' ? 'Mark as done' : 'Mark as underway'}
+			title={todo.status === 'done' ? 'Mark as to-do' : 'Mark as done'}
 		>
 			{#if todo.status === 'done'}
 				<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
 				</svg>
-			{:else if todo.status === 'underway'}
-				<div class="h-2 w-2 rounded-full bg-yellow-500"></div>
 			{/if}
 		</button>
 
-		<!-- Title -->
-		<button
-			type="button"
-			onclick={startEditing}
-			class={`flex-1 text-left text-sm transition ${
-				todo.status === 'done'
-					? 'text-slate-500 line-through'
-					: 'text-slate-200 hover:text-slate-100'
-			}`}
-		>
-			{todo.title || 'Untitled todo'}
-		</button>
-
-		<!-- Notes indicator -->
-		{#if hasNotes}
+		<!-- Title - editable inline -->
+		{#if isEditingTitle}
+			<div class="flex-1 flex items-center gap-1">
+				<input
+					data-todo-id={todo.id}
+					bind:this={titleInputElement}
+					type="text"
+					bind:value={editTitle}
+					onfocus={() => onTitleFocus && onTitleFocus(todo.id)}
+					onkeydown={handleTitleKeydown}
+					onblur={() => {
+						if (!isCreatingNext) {
+							saveTitle();
+						}
+					}}
+					class={`flex-1 rounded border border-violet-500 bg-slate-900 px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-violet-500/50 ${
+						todo.status === 'done'
+							? 'text-slate-500 line-through'
+							: 'text-slate-200'
+					}`}
+					placeholder="Untitled"
+				/>
+			</div>
+		{:else}
 			<button
 				type="button"
-				onclick={startEditing}
-				class="flex-shrink-0 text-slate-400 transition hover:text-slate-300"
-				title="Has notes"
+				onclick={startEditingTitle}
+				class={`flex-1 text-left text-sm min-h-[1.5rem] py-1 transition ${
+					todo.status === 'done'
+						? 'text-slate-500 line-through'
+						: 'text-slate-200 hover:text-slate-100'
+				}`}
 			>
-				<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-				</svg>
+				<span class={!todo.title || todo.title.trim() === '' ? 'opacity-0' : ''}>
+					{todo.title || '\u00A0'}
+				</span>
 			</button>
 		{/if}
+
+		<!-- Notes button - opens full editor -->
+		{#if isEditingTitle}
+			<button
+				type="button"
+				onmousedown={(e) => e.preventDefault()}
+				onclick={() => {
+					if (!showOutdentAction && onMakeSubtask) {
+						onMakeSubtask();
+					} else if (onOutdent) {
+						onOutdent();
+					}
+				}}
+				disabled={!canIndent && !canOutdent}
+				class={`flex-shrink-0 p-1 rounded transition ${
+					canIndent || canOutdent
+						? 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+						: 'text-slate-700 cursor-not-allowed'
+				}`}
+				title={showOutdentAction ? 'Outdent (Ctrl/Cmd+[)' : 'Indent (Ctrl/Cmd+])'}
+			>
+				{#if showOutdentAction}
+					<ArrowLeftFromLine class="w-4 h-4" />
+				{:else}
+					<ArrowRightToLine class="w-4 h-4" />
+				{/if}
+			</button>
+		{/if}
+		<button
+			type="button"
+			onclick={startEditingNotes}
+			class={`flex-shrink-0 transition ${
+				hasNotes
+					? 'text-slate-400 hover:text-slate-300'
+					: 'text-slate-600 hover:text-slate-400'
+			}`}
+			title={hasNotes ? 'Edit notes' : 'Add notes'}
+		>
+			<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+			</svg>
+		</button>
 	</div>
 {:else}
 	<!-- Desktop expanded editor -->
@@ -223,7 +374,7 @@
 			<!-- Move to goal -->
 			{#if allGoals.length > 0}
 				<div class="mb-4 flex items-center gap-2">
-					<SquareMap goal={editGoalIndex !== null ? indexToNomenclature(editGoalIndex) : ''} />
+          <span class="text-sm text-slate-400">Part of goal:</span>
 					<select
 						bind:value={editGoalIndex}
 						class="flex-1 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"

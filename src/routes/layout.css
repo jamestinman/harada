@@ -4,3 +4,34 @@
 select {
   @apply p-2 rounded border-r-8 border-transparent outline outline-orange-300;
 }
+
+/* View transition support for Harada chart animations */
+@supports (view-transition-name: none) {
+  /* Enable smooth animations for view transitions */
+  ::view-transition-old(harada-cell-*),
+  ::view-transition-new(harada-cell-*) {
+    animation-duration: 0.3s;
+    animation-timing-function: ease-in-out;
+  }
+  
+  /* Optional: Add a fade effect */
+  ::view-transition-old(harada-cell-*) {
+    animation-name: fade-out;
+  }
+  
+  ::view-transition-new(harada-cell-*) {
+    animation-name: fade-in;
+  }
+}
+
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}

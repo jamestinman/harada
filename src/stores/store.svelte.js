@@ -41,10 +41,11 @@ class Store {
 								return {
 									text: typeof cell.text === 'string' ? cell.text : '',
 									status:
-										cell.status === 'underway' || cell.status === 'done'
-											? cell.status
+										cell.status === 'done'
+											? 'done'
 											: 'todo',
-									readme: typeof cell.readme === 'string' ? cell.readme : ''
+									readme: typeof cell.readme === 'string' ? cell.readme : '',
+									color: typeof cell.color === 'string' ? cell.color : 'default'
 								};
 							}
 							return defaultCell();
@@ -95,10 +96,11 @@ class Store {
 								return {
 									text: typeof cell.text === 'string' ? cell.text : '',
 									status:
-										cell.status === 'underway' || cell.status === 'done'
-											? cell.status
+										cell.status === 'done'
+											? 'done'
 											: 'todo',
-									readme: typeof cell.readme === 'string' ? cell.readme : ''
+									readme: typeof cell.readme === 'string' ? cell.readme : '',
+									color: typeof cell.color === 'string' ? cell.color : 'default'
 								};
 							}
 							return defaultCell();

@@ -10,22 +10,30 @@
 		renderMarkdown,
 		defaultTodo,
 		canonicalGoalIndex,
-		getLinkedGoalIndex
+		getLinkedGoalIndex,
+		getParentGoalIndex,
+		getSubGoalIndices
 	} from '$lib/todoUtils.js';
-	import TodoItem from '$components/TodoItem.svelte';
 	import SquareMap from '$components/SquareMap.svelte';
+	import TodoGroupedList from '$components/TodoGroupedList.svelte';
+	import TodoQuickNav from '$components/TodoQuickNav.svelte';
 
 	// Load data once on mount
 	let grid = $state([]);
 	let todos = $state([]);
 	let dataLoaded = $state(false);
+	let activeTodoId = $state(null);
+
+	// Get goal param reactively
+	const goalParam = $derived(page.params.goal);
+
 
 	// Load data once
 	$effect(() => {
 		if (!browser || dataLoaded) return;
 		
 		const data = store.loadData(
-			() => ({ text: '', status: 'todo', readme: '' }),
+			() => ({ text: '', status: 'todo', readme: '', color: 'default' }),
 			[]
 		);
 		grid = data.grid || [];
@@ -36,12 +44,18 @@
 		dataLoaded = true;
 	});
 
-	// Get goal param reactively
-	const goalParam = $derived(page.params.goal);
-	
 	// Compute goal indices (only depends on grid structure, not grid content)
 	const goalIndices = $derived.by(() => {
 		return Array.from({ length: 81 }, (_, i) => i);
+	});
+
+	// Compute parent goal index
+	const parentGoalIndex = $derived.by(() => {
+		if (!goalParam) return null;
+		const parsed = nomenclatureToIndex(goalParam, goalIndices);
+		if (parsed === null) return null;
+		const canonical = canonicalGoalIndex(parsed);
+		return getParentGoalIndex(canonical);
 	});
 
 	// Compute goal index from param
@@ -65,6 +79,12 @@
 		return getGoalLabelFromIndex(goalIndex);
 	});
 
+	// Compute parent goal label
+	const parentGoalLabel = $derived.by(() => {
+		if (parentGoalIndex === null) return null;
+		return getGoalLabelFromIndex(parentGoalIndex);
+	});
+
 	// Helper function - just return the text or code, no prefix
 	function getGoalLabelFromIndex(index) {
 		if (index === null || index < 0 || index > 80) return 'Unknown';
@@ -78,6 +98,15 @@
 		if (goalIndex === null) return '';
 		const cell = grid[goalIndex];
 		return (cell?.readme ?? '').trim();
+	});
+
+	// Update selectedColor when goal changes
+	$effect(() => {
+		const currentGoalIndex = goalIndex;
+		const currentGrid = grid;
+		if (currentGoalIndex !== null && currentGrid[currentGoalIndex]) {
+			selectedColor = currentGrid[currentGoalIndex].color || 'default';
+		}
 	});
 
 	// Get all goals for dropdown
@@ -100,21 +129,117 @@
 		});
 	});
 
-	// Filter todos for this goal
-	const goalTodos = $derived(
-		todos.filter((t) => t.goalIndex === goalIndex).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
-	);
+	// Helper function to calculate indent level based on parent relationships
+	function getIndentLevel(todoId, todosList) {
+		let level = 0;
+		let currentId = todoId;
+		const visited = new Set();
+		
+		while (currentId) {
+			if (visited.has(currentId)) break; // Prevent infinite loops
+			visited.add(currentId);
+			
+			const todo = todosList.find(t => t.id === currentId);
+			if (!todo || !todo.parentId) break;
+			
+			level++;
+			currentId = todo.parentId;
+		}
+		
+		return level;
+	}
+
+	// Helper function to organize todos with hierarchy
+	function organizeTodosWithHierarchy(todosList) {
+		// Sort by creation time first
+		const sorted = [...todosList].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+		
+		// Build a map of todos by ID
+		const todoMap = new Map(sorted.map(t => [t.id, t]));
+		
+		// Organize: root todos first, then their children
+		const result = [];
+		const processed = new Set();
+		
+		function addTodoAndChildren(todo) {
+			if (processed.has(todo.id)) return;
+			processed.add(todo.id);
+			result.push(todo);
+			
+			// Add all children of this todo
+			sorted.forEach(child => {
+				if (child.parentId === todo.id && !processed.has(child.id)) {
+					addTodoAndChildren(child);
+				}
+			});
+		}
+		
+		// Add root todos (no parent) first
+		sorted.forEach(todo => {
+			if (!todo.parentId && !processed.has(todo.id)) {
+				addTodoAndChildren(todo);
+			}
+		});
+		
+		return result;
+	}
+
+	function getVisibleGoalTodos(targetGoalIndex) {
+		const filtered = todos.filter((t) => {
+			const matchesGoal = t.goalIndex === targetGoalIndex;
+			const isCompleted = t.status === 'done';
+			return matchesGoal && (showCompleted || !isCompleted);
+		});
+		return organizeTodosWithHierarchy(filtered);
+	}
+
+	function getGoalScopeIndices() {
+		if (goalIndex === null) return [];
+		const subGoalIndices = getSubGoalIndices(goalIndex).map((idx) => canonicalGoalIndex(idx));
+		return [goalIndex, ...subGoalIndices];
+	}
+
+	const goalGroups = $derived.by(() => {
+		const indices = getGoalScopeIndices();
+		return indices
+			.map((idx) => ({
+				id: `goal-${idx}`,
+				goalIndex: idx,
+				label: getGoalLabelFromIndex(idx),
+				href: `/todo/${indexToNomenclature(idx)}`,
+				addTitle: idx === goalIndex ? 'Add todo to this goal' : 'Add todo to this sub-goal',
+				todos: getVisibleGoalTodos(idx)
+			}))
+			.filter((group) => group.todos.length > 0);
+	});
 
 	// Todo management functions
-	function addTodo() {
-		if (goalIndex === null) return;
+	function addTodo(targetGoalIndex = goalIndex) {
+		if (targetGoalIndex === null) return;
+		const activeTodo = todos.find((t) => t.id === activeTodoId);
 		const todo = {
 			...defaultTodo(),
-			goalIndex
+			goalIndex: targetGoalIndex,
+			parentId: activeTodo?.goalIndex === targetGoalIndex ? activeTodo.parentId ?? null : null
 		};
 		todos = [...todos, todo];
 		saveTodos();
 		return todo;
+	}
+
+	function createTodoFromComposer({ title, markdown, goalIndex: selectedGoalIndex }) {
+		const targetGoalIndex =
+			typeof selectedGoalIndex === 'number' ? canonicalGoalIndex(selectedGoalIndex) : goalIndex;
+		if (targetGoalIndex === null) return;
+		const todo = {
+			...defaultTodo(),
+			title: title || '',
+			markdown: markdown || '',
+			goalIndex: targetGoalIndex,
+			parentId: null
+		};
+		todos = [...todos, todo];
+		saveTodos();
 	}
 
 	function updateTodo(id, patch) {
@@ -129,22 +254,167 @@
 	}
 
 	function deleteTodo(id) {
-		if (!confirm('Delete this to-do item?')) return;
 		todos = todos.filter((t) => t.id !== id);
 		saveTodos();
 	}
 
 	function cycleTodoStatus(id) {
-		const statuses = ['todo', 'underway', 'done'];
+		const statuses = ['todo', 'done'];
+		const todo = todos.find((t) => t.id === id);
+		if (!todo) return;
+		
+		const currentIndex = statuses.indexOf(todo.status ?? 'todo');
+		const next = statuses[(currentIndex + 1) % statuses.length];
+		
+		// If marking as done and title is empty, delete it
+		if (next === 'done' && (!todo.title || todo.title.trim() === '')) {
+			deleteTodo(id);
+			return;
+		}
+		
 		todos = todos.map((t) => {
 			if (t.id !== id) return t;
-			const currentIndex = statuses.indexOf(t.status ?? 'todo');
-			const next = statuses[(currentIndex + 1) % statuses.length];
 			return { ...t, status: next };
 		});
 		// Force reactivity by creating new array
 		todos = [...todos];
 		saveTodos();
+	}
+
+	function createNextTodo(currentTodoId, targetGoalIndex = goalIndex) {
+		if (targetGoalIndex === null) return null;
+		const goalTodosList = getVisibleGoalTodos(targetGoalIndex);
+		const currentIndex = goalTodosList.findIndex((t) => t.id === currentTodoId);
+		const currentTodo = todos.find((t) => t.id === currentTodoId);
+		
+		// Create new todo
+		const newTodo = {
+			...defaultTodo(),
+			goalIndex: targetGoalIndex,
+			parentId: currentTodo?.parentId ?? null
+		};
+		
+		// Insert after current todo in the full todos array
+		if (currentIndex >= 0 && currentIndex < goalTodosList.length - 1) {
+			// Insert after the current todo
+			const nextTodo = goalTodosList[currentIndex + 1];
+			const nextIndex = todos.findIndex((t) => t.id === nextTodo.id);
+			if (nextIndex >= 0) {
+				todos = [...todos.slice(0, nextIndex), newTodo, ...todos.slice(nextIndex)];
+			} else {
+				todos = [...todos, newTodo];
+			}
+		} else {
+			// Add to end
+			todos = [...todos, newTodo];
+		}
+		
+		saveTodos();
+		return newTodo;
+	}
+
+	function makeSubtask(currentTodoId, targetGoalIndex = goalIndex) {
+		const goalTodosList = getVisibleGoalTodos(targetGoalIndex);
+		// Find current todo's index in the organized list
+		const currentIndex = goalTodosList.findIndex((t) => t.id === currentTodoId);
+		if (currentIndex <= 0) return; // Can't make first todo a subtask
+		
+		const currentTodo = todos.find((t) => t.id === currentTodoId);
+		if (!currentTodo) return;
+		
+		// Find the previous todo (potential parent)
+		const previousTodo = goalTodosList[currentIndex - 1];
+		if (!previousTodo) return;
+		
+		// Check if already a child of the previous todo
+		if (currentTodo.parentId === previousTodo.id) return;
+		
+		// Make this todo a direct child of the todo directly above it.
+		updateTodo(currentTodoId, { parentId: previousTodo.id });
+	}
+
+	function outdentTodo(currentTodoId) {
+		const currentTodo = todos.find((t) => t.id === currentTodoId);
+		if (!currentTodo || !currentTodo.parentId) return; // Can't outdent if no parent
+		
+		// Find the parent todo
+		const parentTodo = todos.find(t => t.id === currentTodo.parentId);
+		if (!parentTodo) return;
+		
+		// Make the current todo a sibling of its parent (child of parent's parent)
+		updateTodo(currentTodoId, { parentId: parentTodo.parentId || null });
+	}
+
+	function canIndentTodo(todoId, targetGoalIndex = goalIndex) {
+		const goalTodosList = getVisibleGoalTodos(targetGoalIndex);
+		const currentIndex = goalTodosList.findIndex((t) => t.id === todoId);
+		if (currentIndex <= 0) return false; // Can't indent first todo
+		
+		const currentTodo = todos.find((t) => t.id === todoId);
+		if (!currentTodo) return false;
+		
+		const previousTodo = goalTodosList[currentIndex - 1];
+		if (!previousTodo) return false;
+		
+		// Can indent if not already a child of the previous todo
+		return currentTodo.parentId !== previousTodo.id;
+	}
+
+	function canOutdentTodo(todoId) {
+		const currentTodo = todos.find((t) => t.id === todoId);
+		if (!currentTodo) return false;
+		
+		// Can outdent if has a parent
+		return currentTodo.parentId !== null;
+	}
+
+	function deleteAndFocusPrevious(currentTodoId, targetGoalIndex = goalIndex) {
+		// Find the current todo's index in the goalTodos array
+		const goalTodosList = getVisibleGoalTodos(targetGoalIndex);
+		const currentIndex = goalTodosList.findIndex((t) => t.id === currentTodoId);
+		
+		// Delete the current todo
+		deleteTodo(currentTodoId);
+		
+		// Focus the previous todo if it exists and start editing
+		if (currentIndex > 0) {
+			const previousTodo = goalTodosList[currentIndex - 1];
+			if (previousTodo) {
+				setTimeout(() => {
+					// Find the button for the previous todo and click it to start editing
+					const prevTodoElement = document.querySelector(`[data-todo-item-id="${previousTodo.id}"]`);
+					if (prevTodoElement) {
+						// Find the title button (the one with flex-1 class)
+						const editButton = prevTodoElement.querySelector('button.flex-1');
+						if (editButton) {
+							editButton.click();
+							// Wait for Svelte to render the input, then focus it
+							// Use multiple attempts to ensure the input is ready
+							const tryFocus = (attempts = 0) => {
+								const prevInput = document.querySelector(`[data-todo-id="${previousTodo.id}"]`);
+								if (prevInput) {
+									prevInput.focus();
+									prevInput.select();
+									// Double-check focus is active
+									if (document.activeElement !== prevInput) {
+										setTimeout(() => {
+											prevInput.focus();
+											prevInput.select();
+										}, 10);
+									}
+								} else if (attempts < 10) {
+									// Retry if input not found yet
+									setTimeout(() => tryFocus(attempts + 1), 20);
+								}
+							};
+							requestAnimationFrame(() => {
+								setTimeout(() => tryFocus(), 50);
+							});
+						}
+					}
+				}, 50);
+			}
+		}
 	}
 
 	function saveTodos() {
@@ -157,10 +427,19 @@
 		}
 	}
 
-	let newTodoTitle = $state('');
 	let isEditingGoal = $state(false);
 	let editedGoalContent = $state('');
 	let goalTextareaElement = $state(null);
+	let selectedColor = $state('default');
+	let showCompleted = $state(false);
+
+	// Available colors for goals
+	const goalColors = [
+		{ value: 'default', label: 'Default', classes: '' },
+		{ value: 'bg-rose-600 border-rose-400 text-white', label: 'Rose', preview: 'bg-rose-600' },
+		{ value: 'bg-amber-600 border-amber-400 text-white', label: 'Amber', preview: 'bg-amber-600' },
+		{ value: 'bg-lime-600 border-lime-400 text-white', label: 'Lime', preview: 'bg-lime-600' },
+	];
 
 	// Initialize edited content when entering edit mode
 	function startEditingGoal() {
@@ -169,11 +448,37 @@
 		const title = (cell?.text ?? '').trim();
 		const notes = (cell?.readme ?? '').trim();
 		editedGoalContent = title + (notes ? '\n' + notes : '');
+		selectedColor = cell?.color || 'default';
 		isEditingGoal = true;
 		// Focus the textarea after it renders
 		setTimeout(() => {
 			if (goalTextareaElement) goalTextareaElement.focus();
 		}, 0);
+	}
+
+	// Update color for the goal
+	function updateGoalColor(color) {
+		if (goalIndex === null) return;
+		
+		if (!grid[goalIndex]) {
+			grid[goalIndex] = { text: '', status: 'todo', readme: '', color: 'default' };
+		}
+		grid[goalIndex].color = color;
+		selectedColor = color;
+
+		const linkedGoalIndex = getLinkedGoalIndex(goalIndex);
+		if (linkedGoalIndex !== null) {
+			if (!grid[linkedGoalIndex]) {
+				grid[linkedGoalIndex] = { text: '', status: 'todo', readme: '', color: 'default' };
+			}
+			grid[linkedGoalIndex].color = color;
+		}
+		
+		// Force reactivity
+		grid = [...grid];
+		
+		// Save
+		saveTodos();
 	}
 
 	// Save edited goal content
@@ -186,19 +491,21 @@
 		
 		// Update grid
 		if (!grid[goalIndex]) {
-			grid[goalIndex] = { text: '', status: 'todo', readme: '' };
+			grid[goalIndex] = { text: '', status: 'todo', readme: '', color: 'default' };
 		}
 		grid[goalIndex].text = title;
 		grid[goalIndex].readme = notes;
+		grid[goalIndex].color = selectedColor;
 
 		const linkedGoalIndex = getLinkedGoalIndex(goalIndex);
 		if (linkedGoalIndex !== null) {
 			if (!grid[linkedGoalIndex]) {
-				grid[linkedGoalIndex] = { text: '', status: 'todo', readme: '' };
+				grid[linkedGoalIndex] = { text: '', status: 'todo', readme: '', color: 'default' };
 			}
 			grid[linkedGoalIndex].text = title;
 			grid[linkedGoalIndex].readme = notes;
 			grid[linkedGoalIndex].status = grid[goalIndex].status;
+			grid[linkedGoalIndex].color = selectedColor;
 		}
 		
 		// Force reactivity
@@ -215,13 +522,23 @@
 		isEditingGoal = false;
 		editedGoalContent = '';
 	}
+
+	// Navigate up one level in the goal hierarchy
+	function moveUpALevel() {
+		if (parentGoalIndex !== null) {
+			const parentCode = indexToNomenclature(parentGoalIndex);
+			goto(`/todo/${parentCode}`);
+		} else {
+			goto('/todo');
+		}
+	}
 </script>
 
 <svelte:head>
 	<title>{goalLabel} - Todos - Haradato</title>
 </svelte:head>
 
-<div class="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-violet-950 p-4 md:p-8">
+<div class="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-violet-950 p-4 pb-24 md:p-8 md:pb-8 lg:pr-28">
 	<div class="mx-auto max-w-4xl">
 		{#if !dataLoaded}
 			<div class="flex items-center justify-center py-12">
@@ -237,12 +554,11 @@
 				<div class="mb-4 flex items-center justify-between">
 					<div class="flex-1">
 						<button
-							onclick={() => goto('/')}
+							onclick={moveUpALevel}
 							class="mb-2 text-sm text-slate-400 hover:text-slate-200 transition-colors"
 						>
-							← Back to Chart
+							← {parentGoalLabel ? `Back to ${parentGoalLabel}` : 'Back to all'}
 						</button>
-						
 						{#if isEditingGoal}
 							<div class="space-y-2">
 								<textarea
@@ -261,9 +577,6 @@
 									}}
 									onblur={saveGoalEdit}
 								></textarea>
-								<div class="flex items-center gap-2 text-xs text-slate-400">
-									<span>Press Ctrl+Enter to save, Esc to cancel</span>
-								</div>
 							</div>
 						{:else}
 							<button
@@ -282,82 +595,85 @@
 							{/if}
 						{/if}
 					</div>
-					<div class="ml-4 flex items-center gap-2">
-						<select
-							value={indexToNomenclature(goalIndex)}
-							onchange={(e) => {
-								const code = e.target.value;
-								if (code) goto(`/todo/${code}`);
-							}}
-							class="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 shadow-sm outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
-						>
-							{#each allGoals as goal}
-								<option value={goal.code}>{goal.label !== goal.code ? goal.label : goal.code}</option>
-							{/each}
-						</select>
-						<SquareMap 
-							goal={indexToNomenclature(goalIndex)} 
-							onClick={(code) => goto(`/todo/${code}`)}
-						/>
+					<div class="ml-4">
+						<SquareMap goal={indexToNomenclature(goalIndex)} {grid} />
 					</div>
+				</div>
+
+				<!-- Color picker -->
+				<div class="mb-4 flex items-center justify-between gap-2">
+					<div class="flex gap-1">
+						{#each goalColors as color}
+							<button
+								type="button"
+								class="h-6 w-6 rounded border-2 transition-all {selectedColor === color.value
+									? 'border-violet-400 ring-2 ring-violet-300'
+									: 'border-slate-600'} {color.preview || 'bg-slate-700'}"
+								title={color.label}
+								onclick={() => updateGoalColor(color.value)}
+							></button>
+						{/each}
+					</div>
+					{#if isEditingGoal}
+						<div class="flex items-center gap-2">
+							<button
+								type="button"
+								onclick={saveGoalEdit}
+								class="rounded-md border border-violet-600/70 bg-violet-600/90 px-4 py-2 text-sm font-semibold text-slate-950 shadow-sm transition hover:bg-violet-500"
+							>
+								Save
+							</button>
+							<button
+								type="button"
+								onclick={cancelGoalEdit}
+								class="rounded-md border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-300 shadow-sm transition hover:bg-slate-700"
+							>
+								Cancel
+							</button>
+						</div>
+					{/if}
 				</div>
 			</div>
 
-			<!-- Add new todo -->
-			<div class="mb-6 rounded-lg border border-slate-700/70 bg-slate-950/60 p-4">
-				<div class="flex gap-2">
+			<!-- Show completed toggle -->
+			<div class="mb-4 flex items-center justify-between">
+				<label class="flex items-center gap-2 cursor-pointer">
 					<input
-						type="text"
-						bind:value={newTodoTitle}
-						placeholder="Add a new todo for this goal..."
-						class="flex-1 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
-						onkeydown={(e) => {
-							if (e.key === 'Enter' && newTodoTitle.trim()) {
-								const newTodo = addTodo();
-								if (newTodo) {
-									updateTodo(newTodo.id, { title: newTodoTitle.trim() });
-									newTodoTitle = '';
-								}
-							}
-						}}
+						type="checkbox"
+						bind:checked={showCompleted}
+						class="h-4 w-4 rounded border-slate-600 bg-slate-900 text-violet-600 focus:ring-2 focus:ring-violet-500/50"
 					/>
-					<button
-						type="button"
-						onclick={() => {
-							if (newTodoTitle.trim()) {
-								const newTodo = addTodo();
-								if (newTodo) {
-									updateTodo(newTodo.id, { title: newTodoTitle.trim() });
-									newTodoTitle = '';
-								}
-							}
-						}}
-						disabled={!newTodoTitle.trim()}
-						class="rounded-md border border-violet-600/70 bg-violet-600/90 px-4 py-2 text-sm font-semibold text-slate-950 shadow-sm transition enabled:hover:bg-violet-500 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
-					>
-						Add
-					</button>
-				</div>
+					<span class="text-sm text-slate-300">Show completed tasks</span>
+				</label>
 			</div>
 
 			<!-- Todo list -->
-			{#if goalTodos.length === 0}
+			{#if goalGroups.length === 0}
 				<div class="rounded-lg border border-slate-700/70 bg-slate-950/60 p-8 text-center">
-					<p class="text-slate-400">No todos yet for this goal. Add one above!</p>
-				</div>
-			{:else}
-				<div class="space-y-2">
-					{#each goalTodos as todo (todo.id)}
-						<TodoItem
-							{todo}
-							onUpdate={(patch) => updateTodo(todo.id, patch)}
-							onDelete={() => deleteTodo(todo.id)}
-							onToggleStatus={() => cycleTodoStatus(todo.id)}
-							{allGoals}
-						/>
-					{/each}
+					<p class="text-slate-400">No todos yet for this goal or its sub-goals. Add one above!</p>
 				</div>
 			{/if}
+
+			<TodoGroupedList
+				groups={goalGroups}
+				{allGoals}
+				onUpdate={updateTodo}
+				onDelete={deleteTodo}
+				onToggleStatus={cycleTodoStatus}
+				onCreateNext={(todoId, group) => createNextTodo(todoId, group.goalIndex)}
+				onDeletePrevious={(todoId, group) => deleteAndFocusPrevious(todoId, group.goalIndex)}
+				onMakeSubtask={(todoId, group) => makeSubtask(todoId, group.goalIndex)}
+				onOutdent={(todoId) => outdentTodo(todoId)}
+				onTitleFocus={(id) => (activeTodoId = id)}
+				getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
+				canIndent={(todoId, group) => canIndentTodo(todoId, group.goalIndex)}
+				canOutdent={(todoId) => canOutdentTodo(todoId)}
+			/>
 		{/if}
 	</div>
+	<TodoQuickNav
+		{allGoals}
+		defaultGoalIndex={goalIndex}
+		onCreateTodo={createTodoFromComposer}
+	/>
 </div>

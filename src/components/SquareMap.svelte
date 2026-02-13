@@ -1,7 +1,9 @@
 <script>
+	import { goto } from '$app/navigation';
 	import { nomenclatureToIndex, indexToNomenclature } from '$lib/todoUtils.js';
+	import { store } from '$stores/store.svelte.js';
 
-	let { goal, onClick } = $props();
+	let { goal, grid = null } = $props();
 
 	// All squares are valid todo targets.
 	const goalIndices = $derived.by(() => {
@@ -28,37 +30,57 @@
 		}
 		return 'empty'; // Not a goal position
 	}
+
+	// Get cell color - if custom color is set, show a hint of it
+	function getCellColor(index, cellType, isCurrentGoal) {
+		const customColor = grid?.[index]?.color;
+		
+		// If custom color is set and not default, show it
+		if (customColor && customColor !== 'default') {
+			// Extract just the bg color part for the mini map
+			const bgMatch = customColor.match(/bg-(\w+)-(\d+)/);
+			if (bgMatch) {
+				const [, colorName, shade] = bgMatch;
+				return `bg-${colorName}-${shade}`;
+			}
+		}
+		
+		// Default colors based on cell type
+		if (isCurrentGoal) {
+			return 'bg-violet-500 border-violet-400 ring-1 ring-violet-300';
+		} else if (cellType === 'main') {
+			return 'bg-slate-600 border-slate-500';
+		} else if (cellType === 'sub') {
+			return 'bg-slate-700 border-slate-600';
+		} else if (cellType === 'outer') {
+			return 'bg-sky-400/30 border-sky-300/30 shadow-[0_0_4px_rgba(56,189,248,0.45)]';
+		} else {
+			return 'bg-slate-700/50 border-slate-600/50';
+		}
+	}
 </script>
 
-<div class="inline-flex flex-col gap-0.5">
+<button
+	type="button"
+	class="inline-flex flex-col gap-0.5 rounded-lg p-1 transition-all hover:bg-slate-800/50 active:scale-95 cursor-pointer"
+	onclick={() => {
+		store.showHaradaChart = true;
+    goto("/");
+	}}
+	title="View full Harada Chart"
+>
 	{#each Array(9) as _, row}
 		<div class="flex gap-0.5">
 			{#each Array(9) as _, col}
 				{@const index = row * 9 + col}
 				{@const cellType = getCellType(index)}
 				{@const isCurrentGoal = index === currentGoalIndex}
-				<button
-					type="button"
-					class={`h-2 w-2 rounded-sm border transition-all hover:scale-125 hover:z-10 cursor-pointer ${
-						isCurrentGoal
-							? 'bg-violet-500 border-violet-400 ring-1 ring-violet-300'
-							: cellType === 'main'
-								? 'bg-slate-600 border-slate-500 hover:bg-slate-500'
-								: cellType === 'sub'
-									? 'bg-slate-700 border-slate-600 hover:bg-slate-600'
-									: cellType === 'outer'
-										? 'bg-sky-400/30 border-sky-300/30 shadow-[0_0_4px_rgba(56,189,248,0.45)] hover:bg-sky-300/90'
-										: 'bg-slate-700/50 border-slate-600/50 hover:bg-slate-600/70'
-					}`}
-					title={isCurrentGoal ? `Current: ${goal}` : `Select ${indexToNomenclature(index)}`}
-					onclick={() => {
-						if (onClick) {
-							const code = indexToNomenclature(index);
-							onClick(code);
-						}
-					}}
-				></button>
+				{@const cellColor = getCellColor(index, cellType, isCurrentGoal)}
+				<div
+					style="view-transition-name: harada-cell-{index};"
+					class={`h-2 w-2 rounded-sm border transition-all ${cellColor}`}
+				></div>
 			{/each}
 		</div>
 	{/each}
-</div>
+</button>
