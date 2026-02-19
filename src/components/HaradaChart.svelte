@@ -1,8 +1,12 @@
 <script>
 	import { goto } from '$app/navigation';
-	import { indexToNomenclature } from '$lib/todoUtils.js';
+	import { indexToNomenclature, canonicalGoalIndex, getLinkedGoalIndex, updateGoalTimestamp } from '$lib/todoUtils.js';
 
-	let { grid } = $props();
+	let { grid, onUpdateGrid = null } = $props();
+	
+	let editingIndex = $state(null);
+	let editValue = $state('');
+	let editInputElement = $state(null);
 
 	// Get the block index (0-8) for a given cell
 	function getBlockIndex(row, col) {
@@ -111,9 +115,100 @@
 	}
 
 
-	function handleCellClick(index) {
-		const row = Math.floor(index / 9);
-		const col = index % 9;
+	// Check if a goal has a custom title (not just the default nomenclature)
+	function hasCustomTitle(index) {
+		const canonicalIndex = canonicalGoalIndex(index);
+		const cell = grid[canonicalIndex];
+		const text = (cell?.text ?? '').trim();
+		return text && text !== indexToNomenclature(canonicalIndex);
+	}
+
+	function handleCellClick(index, e) {
+		// Only edit if the goal doesn't have a title yet
+		if (!hasCustomTitle(index)) {
+			e.preventDefault();
+			e.stopPropagation();
+			startEditing(index);
+		}
+		// Otherwise, let the link navigate normally
+	}
+
+
+	function startEditing(index) {
+		editingIndex = index;
+		const cell = grid[index];
+		editValue = (cell?.text ?? '').trim();
+		// Focus the input after it renders
+		setTimeout(() => {
+			if (editInputElement) {
+				editInputElement.focus();
+				editInputElement.select();
+			}
+		}, 0);
+	}
+
+	function saveEdit() {
+		if (editingIndex === null || !onUpdateGrid) return;
+		
+		const title = editValue.trim();
+		const canonicalIndex = canonicalGoalIndex(editingIndex);
+		
+		// Create a copy of the grid to avoid mutating props
+		const newGrid = [...grid];
+		
+		// Update the canonical goal (outer block center)
+		if (!newGrid[canonicalIndex]) {
+			newGrid[canonicalIndex] = { text: '', status: 'todo', readme: '', color: 'default', updated_at: null };
+		} else {
+			newGrid[canonicalIndex] = { ...newGrid[canonicalIndex] };
+		}
+		newGrid[canonicalIndex].text = title;
+		
+		// Also update the linked goal (center sub-goal or outer block center)
+		const linkedGoalIndex = getLinkedGoalIndex(editingIndex);
+		if (linkedGoalIndex !== null) {
+			if (!newGrid[linkedGoalIndex]) {
+				newGrid[linkedGoalIndex] = { text: '', status: 'todo', readme: '', color: 'default', updated_at: null };
+			} else {
+				newGrid[linkedGoalIndex] = { ...newGrid[linkedGoalIndex] };
+			}
+			newGrid[linkedGoalIndex].text = title;
+		}
+		
+		// If editing a center sub-goal, also update it directly
+		// (since canonicalGoalIndex maps it to the outer block center)
+		if (editingIndex !== canonicalIndex && editingIndex !== linkedGoalIndex) {
+			if (!newGrid[editingIndex]) {
+				newGrid[editingIndex] = { text: '', status: 'todo', readme: '', color: 'default', updated_at: null };
+			} else {
+				newGrid[editingIndex] = { ...newGrid[editingIndex] };
+			}
+			newGrid[editingIndex].text = title;
+		}
+		
+		// Update the updated_at timestamp for the goal
+		updateGoalTimestamp(newGrid, editingIndex);
+		
+		// Call update callback with the new grid
+		onUpdateGrid(newGrid);
+		
+		editingIndex = null;
+		editValue = '';
+	}
+
+	function cancelEdit() {
+		editingIndex = null;
+		editValue = '';
+	}
+
+	function handleEditKeydown(e) {
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			saveEdit();
+		} else if (e.key === 'Escape') {
+			e.preventDefault();
+			cancelEdit();
+		}
 	}
 </script>
 
@@ -126,33 +221,68 @@
 		{@const row = Math.floor(i / 9)}
 		{@const col = i % 9}
 		{@const cellClasses = getCellClasses(row, col, i)}
+		{@const hasTitle = hasCustomTitle(i)}
+		{@const isEditing = editingIndex === i}
 
-		<a
-			type="button"
-			style="view-transition-name: harada-cell-{i};"
-			class="group aspect-square transition-all duration-200 hover:scale-105 hover:z-20 {cellClasses} rounded-md cursor-pointer"
-			class:mt-1={row === 3 || row === 6}
-			class:ml-1={col === 3 || col === 6}
-		  href={`/todo/${indexToNomenclature(i)}`}
-		>
-			<div class="relative flex h-full w-full flex-col items-center justify-center p-0.5 sm:p-1">
-				<div
-					class="w-full text-center text-[8px] leading-tight sm:text-[10px] md:text-xs overflow-hidden line-clamp-3"
-				>
-					{grid[i]?.text || ''}
+		{#if isEditing}
+			<div
+				class="group aspect-square transition-all duration-200 hover:scale-105 hover:z-20 {cellClasses} rounded-md cursor-pointer"
+				class:mt-1={row === 3 || row === 6}
+				class:ml-1={col === 3 || col === 6}
+			>
+				<div class="relative flex h-full w-full flex-col items-center justify-center p-0.5 sm:p-1">
+					<input
+						bind:this={editInputElement}
+						bind:value={editValue}
+						onkeydown={handleEditKeydown}
+						onblur={saveEdit}
+						placeholder={`Goal ${indexToNomenclature(i)} title`}
+						class="w-full bg-transparent border-none outline-none text-center text-[8px] leading-tight sm:text-[10px] md:text-xs text-inherit placeholder-slate-400/70"
+					/>
 				</div>
-
-				{#if grid[i]?.status === 'underway'}
-					<div class="absolute bottom-0.5 left-0.5 text-[8px] sm:text-[10px]" title="Underway">
-						⏳
-					</div>
-				{:else if grid[i]?.status === 'done'}
-					<div class="absolute bottom-0.5 left-0.5 text-[8px] sm:text-[10px]" title="Done">
-						✓
-					</div>
-				{/if}
-
 			</div>
-		</a>
+		{:else if hasTitle}
+			{@const canonicalIndex = canonicalGoalIndex(i)}
+			<!-- Link through to navigate when title exists -->
+			<a
+				type="button"
+				class="group aspect-square transition-all duration-200 hover:scale-105 hover:z-20 {cellClasses} rounded-md cursor-pointer"
+				class:mt-1={row === 3 || row === 6}
+				class:ml-1={col === 3 || col === 6}
+				href={`/todo/${indexToNomenclature(i)}`}
+			>
+				<div class="relative flex h-full w-full flex-col items-center justify-center p-0.5 sm:p-1">
+					<div
+						class="w-full text-center text-[8px] leading-tight sm:text-[10px] md:text-xs overflow-hidden line-clamp-3"
+					>
+						{grid[i]?.text || ''}
+					</div>
+
+					{#if grid[i]?.status === 'underway'}
+						<div class="absolute bottom-0.5 left-0.5 text-[8px] sm:text-[10px]" title="Underway">
+							⏳
+						</div>
+					{:else if grid[i]?.status === 'done'}
+						<div class="absolute bottom-0.5 left-0.5 text-[8px] sm:text-[10px]" title="Done">
+							✓
+						</div>
+					{/if}
+				</div>
+			</a>
+		{:else}
+			<!-- Click to edit when no title -->
+			<button
+				type="button"
+				onclick={(e) => handleCellClick(i, e)}
+				class="group aspect-square transition-all duration-200 hover:scale-105 hover:z-20 {cellClasses} rounded-md cursor-pointer w-full h-full border-0 p-0"
+				class:mt-1={row === 3 || row === 6}
+				class:ml-1={col === 3 || col === 6}
+				aria-label="Edit goal"
+				title="Edit goal"
+			>
+				<div class="relative flex h-full w-full flex-col items-center justify-center p-0.5 sm:p-1">
+				</div>
+			</button>
+		{/if}
 	{/each}
 </div>

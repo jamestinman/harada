@@ -1,19 +1,33 @@
 <script>
 	import { goto } from '$app/navigation';
-	import { nomenclatureToIndex, indexToNomenclature } from '$lib/todoUtils.js';
+	import { nomenclatureToIndex, indexToNomenclature, canonicalGoalIndex, getLinkedGoalIndex } from '$lib/todoUtils.js';
 	import { store } from '$stores/store.svelte.js';
 
 	let { goal, grid = null } = $props();
+	
+	// Use store.harada_chart.grid if grid prop is not provided
+	const chartGrid = $derived(grid ?? store.harada_chart.grid);
+	
+	// Get save status for visual indicator
+	const saveStatus = $derived(store.saveStatus);
+	const borderColorClass = $derived.by(() => {
+		if (saveStatus === 'queued') return 'border-amber-500';
+		if (saveStatus === 'saving') return 'border-red-500';
+		return '';
+	});
 
 	// All squares are valid todo targets.
 	const goalIndices = $derived.by(() => {
 		return Array.from({ length: 81 }, (_, i) => i);
 	});
 
-	// Convert goal code to index
+	// Convert goal code to index, or use store's currentGoalIndex if no goal prop provided
 	const currentGoalIndex = $derived.by(() => {
-		if (!goal) return null;
-		return nomenclatureToIndex(goal, goalIndices);
+		if (goal) {
+			return nomenclatureToIndex(goal, goalIndices);
+		}
+		// Use store's currentGoalIndex if no explicit goal prop
+		return store.currentGoalIndex;
 	});
 
 	// Determine cell type for styling
@@ -33,7 +47,7 @@
 
 	// Get cell color - if custom color is set, show a hint of it
 	function getCellColor(index, cellType, isCurrentGoal) {
-		const customColor = grid?.[index]?.color;
+		const customColor = chartGrid?.[index]?.color;
 		
 		// If custom color is set and not default, show it
 		if (customColor && customColor !== 'default') {
@@ -62,22 +76,21 @@
 
 <button
 	type="button"
-	class="inline-flex flex-col gap-0.5 rounded-lg p-1 transition-all hover:bg-slate-800/50 active:scale-95 cursor-pointer"
+	class="inline-flex flex-col gap-0.5 rounded-lg p-1 border-2 transition-all hover:bg-slate-800/50 active:scale-95 cursor-pointer {borderColorClass}"
 	onclick={() => {
-		store.showHaradaChart = true;
     goto("/");
 	}}
 	title="View full Harada Chart"
 >
-	{#each Array(9) as _, row}
+			{#each Array(9) as _, row}
 		<div class="flex gap-0.5">
 			{#each Array(9) as _, col}
 				{@const index = row * 9 + col}
 				{@const cellType = getCellType(index)}
-				{@const isCurrentGoal = index === currentGoalIndex}
+				{@const canonicalIndex = canonicalGoalIndex(index)}
+				{@const isCurrentGoal = currentGoalIndex !== null && (canonicalIndex === currentGoalIndex || index === currentGoalIndex || getLinkedGoalIndex(index) === currentGoalIndex)}
 				{@const cellColor = getCellColor(index, cellType, isCurrentGoal)}
 				<div
-					style="view-transition-name: harada-cell-{index};"
 					class={`h-2 w-2 rounded-sm border transition-all ${cellColor}`}
 				></div>
 			{/each}

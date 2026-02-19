@@ -1,6 +1,7 @@
 <script>
 	import { goto } from '$app/navigation';
 	import { store } from '$stores/store.svelte.js';
+	import { renderMarkdown } from '$lib/todoUtils.js';
 
 	let {
 		todos,
@@ -28,42 +29,6 @@
 	function getGoalCodeFromIndex(idx) {
 		const goal = goalOptions?.find((g) => g.index === idx);
 		return goal ? goal.code : null;
-	}
-
-	function escapeHtml(str) {
-		return str
-			.replace(/&/g, '&amp;')
-			.replace(/</g, '&lt;')
-			.replace(/>/g, '&gt;')
-			.replace(/"/g, '&quot;')
-			.replace(/'/g, '&#39;');
-	}
-
-	function renderMarkdown(md) {
-		if (!md) return '';
-		let html = escapeHtml(md);
-
-		// Headings
-		html = html.replace(/^### (.*)$/gim, '<h3 class="text-xs font-semibold mb-1">$1</h3>');
-		html = html.replace(/^## (.*)$/gim, '<h2 class="text-xs font-semibold mb-1">$1</h2>');
-		html = html.replace(/^# (.*)$/gim, '<h1 class="text-xs font-semibold mb-1">$1</h1>');
-
-		// Bold / italic / code
-		html = html.replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>');
-		html = html.replace(/\*(.*?)\*/gim, '<em>$1</em>');
-		html = html.replace(
-			/`([^`]+)`/gim,
-			'<code class="rounded bg-slate-800 px-1 py-0.5 text-[10px]">$1</code>'
-		);
-
-		// Simple unordered lists
-		html = html.replace(/^(?:-|\*) (.*)$/gim, '<li class="ml-4 list-disc">$1</li>');
-		html = html.replace(/(<li[\s\S]*?<\/li>)/gim, '<ul class="mb-1">$1</ul>');
-
-		// Line breaks
-		html = html.replace(/\n/g, '<br />');
-
-		return html;
 	}
 </script>
 

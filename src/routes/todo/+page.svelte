@@ -2,29 +2,29 @@
 	import { browser } from '$app/environment';
 	import { store } from '$stores/store.svelte.js';
 	import { authStore } from '$stores/auth.svelte.js';
-	import { indexToNomenclature, canonicalGoalIndex, defaultTodo } from '$lib/todoUtils.js';
+	import {
+		indexToNomenclature,
+		canonicalGoalIndex,
+		defaultTodo,
+		normalizeTodoListMeta,
+		buildGoalListMeta,
+		buildCustomListMeta,
+		updateGoalTimestamp
+	} from '$lib/todoUtils.js';
 	import TodoGroupedList from '$components/TodoGroupedList.svelte';
-	import TodoQuickNav from '$components/TodoQuickNav.svelte';
+	import DesktopNav from '$components/DesktopNav.svelte';
 
-  // Load data once on mount
-	let grid = $state([]);
-	let todos = $state([]);
-	let dataLoaded = $state(false);
+  // Use store.harada_chart directly - it's reactive
+	const grid = $derived(store.harada_chart.grid);
+	const todos = $derived(store.harada_chart.todos.map((todo) => normalizeTodoListMeta(todo)));
+	const dataLoaded = $derived(true); // Always loaded since store handles initialization
 	let activeTodoId = $state(null);
 
+	// Clear currentGoalIndex when on the all todos page
 	$effect(() => {
-		if (!browser || dataLoaded) return;
-		
-		const data = store.loadData(
-			() => ({ text: '', status: 'todo', readme: '', color: 'default' }),
-			[]
-		);
-		grid = data.grid || [];
-		todos = (data.todos || []).map((todo) => ({
-			...todo,
-			goalIndex: canonicalGoalIndex(todo.goalIndex)
-		}));
-		dataLoaded = true;
+		if (dataLoaded) {
+			store.currentGoalIndex = null;
+		}
 	});
 
 	// Helper functions
@@ -80,8 +80,26 @@
 	}
 
 	function getVisibleGoalTodos(goalIndex) {
-		const filtered = todos.filter((t) => t.goalIndex === goalIndex && t.status !== 'done');
+		const filtered = todos.filter(
+			(t) =>
+				(t.listType === 'goal' || !t.listType) &&
+				t.goalIndex === goalIndex &&
+				t.status !== 'done'
+		);
 		return organizeTodosWithHierarchy(filtered);
+	}
+
+	function getVisibleCustomListTodos(listId) {
+		const filtered = todos.filter(
+			(t) => t.listType === 'custom' && t.listId === listId && t.status !== 'done'
+		);
+		return organizeTodosWithHierarchy(filtered);
+	}
+
+	function getVisibleGroupTodos(group) {
+		if (group?.groupType === 'custom') return getVisibleCustomListTodos(group.listId);
+		if (group?.groupType === 'no-goal') return getVisibleGoalTodos(null);
+		return getVisibleGoalTodos(group?.goalIndex ?? null);
 	}
 
 	// Get all goals for dropdown
@@ -94,11 +112,22 @@
 				index: idx,
 				code: indexToNomenclature(idx),
 				label: text || indexToNomenclature(idx),
-				isMainGoal: Math.floor(idx / 9) === 4 && idx % 9 === 4
+				isMainGoal: Math.floor(idx / 9) === 4 && idx % 9 === 4,
+				updated_at: cell?.updated_at || null
 			};
 		}).sort((a, b) => {
+			// Main goal always first
 			if (a.isMainGoal) return -1;
 			if (b.isMainGoal) return 1;
+			
+			// Sort by updated_at descending (most recently updated first)
+			const aTime = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+			const bTime = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+			if (aTime !== bTime) {
+				return bTime - aTime; // Descending order
+			}
+			
+			// Fallback to index order if timestamps are equal or both null
 			return a.index - b.index;
 		});
 	});
@@ -106,29 +135,62 @@
 	// Build render groups (unassigned first, then goals with todos)
 	const todoGroups = $derived.by(() => {
 		const unassignedTodos = getVisibleGoalTodos(null);
+		const customListMap = new Map();
+		todos.forEach((todo) => {
+			if (todo.listType !== 'custom' || todo.status === 'done') return;
+			if (!customListMap.has(todo.listId)) {
+				customListMap.set(todo.listId, todo.listName || 'New list');
+			}
+		});
+		const customGroups = Array.from(customListMap.entries()).map(([listId, listName]) => ({
+			id: listId,
+			groupType: 'custom',
+			goalIndex: null,
+			listId,
+			label: listName,
+			href: null,
+			addTitle: `Add todo to ${listName}`,
+			todos: getVisibleCustomListTodos(listId)
+		}));
 		const goalGroups = goalIndices
-			.map((goalIndex) => ({
-				id: `goal-${goalIndex}`,
-				goalIndex,
-				label: getGoalLabelFromIndex(goalIndex),
-				href: `/todo/${indexToNomenclature(goalIndex)}`,
-				addTitle: 'Add todo to this goal',
-				todos: getVisibleGoalTodos(goalIndex)
-			}))
-			.filter((group) => group.todos.length > 0);
+			.map((goalIndex) => {
+				const cell = grid[goalIndex];
+				return {
+					id: `goal-${goalIndex}`,
+					groupType: 'goal',
+					goalIndex,
+					label: getGoalLabelFromIndex(goalIndex),
+					href: `/todo/${indexToNomenclature(goalIndex)}`,
+					addTitle: 'Add todo to this goal',
+					todos: getVisibleGoalTodos(goalIndex),
+					updated_at: cell?.updated_at || null
+				};
+			})
+			.filter((group) => group.todos.length > 0)
+			.sort((a, b) => {
+				// Sort by updated_at descending (most recently updated first)
+				const aTime = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+				const bTime = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+				if (aTime !== bTime) {
+					return bTime - aTime; // Descending order
+				}
+				// Fallback to index order if timestamps are equal or both null
+				return a.goalIndex - b.goalIndex;
+			});
 
 		const groups = [...goalGroups];
 		if (unassignedTodos.length > 0) {
 			groups.unshift({
 				id: 'no-goal',
+				groupType: 'no-goal',
 				goalIndex: null,
-				label: 'No goal assigned',
+				label: '',
 				href: null,
 				addTitle: 'Add todo without goal',
 				todos: unassignedTodos
 			});
 		}
-		return groups;
+		return [...groups, ...customGroups];
 	});
 
 	const allTodos = $derived(
@@ -139,18 +201,42 @@
 
 	// Todo management
 	function updateTodo(id, patch) {
-		const nextPatch =
-			typeof patch?.goalIndex === 'number'
-				? { ...patch, goalIndex: canonicalGoalIndex(patch.goalIndex) }
-				: patch;
-		todos = todos.map((t) => (t.id === id ? { ...t, ...nextPatch } : t));
-		todos = [...todos]; // Force reactivity
-		saveTodos();
+		const oldTodo = todos.find((t) => t.id === id);
+		let nextPatch = patch;
+		if (patch?.listType === 'custom') {
+			nextPatch = {
+				...patch,
+				...buildCustomListMeta(patch.listName)
+			};
+		} else if (typeof patch?.goalIndex === 'number' || patch?.goalIndex === null) {
+			nextPatch = {
+				...patch,
+				...buildGoalListMeta(patch.goalIndex)
+			};
+		}
+		// Update store.harada_chart.todos
+		store.harada_chart.todos = store.harada_chart.todos.map((t) => (t.id === id ? { ...t, ...nextPatch } : t));
+		
+		// Update goal timestamp if todo is associated with a goal
+		const newTodo = store.harada_chart.todos.find((t) => t.id === id);
+		const goalIndexToUpdate = newTodo?.goalIndex ?? oldTodo?.goalIndex;
+		if (typeof goalIndexToUpdate === 'number') {
+			updateGoalTimestamp(store.harada_chart.grid, goalIndexToUpdate);
+			// Force reactivity by reassigning
+			store.harada_chart.grid = [...store.harada_chart.grid];
+		}
 	}
 
 	function deleteTodo(id) {
-		todos = todos.filter((t) => t.id !== id);
-		saveTodos();
+		const todo = store.harada_chart.todos.find((t) => t.id === id);
+		store.harada_chart.todos = store.harada_chart.todos.filter((t) => t.id !== id);
+		
+		// Update goal timestamp if todo was associated with a goal
+		if (todo && typeof todo.goalIndex === 'number') {
+			updateGoalTimestamp(store.harada_chart.grid, todo.goalIndex);
+			// Force reactivity by reassigning
+			store.harada_chart.grid = [...store.harada_chart.grid];
+		}
 	}
 
 	function cycleTodoStatus(id) {
@@ -167,112 +253,150 @@
 			return;
 		}
 		
-		todos = todos.map((t) => {
+		// Update store.harada_chart.todos
+		store.harada_chart.todos = store.harada_chart.todos.map((t) => {
 			if (t.id !== id) return t;
 			return { ...t, status: next };
 		});
-		todos = [...todos]; // Force reactivity
-		saveTodos();
-	}
-
-	function saveTodos() {
-		store.saveData(grid, todos);
-		if (authStore.user) {
-			store.syncWithSupabase(grid, todos);
+		
+		// Update goal timestamp if todo is associated with a goal
+		if (typeof todo.goalIndex === 'number') {
+			updateGoalTimestamp(store.harada_chart.grid, todo.goalIndex);
+			// Force reactivity by reassigning
+			store.harada_chart.grid = [...store.harada_chart.grid];
 		}
 	}
 
 	function addTodoForGoal(goalIndex, title = '') {
-		const activeTodo = todos.find((t) => t.id === activeTodoId);
+		const activeTodo = store.harada_chart.todos.find((t) => t.id === activeTodoId);
 		const todo = {
 			...defaultTodo(),
-			goalIndex,
+			...buildGoalListMeta(goalIndex),
 			parentId: activeTodo?.goalIndex === goalIndex ? activeTodo.parentId ?? null : null,
 			title
 		};
-		todos = [...todos, todo];
-		saveTodos();
+		store.harada_chart.todos = [...store.harada_chart.todos, todo];
+		
+		// Update goal timestamp if todo is associated with a goal
+		if (typeof goalIndex === 'number') {
+			updateGoalTimestamp(store.harada_chart.grid, goalIndex);
+			// Force reactivity by reassigning
+			store.harada_chart.grid = [...store.harada_chart.grid];
+		}
+		
+		// Set active todo ID so it gets focused
+		activeTodoId = todo.id;
 		return todo;
 	}
 
-	function createTodoFromComposer({ title, markdown, goalIndex }) {
-		const normalizedGoalIndex =
-			typeof goalIndex === 'number' ? canonicalGoalIndex(goalIndex) : null;
+	function addTodoToCustomList(listId, listName, title = '', markdown = '') {
+		const activeTodo = store.harada_chart.todos.find((t) => t.id === activeTodoId);
+		const sameListParent =
+			activeTodo?.listType === 'custom' && activeTodo.listId === listId
+				? activeTodo.parentId ?? null
+				: null;
+		const customListMeta = buildCustomListMeta(listName);
 		const todo = {
 			...defaultTodo(),
-			title: title || '',
-			markdown: markdown || '',
-			goalIndex: normalizedGoalIndex,
-			parentId: null
+			title,
+			markdown,
+			...customListMeta,
+			listId,
+			parentId: sameListParent
 		};
-		todos = [...todos, todo];
-		saveTodos();
+		store.harada_chart.todos = [...store.harada_chart.todos, todo];
+		activeTodoId = todo.id;
+		return todo;
 	}
 
-	function createNextTodo(currentTodoId, goalIndex) {
-		const goalTodosList = getVisibleGoalTodos(goalIndex);
-		const currentIndex = goalTodosList.findIndex((t) => t.id === currentTodoId);
-		const currentTodo = todos.find((t) => t.id === currentTodoId);
+	function createTodoFromComposer({ title, markdown, goalIndex, listType, listName }) {
+		if (listType === 'custom' || (listName && listName.trim())) {
+			const customMeta = buildCustomListMeta(listName);
+			addTodoToCustomList(customMeta.listId, customMeta.listName, title || '', markdown || '');
+			return;
+		}
+		const normalizedGoalIndex =
+			typeof goalIndex === 'number' ? canonicalGoalIndex(goalIndex) : null;
+		if (normalizedGoalIndex !== null) {
+			addTodoForGoal(normalizedGoalIndex, title || '');
+		}
+		const created = store.harada_chart.todos[store.harada_chart.todos.length - 1];
+		if (created && markdown?.trim()) {
+			updateTodo(created.id, { markdown: markdown.trim() });
+		}
+	}
+
+	function createNextTodo(currentTodoId, group) {
+		const groupTodosList = getVisibleGroupTodos(group);
+		const currentIndex = groupTodosList.findIndex((t) => t.id === currentTodoId);
+		const currentTodo = store.harada_chart.todos.find((t) => t.id === currentTodoId);
 		
 		// Create new todo
 		const newTodo = {
 			...defaultTodo(),
-			goalIndex,
+			goalIndex: currentTodo?.listType === 'goal' ? currentTodo.goalIndex : null,
+			listType: currentTodo?.listType === 'custom' ? 'custom' : 'goal',
+			listId:
+				currentTodo?.listType === 'custom'
+					? currentTodo.listId
+					: currentTodo?.goalIndex === null
+						? 'goal:none'
+						: `goal:${currentTodo?.goalIndex}`,
+			listName: currentTodo?.listType === 'custom' ? currentTodo.listName || 'New list' : null,
 			parentId: currentTodo?.parentId ?? null
 		};
 		
-		if (currentIndex >= 0 && currentIndex < goalTodosList.length - 1) {
-			const nextTodo = goalTodosList[currentIndex + 1];
-			const nextIndex = todos.findIndex((t) => t.id === nextTodo.id);
+		if (currentIndex >= 0 && currentIndex < groupTodosList.length - 1) {
+			const nextTodo = groupTodosList[currentIndex + 1];
+			const nextIndex = store.harada_chart.todos.findIndex((t) => t.id === nextTodo.id);
 			if (nextIndex >= 0) {
-				todos = [...todos.slice(0, nextIndex), newTodo, ...todos.slice(nextIndex)];
+				store.harada_chart.todos = [...store.harada_chart.todos.slice(0, nextIndex), newTodo, ...store.harada_chart.todos.slice(nextIndex)];
 			} else {
-				todos = [...todos, newTodo];
+				store.harada_chart.todos = [...store.harada_chart.todos, newTodo];
 			}
 		} else {
-			todos = [...todos, newTodo];
+			store.harada_chart.todos = [...store.harada_chart.todos, newTodo];
 		}
 		
-		saveTodos();
 		return newTodo;
 	}
 
-	function makeSubtask(currentTodoId, goalIndex) {
-		const goalTodosList = getVisibleGoalTodos(goalIndex);
-		const currentIndex = goalTodosList.findIndex((t) => t.id === currentTodoId);
+	function makeSubtask(currentTodoId, group) {
+		const groupTodosList = getVisibleGroupTodos(group);
+		const currentIndex = groupTodosList.findIndex((t) => t.id === currentTodoId);
 		if (currentIndex <= 0) return;
-		const currentTodo = todos.find((t) => t.id === currentTodoId);
-		const previousTodo = goalTodosList[currentIndex - 1];
+		const currentTodo = store.harada_chart.todos.find((t) => t.id === currentTodoId);
+		const previousTodo = groupTodosList[currentIndex - 1];
 		if (!currentTodo || !previousTodo) return;
 		if (currentTodo.parentId === previousTodo.id) return;
 		updateTodo(currentTodoId, { parentId: previousTodo.id });
 	}
 
 	function outdentTodo(currentTodoId) {
-		const currentTodo = todos.find((t) => t.id === currentTodoId);
+		const currentTodo = store.harada_chart.todos.find((t) => t.id === currentTodoId);
 		if (!currentTodo || !currentTodo.parentId) return;
-		const parentTodo = todos.find((t) => t.id === currentTodo.parentId);
+		const parentTodo = store.harada_chart.todos.find((t) => t.id === currentTodo.parentId);
 		if (!parentTodo) return;
 		updateTodo(currentTodoId, { parentId: parentTodo.parentId || null });
 	}
 
-	function canIndentTodo(todoId, goalIndex) {
-		const goalTodosList = getVisibleGoalTodos(goalIndex);
-		const currentIndex = goalTodosList.findIndex((t) => t.id === todoId);
+	function canIndentTodo(todoId, group) {
+		const groupTodosList = getVisibleGroupTodos(group);
+		const currentIndex = groupTodosList.findIndex((t) => t.id === todoId);
 		if (currentIndex <= 0) return false;
-		const currentTodo = todos.find((t) => t.id === todoId);
-		const previousTodo = goalTodosList[currentIndex - 1];
+		const currentTodo = store.harada_chart.todos.find((t) => t.id === todoId);
+		const previousTodo = groupTodosList[currentIndex - 1];
 		if (!currentTodo || !previousTodo) return false;
 		return currentTodo.parentId !== previousTodo.id;
 	}
 
 	function canOutdentTodo(todoId) {
-		const currentTodo = todos.find((t) => t.id === todoId);
+		const currentTodo = store.harada_chart.todos.find((t) => t.id === todoId);
 		return Boolean(currentTodo?.parentId);
 	}
 
-	function deleteAndFocusPrevious(currentTodoId, goalIndex) {
-		const goalTodosList = getVisibleGoalTodos(goalIndex);
+	function deleteAndFocusPrevious(currentTodoId, group) {
+		const goalTodosList = getVisibleGroupTodos(group);
 		
 		// Find the current todo's index in the goal todos
 		const currentIndex = goalTodosList.findIndex((t) => t.id === currentTodoId);
@@ -359,18 +483,19 @@
 				onUpdate={updateTodo}
 				onDelete={deleteTodo}
 				onToggleStatus={cycleTodoStatus}
-				onCreateNext={(todoId, group) => createNextTodo(todoId, group.goalIndex)}
-				onDeletePrevious={(todoId, group) => deleteAndFocusPrevious(todoId, group.goalIndex)}
-				onMakeSubtask={(todoId, group) => makeSubtask(todoId, group.goalIndex)}
+				onCreateNext={createNextTodo}
+				onDeletePrevious={deleteAndFocusPrevious}
+				onMakeSubtask={makeSubtask}
 				onOutdent={(todoId) => outdentTodo(todoId)}
 				onTitleFocus={(id) => (activeTodoId = id)}
 				getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
-				canIndent={(todoId, group) => canIndentTodo(todoId, group.goalIndex)}
+				canIndent={canIndentTodo}
 				canOutdent={(todoId) => canOutdentTodo(todoId)}
+				onCreateTodo={createTodoFromComposer}
 			/>
 		{/if}
 	</div>
-	<TodoQuickNav
+	<DesktopNav
 		{allGoals}
 		defaultGoalIndex={null}
 		onCreateTodo={createTodoFromComposer}

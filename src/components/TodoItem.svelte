@@ -1,6 +1,12 @@
 <script>
-	import { indexToNomenclature } from '$lib/todoUtils.js';
+	import { cubicOut } from 'svelte/easing';
+	import {
+		indexToNomenclature,
+		NEW_LIST_OPTION_VALUE,
+		parseListSelection
+	} from '$lib/todoUtils.js';
 	import SquareMap from './SquareMap.svelte';
+	import GoalSelect from './GoalSelect.svelte';
 	import { ArrowRightToLine, ArrowLeftFromLine } from 'lucide-svelte';
 
 	let { 
@@ -17,7 +23,8 @@
 		indentLevel = 0,
 		canIndent = false,
 		canOutdent = false,
-		onTitleFocus = null
+		onTitleFocus = null,
+		disableAutoFocus = false
 	} = $props();
 
 	let isEditing = $state(false);
@@ -25,7 +32,8 @@
 	let showMobileEditor = $state(false);
 	let editTitle = $state('');
 	let editMarkdown = $state('');
-	let editGoalIndex = $state(null);
+	let editListValue = $state('');
+	let editNewListName = $state('');
 	let titleInputElement = $state(null);
 	let isCreatingNext = $state(false);
 
@@ -37,9 +45,17 @@
 		Date.now() - todo.createdAt < 1000 // Created within last second
 	);
 
-	// Auto-start editing if this is a new empty todo
+	// Filter to only show goals with custom titles (not just the default nomenclature)
+	const goalsWithTitles = $derived.by(() => {
+		return allGoals.filter((goal) => {
+			// A goal has a custom title if its label is different from its code
+			return goal.label && goal.label !== goal.code;
+		});
+	});
+
+	// Auto-start editing if this is a new empty todo (unless auto-focus is disabled)
 	$effect(() => {
-		if (isNewEmptyTodo && !isEditingTitle && !isEditing) {
+		if (isNewEmptyTodo && !isEditingTitle && !isEditing && !disableAutoFocus) {
 			startEditingTitle();
 		}
 	});
@@ -120,15 +136,30 @@
 			}
 		} else if (e.key === 'Escape') {
 			e.preventDefault();
-			isEditingTitle = false;
-			editTitle = todo.title || '';
+			// If this is a new empty todo, delete it like backspace would
+			const trimmedTitle = editTitle.trim();
+			const originalTrimmedTitle = (todo.title || '').trim();
+			const isEmpty = trimmedTitle === '' && originalTrimmedTitle === '';
+			
+			if (isEmpty && isNewEmptyTodo && onDeletePrevious) {
+				onDeletePrevious();
+			} else {
+				isEditingTitle = false;
+				editTitle = todo.title || '';
+			}
 		}
 	}
 
 	function startEditingNotes() {
 		editTitle = todo.title || '';
 		editMarkdown = todo.markdown || '';
-		editGoalIndex = todo.goalIndex;
+		if (todo.listType === 'custom') {
+			editListValue = NEW_LIST_OPTION_VALUE;
+			editNewListName = todo.listName || '';
+		} else {
+			editListValue = typeof todo.goalIndex === 'number' ? String(todo.goalIndex) : '';
+			editNewListName = '';
+		}
 		
 		// Check if mobile (window width < 768px)
 		if (typeof window !== 'undefined' && window.innerWidth < 768) {
@@ -139,14 +170,22 @@
 	}
 
 	function saveChanges() {
+		const listMeta = parseListSelection(editListValue, editNewListName);
+		if (!listMeta) return;
 		onUpdate({
 			title: editTitle,
 			markdown: editMarkdown,
-			goalIndex: editGoalIndex
+			...listMeta
 		});
 		isEditing = false;
 		showMobileEditor = false;
 	}
+
+	const selectedGoalIndexForMap = $derived.by(() => {
+		if (editListValue === '' || editListValue === NEW_LIST_OPTION_VALUE) return null;
+		const parsed = Number(editListValue);
+		return Number.isNaN(parsed) ? null : parsed;
+	});
 
 	function cancelEdit() {
 		isEditing = false;
@@ -157,6 +196,15 @@
 		onDelete();
 		isEditing = false;
 		showMobileEditor = false;
+	}
+
+	function sheet3d(_node, { duration = 220, distance = 20, angle = 3 } = {}) {
+		return {
+			duration,
+			easing: cubicOut,
+			css: (t, u) =>
+				`transform: perspective(850px) translateY(${u * distance}px) rotateX(${u * angle}deg); opacity: ${t};`
+		};
 	}
 </script>
 
@@ -196,7 +244,7 @@
 							saveTitle();
 						}
 					}}
-					class={`flex-1 rounded border border-violet-500 bg-slate-900 px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-violet-500/50 ${
+					class={`flex-1 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-sm outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50 ${
 						todo.status === 'done'
 							? 'text-slate-500 line-through'
 							: 'text-slate-200'
@@ -269,7 +317,7 @@
 		<input
 			type="text"
 			bind:value={editTitle}
-			placeholder="Todo title"
+			placeholder="Task"
 			class="mb-3 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
 		/>
 
@@ -283,18 +331,30 @@
 		</div>
 
 		<!-- Move to goal -->
-		{#if allGoals.length > 0}
+		{#if goalsWithTitles.length > 0}
 			<div class="mb-3 flex items-center gap-2">
-				<SquareMap goal={editGoalIndex !== null ? indexToNomenclature(editGoalIndex) : ''} />
-				<select
-					bind:value={editGoalIndex}
-					class="flex-1 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
-				>
-					{#each allGoals as goal}
-						<option value={goal.index}>{goal.label !== goal.code ? goal.label : goal.code}</option>
-					{/each}
-				</select>
+				<SquareMap
+					goal={selectedGoalIndexForMap !== null ? indexToNomenclature(selectedGoalIndexForMap) : ''}
+				/>
+				<GoalSelect
+					allGoals={allGoals}
+					bind:value={editListValue}
+					includeUnassigned={true}
+					includeNewList={true}
+					stringValues={true}
+					hideWhenNoGoals={true}
+				/>
 			</div>
+			{#if editListValue === NEW_LIST_OPTION_VALUE}
+				<div class="mb-3">
+					<input
+						type="text"
+						bind:value={editNewListName}
+						placeholder="List name"
+						class="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
+					/>
+				</div>
+			{/if}
 		{/if}
 
 		<!-- Actions -->
@@ -317,6 +377,7 @@
 				<button
 					type="button"
 					onclick={saveChanges}
+					disabled={editListValue === NEW_LIST_OPTION_VALUE && !editNewListName.trim()}
 					class="rounded-md border border-violet-600/70 bg-violet-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-violet-500"
 				>
 					Save
@@ -336,7 +397,10 @@
 		tabindex="-1"
 		aria-label="Close editor"
 	>
-		<div class="w-full max-h-[85vh] overflow-y-auto rounded-t-2xl bg-slate-900 p-4 shadow-2xl">
+		<div
+			transition:sheet3d
+			class="w-full max-h-[85vh] overflow-y-auto rounded-t-2xl bg-slate-900 p-4 shadow-2xl will-change-transform"
+		>
 			<!-- Header -->
 			<div class="mb-4 flex items-center justify-between">
 				<h3 class="text-lg font-semibold text-slate-100">Edit Todo</h3>
@@ -357,7 +421,7 @@
 				<input
 					type="text"
 					bind:value={editTitle}
-					placeholder="Todo title"
+					placeholder="Task"
 					class="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
 				/>
 			</div>
@@ -372,18 +436,28 @@
 			</div>
 
 			<!-- Move to goal -->
-			{#if allGoals.length > 0}
+			{#if goalsWithTitles.length > 0}
 				<div class="mb-4 flex items-center gap-2">
-          <span class="text-sm text-slate-400">Part of goal:</span>
-					<select
-						bind:value={editGoalIndex}
-						class="flex-1 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
-					>
-						{#each allGoals as goal}
-							<option value={goal.index}>{goal.code} {goal.label !== goal.code ? `- ${goal.label}` : ''}</option>
-						{/each}
-					</select>
+          <span class="text-sm text-slate-400">Part of:</span>
+					<GoalSelect
+						allGoals={allGoals}
+						bind:value={editListValue}
+						includeUnassigned={true}
+						includeNewList={true}
+						stringValues={true}
+						hideWhenNoGoals={true}
+					/>
 				</div>
+				{#if editListValue === NEW_LIST_OPTION_VALUE}
+					<div class="mb-4">
+						<input
+							type="text"
+							bind:value={editNewListName}
+							placeholder="List name"
+							class="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
+						/>
+					</div>
+				{/if}
 			{/if}
 
 			<!-- Actions -->
@@ -391,6 +465,7 @@
 				<button
 					type="button"
 					onclick={saveChanges}
+					disabled={editListValue === NEW_LIST_OPTION_VALUE && !editNewListName.trim()}
 					class="w-full rounded-md border border-violet-600/70 bg-violet-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-violet-500"
 				>
 					Save Changes

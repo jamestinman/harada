@@ -1,4 +1,5 @@
 // Utility functions for todo management
+import { marked } from 'marked';
 
 export function createTodoId() {
 	return `todo_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -8,11 +9,91 @@ export function defaultTodo() {
 	return {
 		id: createTodoId(),
 		goalIndex: null,
+		listType: 'goal',
+		listId: 'goal:none',
+		listName: null,
 		title: '',
 		markdown: '',
 		status: 'todo',
 		parentId: null,
 		createdAt: Date.now()
+	};
+}
+
+function slugifyListName(name) {
+	return String(name || '')
+		.trim()
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, '-')
+		.replace(/^-+|-+$/g, '');
+}
+
+export const NEW_LIST_OPTION_VALUE = '__new_list__';
+
+export function buildGoalListMeta(goalIndex) {
+	const canonicalGoal =
+		typeof goalIndex === 'number' && !Number.isNaN(goalIndex)
+			? canonicalGoalIndex(goalIndex)
+			: null;
+	return {
+		goalIndex: canonicalGoal,
+		listType: 'goal',
+		listId: canonicalGoal === null ? 'goal:none' : `goal:${canonicalGoal}`,
+		listName: null
+	};
+}
+
+export function buildCustomListMeta(listName) {
+	const safeName =
+		typeof listName === 'string' && listName.trim() ? listName.trim() : 'New list';
+	return {
+		goalIndex: null,
+		listType: 'custom',
+		listId: `custom:${slugifyListName(safeName) || 'new-list'}`,
+		listName: safeName
+	};
+}
+
+export function parseListSelection(value, newListName = '') {
+	if (value === NEW_LIST_OPTION_VALUE) {
+		const trimmedName = String(newListName || '').trim();
+		if (!trimmedName) return null;
+		return buildCustomListMeta(trimmedName);
+	}
+	if (value === '' || value === null || typeof value === 'undefined') {
+		return buildGoalListMeta(null);
+	}
+	const parsedGoal = Number(value);
+	if (Number.isNaN(parsedGoal)) return buildGoalListMeta(null);
+	return buildGoalListMeta(parsedGoal);
+}
+
+export function normalizeTodoListMeta(todo) {
+	const isCustom =
+		todo?.listType === 'custom' ||
+		(typeof todo?.listId === 'string' && todo.listId.startsWith('custom:'));
+
+	if (isCustom) {
+		const safeName =
+			typeof todo?.listName === 'string' && todo.listName.trim()
+				? todo.listName.trim()
+				: 'New list';
+		const safeId =
+			typeof todo?.listId === 'string' && todo.listId.startsWith('custom:')
+				? todo.listId
+				: `custom:${slugifyListName(safeName) || 'new-list'}`;
+		return {
+			...todo,
+			goalIndex: null,
+			listType: 'custom',
+			listId: safeId,
+			listName: safeName
+		};
+	}
+
+	return {
+		...todo,
+		...buildGoalListMeta(todo?.goalIndex)
 	};
 }
 
@@ -26,31 +107,54 @@ export function escapeHtml(str) {
 		.replace(/'/g, '&#39;');
 }
 
+// Configure marked with custom renderers for Tailwind styling
+class CustomRenderer extends marked.Renderer {
+	heading(token) {
+		const level = token.depth;
+		const text = this.parser.parseInline(token.tokens);
+		const classes = {
+			1: 'text-sm font-semibold mb-2',
+			2: 'text-xs font-semibold mb-1',
+			3: 'text-xs font-semibold mb-1'
+		};
+		return `<h${level} class="${classes[level] || 'text-xs font-semibold mb-1'}">${text}</h${level}>`;
+	}
+
+	code(token) {
+		return `<code class="rounded bg-slate-800 px-1 py-0.5 text-[10px]">${token.text}</code>`;
+	}
+
+	codespan(token) {
+		return `<code class="rounded bg-slate-800 px-1 py-0.5 text-[10px]">${token.text}</code>`;
+	}
+
+	list(token) {
+		const tag = token.ordered ? 'ol' : 'ul';
+		const classes = token.ordered ? 'mb-1 list-decimal ml-4' : 'mb-1 list-disc ml-4';
+		const body = this.parser.parse(token.items);
+		return `<${tag} class="${classes}">${body}</${tag}>`;
+	}
+
+	listitem(token) {
+		const text = this.parser.parse(token.tokens);
+		return `<li class="mb-1">${text}</li>`;
+	}
+
+	paragraph(token) {
+		const text = this.parser.parseInline(token.tokens);
+		return `<p class="mb-1">${text}</p>`;
+	}
+}
+
+marked.use({
+	gfm: true,
+	breaks: true,
+	renderer: new CustomRenderer()
+});
+
 export function renderMarkdown(md) {
 	if (!md) return '';
-	let html = escapeHtml(md);
-
-	// Headings
-	html = html.replace(/^### (.*)$/gim, '<h3 class="text-xs font-semibold mb-1">$1</h3>');
-	html = html.replace(/^## (.*)$/gim, '<h2 class="text-xs font-semibold mb-1">$1</h2>');
-	html = html.replace(/^# (.*)$/gim, '<h1 class="text-sm font-semibold mb-2">$1</h1>');
-
-	// Bold / italic / code
-	html = html.replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>');
-	html = html.replace(/\*(.*?)\*/gim, '<em>$1</em>');
-	html = html.replace(
-		/`([^`]+)`/gim,
-		'<code class="rounded bg-slate-800 px-1 py-0.5 text-[10px]">$1</code>'
-	);
-
-	// Simple unordered lists
-	html = html.replace(/^(?:-|\*) (.*)$/gim, '<li class="ml-4 list-disc">$1</li>');
-	html = html.replace(/(<li[\s\S]*?<\/li>)/gim, '<ul class="mb-1">$1</ul>');
-
-	// Line breaks
-	html = html.replace(/\n/g, '<br />');
-
-	return html;
+	return marked.parse(md);
 }
 
 // Convert grid index to chess-like nomenclature (e.g., 40 -> "E5")
@@ -232,4 +336,46 @@ export function getSubGoalIndices(index) {
 	
 	// Center sub-goals and other cells have no sub-goals
 	return [];
+}
+
+// Update the updated_at timestamp for a goal (and its linked goal if applicable)
+export function updateGoalTimestamp(grid, goalIndex) {
+	if (!grid || typeof goalIndex !== 'number' || goalIndex < 0 || goalIndex > 80) return grid;
+	
+	const timestamp = new Date().toISOString();
+	const canonicalIndex = canonicalGoalIndex(goalIndex);
+	
+	// Update the canonical goal
+	if (!grid[canonicalIndex]) {
+		grid[canonicalIndex] = { text: '', status: 'todo', readme: '', color: 'default', updated_at: null };
+	}
+	grid[canonicalIndex] = {
+		...grid[canonicalIndex],
+		updated_at: timestamp
+	};
+	
+	// Also update the linked goal if it exists
+	const linkedGoalIndex = getLinkedGoalIndex(goalIndex);
+	if (linkedGoalIndex !== null && linkedGoalIndex !== canonicalIndex) {
+		if (!grid[linkedGoalIndex]) {
+			grid[linkedGoalIndex] = { text: '', status: 'todo', readme: '', color: 'default', updated_at: null };
+		}
+		grid[linkedGoalIndex] = {
+			...grid[linkedGoalIndex],
+			updated_at: timestamp
+		};
+	}
+	
+	// If editing a center sub-goal directly, also update it
+	if (goalIndex !== canonicalIndex && goalIndex !== linkedGoalIndex) {
+		if (!grid[goalIndex]) {
+			grid[goalIndex] = { text: '', status: 'todo', readme: '', color: 'default', updated_at: null };
+		}
+		grid[goalIndex] = {
+			...grid[goalIndex],
+			updated_at: timestamp
+		};
+	}
+	
+	return grid;
 }

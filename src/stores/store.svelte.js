@@ -10,15 +10,192 @@ const JSON_STORAGE_KEY = 'harada-data-v2'; // Unified JSON format matching Supab
 const LAST_SYNC_KEY = 'harada-last-sync';
 const MIGRATION_FLAG_KEY = 'harada-migrated-to-supabase';
 
+const defaultCell = () => ({ text: '', status: 'todo', readme: '', color: 'default', updated_at: null });
+
 class Store {
+  version = $state("0.0.1"); // Note: use tools/updateVersion.sh to update this so it stays in sync with package.json, android, ios
 	activeTab = $state('harada');
 	selectedGoalFilter = $state('all'); // 'all' | goalIndex as string
 	selectedGoalForNew = $state(''); // filled once goals are known
 	sidebarOpen = $state(false);
-	syncing = $state(false);
+	currentGoalIndex = $state(null); // Current goal index (canonical) for highlighting in SquareMap
+	
+	// Harada chart state - the single source of truth
+	harada_chart = $state({
+		grid: Array.from({ length: 81 }, () => defaultCell()),
+		todos: []
+	});
+	
+	// Save status: 'idle' | 'queued' | 'saving'
+	saveStatus = $state('idle');
+	isOnline = $state(browser ? navigator.onLine : true);
 	lastSyncTime = $state(null);
 	syncError = $state(null);
 	realtimeSubscription = $state(null);
+	
+	// Debounce timer for saving
+	_saveTimeout = null;
+	_isInitialized = false;
+
+	constructor() {
+		if (!browser) return;
+
+		// Listen for online/offline events
+		window.addEventListener('online', () => {
+			this.isOnline = true;
+			this.initialize();
+		});
+		window.addEventListener('offline', () => {
+			this.isOnline = false;
+		});
+
+		// Initialize on creation (local-first; auth effects handled at module level)
+		this.initialize();
+	}
+
+	// Initialize harada_chart from localStorage or Supabase
+	async initialize() {
+		if (!browser || this._isInitialized) return;
+		
+		// Load from localStorage first (always available)
+		const localData = this.loadData(defaultCell, []);
+		
+		// If online and authenticated, try to load from Supabase and compare timestamps
+		if (this.isOnline && authStore.user && supabase) {
+			try {
+				const supabaseData = await this.loadFromSupabase();
+				
+				if (supabaseData) {
+					// Compare timestamps
+					const localTimestamp = this.getLocalTimestamp();
+					const supabaseTimestamp = supabaseData.updated_at ? new Date(supabaseData.updated_at).getTime() : 0;
+					
+					// Check if Supabase data is actually empty (no goals, no todos)
+					const supabaseHasData = (supabaseData.grid || []).some(c => c && c.text && c.text.trim()) || (supabaseData.todos || []).length > 0;
+					const localHasData = localData.grid.some(c => c && c.text && c.text.trim()) || localData.todos.length > 0;
+					
+					if (supabaseTimestamp > localTimestamp) {
+						// Supabase is more recent, use it
+						this.harada_chart = {
+							grid: supabaseData.grid || Array.from({ length: 81 }, () => defaultCell()),
+							todos: supabaseData.todos || []
+						};
+						// Update localStorage with Supabase data
+						this.saveData(this.harada_chart.grid, this.harada_chart.todos);
+					} else if (localTimestamp > supabaseTimestamp) {
+						// Local is more recent, use local and sync to Supabase
+						this.harada_chart = {
+							grid: localData.grid || Array.from({ length: 81 }, () => defaultCell()),
+							todos: localData.todos || []
+						};
+						await this.saveToSupabase(this.harada_chart.grid, this.harada_chart.todos);
+					} else {
+						// Timestamps are equal - prefer the one with actual data
+						if (localHasData && !supabaseHasData) {
+							// Local has data but Supabase is empty, use local and sync
+							this.harada_chart = {
+								grid: localData.grid || Array.from({ length: 81 }, () => defaultCell()),
+								todos: localData.todos || []
+							};
+							await this.saveToSupabase(this.harada_chart.grid, this.harada_chart.todos);
+						} else if (supabaseHasData && !localHasData) {
+							// Supabase has data but local is empty, use Supabase
+							this.harada_chart = {
+								grid: supabaseData.grid || Array.from({ length: 81 }, () => defaultCell()),
+								todos: supabaseData.todos || []
+							};
+							this.saveData(this.harada_chart.grid, this.harada_chart.todos);
+						} else {
+							// Both have data or both are empty - use local (preserve user's current state)
+							this.harada_chart = {
+								grid: localData.grid || Array.from({ length: 81 }, () => defaultCell()),
+								todos: localData.todos || []
+							};
+							// Sync to Supabase if local has data (ensures first-time login saves local data)
+							if (localHasData) {
+								await this.saveToSupabase(this.harada_chart.grid, this.harada_chart.todos);
+							}
+						}
+					}
+					
+					// Subscribe to realtime updates
+					this.subscribeToRealtimeUpdates((update) => {
+						const currentStr = JSON.stringify(this.harada_chart);
+						const updateStr = JSON.stringify({ grid: update.grid, todos: update.todos });
+						
+						if (currentStr !== updateStr) {
+							this.harada_chart = {
+								grid: update.grid || Array.from({ length: 81 }, () => defaultCell()),
+								todos: update.todos || []
+							};
+							// Update localStorage when receiving realtime updates
+							this.saveData(this.harada_chart.grid, this.harada_chart.todos);
+						}
+					});
+				} else {
+					// No Supabase data, use local and upload if there's data
+					this.harada_chart = {
+						grid: localData.grid || Array.from({ length: 81 }, () => defaultCell()),
+						todos: localData.todos || []
+					};
+					
+					const hasLocalData = localData.grid.some(c => c.text.trim()) || localData.todos.length > 0;
+					if (hasLocalData) {
+						await this.saveToSupabase(this.harada_chart.grid, this.harada_chart.todos);
+					}
+				}
+			} catch (error) {
+				console.error('Error initializing from Supabase:', error);
+				// Fall back to local data
+				this.harada_chart = {
+					grid: localData.grid || Array.from({ length: 81 }, () => defaultCell()),
+					todos: localData.todos || []
+				};
+			}
+		} else {
+			// Offline or not authenticated, use local data
+			this.harada_chart = {
+				grid: localData.grid || Array.from({ length: 81 }, () => defaultCell()),
+				todos: localData.todos || []
+			};
+		}
+		
+		this._isInitialized = true;
+	}
+
+	// Perform the actual save operation
+	async _performSave() {
+		if (!browser) return;
+		
+		this.saveStatus = 'saving';
+		
+		// Always save to localStorage immediately
+		this.saveData(this.harada_chart.grid, this.harada_chart.todos);
+    console.log('Saved to localStorage');
+		
+		// If online and authenticated, save to Supabase
+		if (this.isOnline && authStore.user && supabase) {
+			try {
+				await this.saveToSupabase(this.harada_chart.grid, this.harada_chart.todos);
+        console.log('Saved to Supabase');
+			} catch (error) {
+				console.error('Error saving to Supabase:', error);
+				this.syncError = error.message;
+			}
+		}
+		
+		this.saveStatus = 'idle';
+	}
+
+	// Get local timestamp from stored data
+	getLocalTimestamp() {
+		if (!browser) return 0;
+		const jsonData = localGet(JSON_STORAGE_KEY, null);
+		if (jsonData && jsonData.updatedAt) {
+			return new Date(jsonData.updatedAt).getTime();
+		}
+		return 0;
+	}
 
 	// --- Persistence helpers (IO only, no Harada-specific logic) ---
 
@@ -45,7 +222,8 @@ class Store {
 											? 'done'
 											: 'todo',
 									readme: typeof cell.readme === 'string' ? cell.readme : '',
-									color: typeof cell.color === 'string' ? cell.color : 'default'
+									color: typeof cell.color === 'string' ? cell.color : 'default',
+									updated_at: typeof cell.updated_at === 'string' ? cell.updated_at : null
 								};
 							}
 							return defaultCell();
@@ -100,7 +278,8 @@ class Store {
 											? 'done'
 											: 'todo',
 									readme: typeof cell.readme === 'string' ? cell.readme : '',
-									color: typeof cell.color === 'string' ? cell.color : 'default'
+									color: typeof cell.color === 'string' ? cell.color : 'default',
+									updated_at: typeof cell.updated_at === 'string' ? cell.updated_at : null
 								};
 							}
 							return defaultCell();
@@ -250,7 +429,6 @@ class Store {
 		if (!browser || !authStore.user || !supabase) return null;
 
 		try {
-			this.syncing = true;
 			this.syncError = null;
 
 			const { data, error } = await supabase
@@ -273,7 +451,8 @@ class Store {
 				return {
 					grid: data.grid || [],
 					todos: data.todos || [],
-					title: data.title || 'My Harada Chart'
+					title: data.title || 'My Harada Chart',
+					updated_at: data.updated_at
 				};
 			}
 
@@ -282,8 +461,6 @@ class Store {
 			console.error('Failed to load from Supabase:', error);
 			this.syncError = error.message;
 			return null;
-		} finally {
-			this.syncing = false;
 		}
 	}
 
@@ -291,7 +468,6 @@ class Store {
 		if (!browser || !authStore.user || !supabase) return false;
 
 		try {
-			this.syncing = true;
 			this.syncError = null;
 
 			// Use spread operator to avoid DataCloneError with $state objects
@@ -326,59 +502,23 @@ class Store {
 			console.error('Failed to save to Supabase:', error);
 			this.syncError = error.message;
 			return false;
-		} finally {
-			this.syncing = false;
 		}
 	}
 
-	async migrateLocalDataToSupabase(defaultCell, goalIndices) {
-		if (!browser || !authStore.user) return false;
-
-		// Check if already migrated
-		const alreadyMigrated = localStorage.getItem(MIGRATION_FLAG_KEY);
-		if (alreadyMigrated) return false;
-
-		// Check if there's existing data in Supabase
-		const supabaseData = await this.loadFromSupabase();
-		if (supabaseData) {
-			// Supabase data exists, mark as migrated and use that
-			localStorage.setItem(MIGRATION_FLAG_KEY, 'true');
-			return false;
+	// Handle auth state changes
+	handleAuthChange() {
+		if (!browser) return;
+		
+		// Reset initialization flag so we can reinitialize when auth changes
+		this._isInitialized = false;
+		
+		if (!authStore.user) {
+			// User logged out, unsubscribe from realtime
+			this.unsubscribeFromRealtimeUpdates();
+		} else {
+			// User logged in, reinitialize to sync with Supabase
+			this.initialize();
 		}
-
-		// Load local data in JSON format
-		const localData = this.loadData(defaultCell, goalIndices);
-
-		const hasLocalData =
-			localData.grid.some((c) => c.text.trim()) || localData.todos.length > 0;
-
-		if (hasLocalData) {
-			console.log('Migrating local data to Supabase...');
-			const success = await this.saveToSupabase(localData.grid, localData.todos);
-			if (success) {
-				localStorage.setItem(MIGRATION_FLAG_KEY, 'true');
-				console.log('Migration successful!');
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	async syncWithSupabase(gridSnapshot, todosSnapshot) {
-		if (!authStore.user) return;
-
-		// Debounce: don't sync too frequently
-		const lastSync = localStorage.getItem(LAST_SYNC_KEY);
-		if (lastSync) {
-			const timeSinceSync = Date.now() - new Date(lastSync).getTime();
-			if (timeSinceSync < 2000) {
-				// Less than 2 seconds
-				return;
-			}
-		}
-
-		await this.saveToSupabase(gridSnapshot, todosSnapshot);
 	}
 
 	subscribeToRealtimeUpdates(onUpdate) {

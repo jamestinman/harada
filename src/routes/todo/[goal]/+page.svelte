@@ -12,37 +12,32 @@
 		canonicalGoalIndex,
 		getLinkedGoalIndex,
 		getParentGoalIndex,
-		getSubGoalIndices
+		getSubGoalIndices,
+		normalizeTodoListMeta,
+		buildGoalListMeta,
+		buildCustomListMeta,
+		updateGoalTimestamp
 	} from '$lib/todoUtils.js';
 	import SquareMap from '$components/SquareMap.svelte';
 	import TodoGroupedList from '$components/TodoGroupedList.svelte';
-	import TodoQuickNav from '$components/TodoQuickNav.svelte';
+	import DesktopNav from '$components/DesktopNav.svelte';
 
-	// Load data once on mount
-	let grid = $state([]);
-	let todos = $state([]);
-	let dataLoaded = $state(false);
+	// Use store.harada_chart directly - it's reactive
+	const grid = $derived(store.harada_chart.grid);
+	const todos = $derived(store.harada_chart.todos.map((todo) => normalizeTodoListMeta(todo)));
+	const dataLoaded = $derived(true); // Always loaded since store handles initialization
 	let activeTodoId = $state(null);
+	
+	// Goal editing state (declared early so it can be used in derived values)
+	let isEditingGoal = $state(false);
+	let editedGoalTitle = $state('');
+	let editedGoalDescription = $state('');
+	let goalTitleInputElement = $state(null);
+	let goalDescriptionTextareaElement = $state(null);
+	let selectedColor = $state('default');
 
 	// Get goal param reactively
 	const goalParam = $derived(page.params.goal);
-
-
-	// Load data once
-	$effect(() => {
-		if (!browser || dataLoaded) return;
-		
-		const data = store.loadData(
-			() => ({ text: '', status: 'todo', readme: '', color: 'default' }),
-			[]
-		);
-		grid = data.grid || [];
-		todos = (data.todos || []).map((todo) => ({
-			...todo,
-			goalIndex: canonicalGoalIndex(todo.goalIndex)
-		}));
-		dataLoaded = true;
-	});
 
 	// Compute goal indices (only depends on grid structure, not grid content)
 	const goalIndices = $derived.by(() => {
@@ -65,17 +60,26 @@
 		return parsed === null ? null : canonicalGoalIndex(parsed);
 	});
 
-	// Handle invalid goal param
+	// Handle invalid goal param and update store's currentGoalIndex
 	$effect(() => {
 		if (!browser || !dataLoaded) return;
 		if (goalIndex === null && goalParam) {
 			goto('/todo', { replaceState: true });
+			return;
+		}
+		// Update store's currentGoalIndex for SquareMap highlighting
+		if (goalIndex !== null) {
+			store.currentGoalIndex = goalIndex;
 		}
 	});
 
-	// Compute goal label
+	// Compute goal label - use edited title while editing to prevent reactivity issues
 	const goalLabel = $derived.by(() => {
 		if (goalIndex === null) return '';
+		// If editing, use the edited title to prevent reactivity from resetting the display
+		if (isEditingGoal) {
+			return editedGoalTitle.trim() || indexToNomenclature(goalIndex);
+		}
 		return getGoalLabelFromIndex(goalIndex);
 	});
 
@@ -93,19 +97,40 @@
 		return text || indexToNomenclature(index);
 	}
 
-	// Get goal markdown/readme
+	// Get goal markdown/readme - use edited description while editing
 	const goalMarkdown = $derived.by(() => {
 		if (goalIndex === null) return '';
+		// If editing, use the edited description to prevent reactivity issues
+		if (isEditingGoal) {
+			return editedGoalDescription.trim();
+		}
 		const cell = grid[goalIndex];
 		return (cell?.readme ?? '').trim();
 	});
 
-	// Update selectedColor when goal changes
+	// Update selectedColor when goal changes (but not while editing to prevent reactivity issues)
 	$effect(() => {
+		if (isEditingGoal) return; // Don't update while editing
 		const currentGoalIndex = goalIndex;
 		const currentGrid = grid;
 		if (currentGoalIndex !== null && currentGrid[currentGoalIndex]) {
 			selectedColor = currentGrid[currentGoalIndex].color || 'default';
+		}
+	});
+
+	// Check if goal has no custom title (just the default nomenclature)
+	const hasNoCustomTitle = $derived.by(() => {
+		if (goalIndex === null) return false;
+		const cell = grid[goalIndex];
+		const text = (cell?.text ?? '').trim();
+		return !text || text === indexToNomenclature(goalIndex);
+	});
+
+	// Auto-start editing goal title if it has no custom title
+	$effect(() => {
+		if (!dataLoaded || goalIndex === null || isEditingGoal) return;
+		if (hasNoCustomTitle) {
+			startEditingGoal(true);
 		}
 	});
 
@@ -119,12 +144,22 @@
 				index: idx,
 				code: indexToNomenclature(idx),
 				label: text || indexToNomenclature(idx),
-				isMainGoal: Math.floor(idx / 9) === 4 && idx % 9 === 4
+				isMainGoal: Math.floor(idx / 9) === 4 && idx % 9 === 4,
+				updated_at: cell?.updated_at || null
 			};
 		}).sort((a, b) => {
-			// Main goal first, then by index
+			// Main goal always first
 			if (a.isMainGoal) return -1;
 			if (b.isMainGoal) return 1;
+			
+			// Sort by updated_at descending (most recently updated first)
+			const aTime = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+			const bTime = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+			if (aTime !== bTime) {
+				return bTime - aTime; // Descending order
+			}
+			
+			// Fallback to index order if timestamps are equal or both null
 			return a.index - b.index;
 		});
 	});
@@ -186,7 +221,7 @@
 
 	function getVisibleGoalTodos(targetGoalIndex) {
 		const filtered = todos.filter((t) => {
-			const matchesGoal = t.goalIndex === targetGoalIndex;
+			const matchesGoal = (t.listType === 'goal' || !t.listType) && t.goalIndex === targetGoalIndex;
 			const isCompleted = t.status === 'done';
 			return matchesGoal && (showCompleted || !isCompleted);
 		});
@@ -195,12 +230,35 @@
 
 	function getGoalScopeIndices() {
 		if (goalIndex === null) return [];
+
+		// Outer block centers (B2, E2, etc.) should show their full local 3x3 child grid.
+		if (goalIndex !== 40) {
+			const row = Math.floor(goalIndex / 9);
+			const col = goalIndex % 9;
+			const isOuterBlockCenter = row % 3 === 1 && col % 3 === 1;
+			if (isOuterBlockCenter) {
+				const childIndices = [];
+				for (let r = row - 1; r <= row + 1; r++) {
+					for (let c = col - 1; c <= col + 1; c++) {
+						if (r < 0 || r > 8 || c < 0 || c > 8) continue;
+						childIndices.push(r * 9 + c);
+					}
+				}
+				// Keep current goal first, then show the rest of the child groups.
+				return [goalIndex, ...childIndices.filter((idx) => idx !== goalIndex)];
+			}
+		}
+
 		const subGoalIndices = getSubGoalIndices(goalIndex).map((idx) => canonicalGoalIndex(idx));
-		return [goalIndex, ...subGoalIndices];
+		// Dedupe so central pairs (e.g. B2 + D4, E2 + E4) appear only once.
+		const canonicalSet = new Set([goalIndex, ...subGoalIndices]);
+		return [...canonicalSet];
 	}
 
 	const goalGroups = $derived.by(() => {
 		const indices = getGoalScopeIndices();
+
+		// Default behavior: one group per goal
 		return indices
 			.map((idx) => ({
 				id: `goal-${idx}`,
@@ -213,21 +271,50 @@
 			.filter((group) => group.todos.length > 0);
 	});
 
+	// When this goal has no todos, ensure one blank todo exists so the user can type immediately
+	$effect(() => {
+		if (goalIndex === null || !dataLoaded) return;
+		if (goalGroups.length === 0) {
+			addTodo(goalIndex);
+		}
+	});
+
 	// Todo management functions
 	function addTodo(targetGoalIndex = goalIndex) {
 		if (targetGoalIndex === null) return;
-		const activeTodo = todos.find((t) => t.id === activeTodoId);
+		const activeTodo = store.harada_chart.todos.find((t) => t.id === activeTodoId);
 		const todo = {
 			...defaultTodo(),
-			goalIndex: targetGoalIndex,
+			...buildGoalListMeta(targetGoalIndex),
 			parentId: activeTodo?.goalIndex === targetGoalIndex ? activeTodo.parentId ?? null : null
 		};
-		todos = [...todos, todo];
-		saveTodos();
+		store.harada_chart.todos = [...store.harada_chart.todos, todo];
+		
+		// Update goal timestamp if todo is associated with a goal
+		if (typeof targetGoalIndex === 'number') {
+			updateGoalTimestamp(store.harada_chart.grid, targetGoalIndex);
+			// Force reactivity by reassigning
+			store.harada_chart.grid = [...store.harada_chart.grid];
+		}
+		
+		// Set active todo ID so it gets focused
+		activeTodoId = todo.id;
 		return todo;
 	}
 
-	function createTodoFromComposer({ title, markdown, goalIndex: selectedGoalIndex }) {
+	function createTodoFromComposer({ title, markdown, goalIndex: selectedGoalIndex, listType, listName }) {
+		if (listType === 'custom' || (listName && listName.trim())) {
+			const customMeta = buildCustomListMeta(listName);
+			const todo = {
+				...defaultTodo(),
+				title: title || '',
+				markdown: markdown || '',
+				...customMeta,
+				parentId: null
+			};
+			store.harada_chart.todos = [...store.harada_chart.todos, todo];
+			return;
+		}
 		const targetGoalIndex =
 			typeof selectedGoalIndex === 'number' ? canonicalGoalIndex(selectedGoalIndex) : goalIndex;
 		if (targetGoalIndex === null) return;
@@ -235,32 +322,67 @@
 			...defaultTodo(),
 			title: title || '',
 			markdown: markdown || '',
-			goalIndex: targetGoalIndex,
+			...buildGoalListMeta(targetGoalIndex),
 			parentId: null
 		};
-		todos = [...todos, todo];
-		saveTodos();
+		store.harada_chart.todos = [...store.harada_chart.todos, todo];
+		
+		// Update goal timestamp if todo is associated with a goal
+		if (typeof targetGoalIndex === 'number') {
+			updateGoalTimestamp(store.harada_chart.grid, targetGoalIndex);
+			// Force reactivity by reassigning
+			store.harada_chart.grid = [...store.harada_chart.grid];
+		}
+		
+		// Set active todo ID so it gets focused (if title is empty, it will auto-focus)
+		if (!title || title.trim() === '') {
+			activeTodoId = todo.id;
+		}
 	}
 
 	function updateTodo(id, patch) {
-		const nextPatch =
-			typeof patch?.goalIndex === 'number'
-				? { ...patch, goalIndex: canonicalGoalIndex(patch.goalIndex) }
-				: patch;
-		todos = todos.map((t) => (t.id === id ? { ...t, ...nextPatch } : t));
-		// Force reactivity by creating new array
-		todos = [...todos];
-		saveTodos();
+		const oldTodo = store.harada_chart.todos.find((t) => t.id === id);
+		let nextPatch = patch;
+		if (patch?.listType === 'custom') {
+			nextPatch = {
+				...patch,
+				...buildCustomListMeta(patch.listName)
+			};
+		} else if (typeof patch?.goalIndex === 'number' || patch?.goalIndex === null) {
+			nextPatch = {
+				...patch,
+				...buildGoalListMeta(patch.goalIndex)
+			};
+		}
+		
+		// Update store.harada_chart.todos
+		store.harada_chart.todos = store.harada_chart.todos.map((t) => (t.id === id ? { ...t, ...nextPatch } : t));
+		
+		// Update goal timestamp if todo is associated with a goal
+		const newTodo = store.harada_chart.todos.find((t) => t.id === id);
+		const goalIndexToUpdate = newTodo?.goalIndex ?? oldTodo?.goalIndex;
+		if (typeof goalIndexToUpdate === 'number') {
+			updateGoalTimestamp(store.harada_chart.grid, goalIndexToUpdate);
+			// Force reactivity by reassigning
+			store.harada_chart.grid = [...store.harada_chart.grid];
+		}
 	}
 
 	function deleteTodo(id) {
-		todos = todos.filter((t) => t.id !== id);
-		saveTodos();
+		const todo = store.harada_chart.todos.find((t) => t.id === id);
+		store.harada_chart.todos = store.harada_chart.todos.filter((t) => t.id !== id);
+		
+		// Update goal timestamp if todo was associated with a goal
+		if (todo && typeof todo.goalIndex === 'number') {
+			updateGoalTimestamp(store.harada_chart.grid, todo.goalIndex);
+			// Force reactivity by reassigning
+			store.harada_chart.grid = [...store.harada_chart.grid];
+		}
 	}
 
 	function cycleTodoStatus(id) {
 		const statuses = ['todo', 'done'];
-		const todo = todos.find((t) => t.id === id);
+		const todo = store.harada_chart.todos.find((t) => t.id === id);
 		if (!todo) return;
 		
 		const currentIndex = statuses.indexOf(todo.status ?? 'todo');
@@ -272,25 +394,33 @@
 			return;
 		}
 		
-		todos = todos.map((t) => {
+		// Update store.harada_chart.todos
+		store.harada_chart.todos = store.harada_chart.todos.map((t) => {
 			if (t.id !== id) return t;
 			return { ...t, status: next };
 		});
-		// Force reactivity by creating new array
-		todos = [...todos];
-		saveTodos();
+		
+		// Update goal timestamp if todo is associated with a goal
+		if (typeof todo.goalIndex === 'number') {
+			updateGoalTimestamp(store.harada_chart.grid, todo.goalIndex);
+			// Force reactivity by reassigning
+			store.harada_chart.grid = [...store.harada_chart.grid];
+		}
 	}
 
 	function createNextTodo(currentTodoId, targetGoalIndex = goalIndex) {
 		if (targetGoalIndex === null) return null;
 		const goalTodosList = getVisibleGoalTodos(targetGoalIndex);
 		const currentIndex = goalTodosList.findIndex((t) => t.id === currentTodoId);
-		const currentTodo = todos.find((t) => t.id === currentTodoId);
+		const currentTodo = store.harada_chart.todos.find((t) => t.id === currentTodoId);
 		
 		// Create new todo
 		const newTodo = {
 			...defaultTodo(),
 			goalIndex: targetGoalIndex,
+			listType: 'goal',
+			listId: `goal:${targetGoalIndex}`,
+			listName: null,
 			parentId: currentTodo?.parentId ?? null
 		};
 		
@@ -298,18 +428,24 @@
 		if (currentIndex >= 0 && currentIndex < goalTodosList.length - 1) {
 			// Insert after the current todo
 			const nextTodo = goalTodosList[currentIndex + 1];
-			const nextIndex = todos.findIndex((t) => t.id === nextTodo.id);
+			const nextIndex = store.harada_chart.todos.findIndex((t) => t.id === nextTodo.id);
 			if (nextIndex >= 0) {
-				todos = [...todos.slice(0, nextIndex), newTodo, ...todos.slice(nextIndex)];
+				store.harada_chart.todos = [...store.harada_chart.todos.slice(0, nextIndex), newTodo, ...store.harada_chart.todos.slice(nextIndex)];
 			} else {
-				todos = [...todos, newTodo];
+				store.harada_chart.todos = [...store.harada_chart.todos, newTodo];
 			}
 		} else {
 			// Add to end
-			todos = [...todos, newTodo];
+			store.harada_chart.todos = [...store.harada_chart.todos, newTodo];
 		}
 		
-		saveTodos();
+		// Update goal timestamp if todo is associated with a goal
+		if (typeof targetGoalIndex === 'number') {
+			updateGoalTimestamp(store.harada_chart.grid, targetGoalIndex);
+			// Force reactivity by reassigning
+			store.harada_chart.grid = [...store.harada_chart.grid];
+		}
+		
 		return newTodo;
 	}
 
@@ -319,7 +455,7 @@
 		const currentIndex = goalTodosList.findIndex((t) => t.id === currentTodoId);
 		if (currentIndex <= 0) return; // Can't make first todo a subtask
 		
-		const currentTodo = todos.find((t) => t.id === currentTodoId);
+		const currentTodo = store.harada_chart.todos.find((t) => t.id === currentTodoId);
 		if (!currentTodo) return;
 		
 		// Find the previous todo (potential parent)
@@ -334,11 +470,11 @@
 	}
 
 	function outdentTodo(currentTodoId) {
-		const currentTodo = todos.find((t) => t.id === currentTodoId);
+		const currentTodo = store.harada_chart.todos.find((t) => t.id === currentTodoId);
 		if (!currentTodo || !currentTodo.parentId) return; // Can't outdent if no parent
 		
 		// Find the parent todo
-		const parentTodo = todos.find(t => t.id === currentTodo.parentId);
+		const parentTodo = store.harada_chart.todos.find(t => t.id === currentTodo.parentId);
 		if (!parentTodo) return;
 		
 		// Make the current todo a sibling of its parent (child of parent's parent)
@@ -350,7 +486,7 @@
 		const currentIndex = goalTodosList.findIndex((t) => t.id === todoId);
 		if (currentIndex <= 0) return false; // Can't indent first todo
 		
-		const currentTodo = todos.find((t) => t.id === todoId);
+		const currentTodo = store.harada_chart.todos.find((t) => t.id === todoId);
 		if (!currentTodo) return false;
 		
 		const previousTodo = goalTodosList[currentIndex - 1];
@@ -361,7 +497,7 @@
 	}
 
 	function canOutdentTodo(todoId) {
-		const currentTodo = todos.find((t) => t.id === todoId);
+		const currentTodo = store.harada_chart.todos.find((t) => t.id === todoId);
 		if (!currentTodo) return false;
 		
 		// Can outdent if has a parent
@@ -417,20 +553,8 @@
 		}
 	}
 
-	function saveTodos() {
-		if (!browser || !dataLoaded) return;
-		// Save to store - ensure we're saving the current state
-		store.saveData(grid, todos);
-		// Also sync to Supabase if logged in
-		if (authStore.user) {
-			store.syncWithSupabase(grid, todos);
-		}
-	}
+	// saveTodos removed - store.harada_chart changes trigger automatic debounced saving
 
-	let isEditingGoal = $state(false);
-	let editedGoalContent = $state('');
-	let goalTextareaElement = $state(null);
-	let selectedColor = $state('default');
 	let showCompleted = $state(false);
 
 	// Available colors for goals
@@ -442,17 +566,29 @@
 	];
 
 	// Initialize edited content when entering edit mode
-	function startEditingGoal() {
+	function startEditingGoal(blankIfNoTitle = false) {
 		if (goalIndex === null) return;
 		const cell = grid[goalIndex];
 		const title = (cell?.text ?? '').trim();
-		const notes = (cell?.readme ?? '').trim();
-		editedGoalContent = title + (notes ? '\n' + notes : '');
+		const description = (cell?.readme ?? '').trim();
+		
+		// If blankIfNoTitle is true and there's no custom title, start with blank title
+		if (blankIfNoTitle && (!title || title === indexToNomenclature(goalIndex))) {
+			editedGoalTitle = '';
+			editedGoalDescription = description || '';
+		} else {
+			editedGoalTitle = title || '';
+			editedGoalDescription = description || '';
+		}
+		
 		selectedColor = cell?.color || 'default';
 		isEditingGoal = true;
-		// Focus the textarea after it renders
+		// Focus the title input after it renders
 		setTimeout(() => {
-			if (goalTextareaElement) goalTextareaElement.focus();
+			if (goalTitleInputElement) {
+				goalTitleInputElement.focus();
+				goalTitleInputElement.select();
+			}
 		}, 0);
 	}
 
@@ -460,67 +596,65 @@
 	function updateGoalColor(color) {
 		if (goalIndex === null) return;
 		
-		if (!grid[goalIndex]) {
-			grid[goalIndex] = { text: '', status: 'todo', readme: '', color: 'default' };
+		if (!store.harada_chart.grid[goalIndex]) {
+			store.harada_chart.grid[goalIndex] = { text: '', status: 'todo', readme: '', color: 'default', updated_at: null };
 		}
-		grid[goalIndex].color = color;
+		store.harada_chart.grid[goalIndex].color = color;
 		selectedColor = color;
 
 		const linkedGoalIndex = getLinkedGoalIndex(goalIndex);
 		if (linkedGoalIndex !== null) {
-			if (!grid[linkedGoalIndex]) {
-				grid[linkedGoalIndex] = { text: '', status: 'todo', readme: '', color: 'default' };
+			if (!store.harada_chart.grid[linkedGoalIndex]) {
+				store.harada_chart.grid[linkedGoalIndex] = { text: '', status: 'todo', readme: '', color: 'default', updated_at: null };
 			}
-			grid[linkedGoalIndex].color = color;
+			store.harada_chart.grid[linkedGoalIndex].color = color;
 		}
 		
-		// Force reactivity
-		grid = [...grid];
-		
-		// Save
-		saveTodos();
+		// Force reactivity by reassigning
+		store.harada_chart.grid = [...store.harada_chart.grid];
 	}
 
 	// Save edited goal content
 	function saveGoalEdit() {
 		if (goalIndex === null || !isEditingGoal) return;
 		
-		const lines = editedGoalContent.split('\n');
-		const title = lines[0]?.trim() || '';
-		const notes = lines.slice(1).join('\n').trim();
+		const title = editedGoalTitle.trim();
+		const description = editedGoalDescription.trim();
 		
 		// Update grid
-		if (!grid[goalIndex]) {
-			grid[goalIndex] = { text: '', status: 'todo', readme: '', color: 'default' };
+		if (!store.harada_chart.grid[goalIndex]) {
+			store.harada_chart.grid[goalIndex] = { text: '', status: 'todo', readme: '', color: 'default', updated_at: null };
 		}
-		grid[goalIndex].text = title;
-		grid[goalIndex].readme = notes;
-		grid[goalIndex].color = selectedColor;
+		store.harada_chart.grid[goalIndex].text = title;
+		store.harada_chart.grid[goalIndex].readme = description;
+		store.harada_chart.grid[goalIndex].color = selectedColor;
+		updateGoalTimestamp(store.harada_chart.grid, goalIndex);
 
 		const linkedGoalIndex = getLinkedGoalIndex(goalIndex);
 		if (linkedGoalIndex !== null) {
-			if (!grid[linkedGoalIndex]) {
-				grid[linkedGoalIndex] = { text: '', status: 'todo', readme: '', color: 'default' };
+			if (!store.harada_chart.grid[linkedGoalIndex]) {
+				store.harada_chart.grid[linkedGoalIndex] = { text: '', status: 'todo', readme: '', color: 'default', updated_at: null };
 			}
-			grid[linkedGoalIndex].text = title;
-			grid[linkedGoalIndex].readme = notes;
-			grid[linkedGoalIndex].status = grid[goalIndex].status;
-			grid[linkedGoalIndex].color = selectedColor;
+			store.harada_chart.grid[linkedGoalIndex].text = title;
+			store.harada_chart.grid[linkedGoalIndex].readme = description;
+			store.harada_chart.grid[linkedGoalIndex].status = store.harada_chart.grid[goalIndex].status;
+			store.harada_chart.grid[linkedGoalIndex].color = selectedColor;
 		}
 		
-		// Force reactivity
-		grid = [...grid];
-		
-		// Save
-		saveTodos();
+		// Force reactivity by reassigning
+		store.harada_chart.grid = [...store.harada_chart.grid];
 		
 		isEditingGoal = false;
+
+		// Persist immediately so changes are saved to localStorage (and Supabase); the layout's debounced save may not re-run when grid is updated from here
+		store._performSave();
 	}
 
 	// Cancel editing
 	function cancelGoalEdit() {
 		isEditingGoal = false;
-		editedGoalContent = '';
+		editedGoalTitle = '';
+		editedGoalDescription = '';
 	}
 
 	// Navigate up one level in the goal hierarchy
@@ -553,19 +687,43 @@
 			<div class="mb-6">
 				<div class="mb-4 flex items-center justify-between">
 					<div class="flex-1">
+            <!--
 						<button
 							onclick={moveUpALevel}
 							class="mb-2 text-sm text-slate-400 hover:text-slate-200 transition-colors"
 						>
 							← {parentGoalLabel ? `Back to ${parentGoalLabel}` : 'Back to all'}
 						</button>
+          -->
 						{#if isEditingGoal}
-							<div class="space-y-2">
+							<div class="space-y-3">
+								<input
+									type="text"
+									bind:this={goalTitleInputElement}
+									bind:value={editedGoalTitle}
+									class="w-full rounded-md border border-violet-500 bg-slate-900 px-3 py-2 text-2xl font-bold text-slate-100 placeholder-slate-500 outline-none focus:ring-2 focus:ring-violet-500/50"
+									placeholder={`Goal ${indexToNomenclature(goalIndex)} title`}
+									onkeydown={(e) => {
+										if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+											e.preventDefault();
+											saveGoalEdit();
+										} else if (e.key === 'Escape') {
+											e.preventDefault();
+											cancelGoalEdit();
+										} else if (e.key === 'Tab' && !e.shiftKey && !editedGoalDescription) {
+											// Tab to description if empty, otherwise default behavior
+											e.preventDefault();
+											setTimeout(() => {
+												if (goalDescriptionTextareaElement) goalDescriptionTextareaElement.focus();
+											}, 0);
+										}
+									}}
+								/>
 								<textarea
-									bind:this={goalTextareaElement}
-									bind:value={editedGoalContent}
-									class="w-full min-h-[3rem] rounded-md border border-violet-500 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:ring-2 focus:ring-violet-500/50 resize-none"
-									placeholder="Goal title&#10;Notes go here..."
+									bind:this={goalDescriptionTextareaElement}
+									bind:value={editedGoalDescription}
+									class="w-full min-h-[6rem] rounded-md border border-violet-500 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:ring-2 focus:ring-violet-500/50 resize-none"
+									placeholder="Add description (supports markdown)..."
 									onkeydown={(e) => {
 										if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
 											e.preventDefault();
@@ -575,7 +733,6 @@
 											cancelGoalEdit();
 										}
 									}}
-									onblur={saveGoalEdit}
 								></textarea>
 							</div>
 						{:else}
@@ -584,18 +741,24 @@
 								onclick={startEditingGoal}
 								class="text-left w-full cursor-pointer group"
 							>
-								<h1 class="text-2xl font-bold text-slate-100 group-hover:text-violet-300 transition-colors">
+								<h1
+									class="text-2xl font-bold text-slate-100 group-hover:text-violet-300 transition-colors"
+								>
 									{goalLabel || indexToNomenclature(goalIndex)}
 								</h1>
+								{#if goalMarkdown}
+									<div class="markdown mt-2 text-sm leading-relaxed text-slate-300 group-hover:text-slate-200 transition-colors">
+										{@html renderMarkdown(goalMarkdown)}
+									</div>
+								{:else}
+									<div class="mt-2 text-sm text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity">
+										Click to add description...
+									</div>
+								{/if}
 							</button>
-							{#if goalMarkdown}
-								<div class="mt-2 text-sm leading-relaxed text-slate-300">
-									{@html renderMarkdown(goalMarkdown)}
-								</div>
-							{/if}
 						{/if}
 					</div>
-					<div class="ml-4">
+					<div class="md:hidden ml-4">
 						<SquareMap goal={indexToNomenclature(goalIndex)} {grid} />
 					</div>
 				</div>
@@ -648,15 +811,10 @@
 			</div>
 
 			<!-- Todo list -->
-			{#if goalGroups.length === 0}
-				<div class="rounded-lg border border-slate-700/70 bg-slate-950/60 p-8 text-center">
-					<p class="text-slate-400">No todos yet for this goal or its sub-goals. Add one above!</p>
-				</div>
-			{/if}
-
 			<TodoGroupedList
 				groups={goalGroups}
 				{allGoals}
+				onAddToGroup={(group) => addTodo(group.goalIndex)}
 				onUpdate={updateTodo}
 				onDelete={deleteTodo}
 				onToggleStatus={cycleTodoStatus}
@@ -668,10 +826,12 @@
 				getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
 				canIndent={(todoId, group) => canIndentTodo(todoId, group.goalIndex)}
 				canOutdent={(todoId) => canOutdentTodo(todoId)}
+				disableAutoFocus={hasNoCustomTitle}
+				onCreateTodo={createTodoFromComposer}
 			/>
 		{/if}
 	</div>
-	<TodoQuickNav
+	<DesktopNav
 		{allGoals}
 		defaultGoalIndex={goalIndex}
 		onCreateTodo={createTodoFromComposer}
