@@ -6,7 +6,6 @@
 	import { indexToNomenclature, canonicalGoalIndex, defaultTodo, updateGoalTimestamp } from '$lib/todoUtils.js';
 	import DesktopNav from '$components/DesktopNav.svelte';
 	import './layout.css';
-	import favicon from '$lib/assets/favicon.svg';
 
 	let { children } = $props();
 
@@ -123,8 +122,6 @@ $effect(() => {
 		});
 	});
 </script>
-
-<svelte:head><link rel="icon" href={favicon} /></svelte:head>
 
 <div class="min-h-screen lg:pr-28 bg-gradient-to-br from-slate-950 via-slate-900 to-violet-950">
 	{@render children()}

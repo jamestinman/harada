@@ -11,7 +11,7 @@
 		buildCustomListMeta,
 		updateGoalTimestamp
 	} from '$lib/todoUtils.js';
-	import TodoGroupedList from '$components/TodoGroupedList.svelte';
+	import TodoList from '$components/TodoList.svelte';
 	import DesktopNav from '$components/DesktopNav.svelte';
 
   // Use store.harada_chart directly - it's reactive
@@ -477,7 +477,7 @@
 				</div>
 			{/if}
 
-			<TodoGroupedList
+			<TodoList
 				groups={todoGroups}
 				{allGoals}
 				onUpdate={updateTodo}

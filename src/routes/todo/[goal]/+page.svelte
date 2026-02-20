@@ -19,7 +19,7 @@
 		updateGoalTimestamp
 	} from '$lib/todoUtils.js';
 	import SquareMap from '$components/SquareMap.svelte';
-	import TodoGroupedList from '$components/TodoGroupedList.svelte';
+	import TodoList from '$components/TodoList.svelte';
 	import DesktopNav from '$components/DesktopNav.svelte';
 
 	// Use store.harada_chart directly - it's reactive
@@ -704,7 +704,7 @@
 									class="w-full rounded-md border border-violet-500 bg-slate-900 px-3 py-2 text-2xl font-bold text-slate-100 placeholder-slate-500 outline-none focus:ring-2 focus:ring-violet-500/50"
 									placeholder={`Goal ${indexToNomenclature(goalIndex)} title`}
 									onkeydown={(e) => {
-										if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+										if (e.key === 'Enter') {
 											e.preventDefault();
 											saveGoalEdit();
 										} else if (e.key === 'Escape') {
@@ -716,7 +716,7 @@
 											setTimeout(() => {
 												if (goalDescriptionTextareaElement) goalDescriptionTextareaElement.focus();
 											}, 0);
-										}
+										}  
 									}}
 								/>
 								<textarea
@@ -811,7 +811,7 @@
 			</div>
 
 			<!-- Todo list -->
-			<TodoGroupedList
+			<TodoList
 				groups={goalGroups}
 				{allGoals}
 				onAddToGroup={(group) => addTodo(group.goalIndex)}
