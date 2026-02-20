@@ -23,6 +23,18 @@
 </script>
 
 <div class="space-y-6">
+	{#if onCreateTodo}
+		<div class="mb-6 hidden lg:block">
+			<button
+				type="button"
+				onclick={onCreateTodo}
+				class="w-full rounded-lg border-2 border-dashed border-slate-700 bg-slate-950/40 px-4 py-3 text-sm font-medium text-slate-400 transition hover:border-violet-500 hover:bg-slate-900/60 hover:text-violet-400"
+			>
+				+ New task
+			</button>
+		</div>
+	{/if}
+	
 	{#each groups as group}
 		<div>
 			{#if groups.length > 1 || group.subGroups}
@@ -110,16 +122,4 @@
 			{/if}
 		</div>
 	{/each}
-	
-	{#if onCreateTodo}
-		<div class="mt-6 hidden lg:block">
-			<button
-				type="button"
-				onclick={onCreateTodo}
-				class="w-full rounded-lg border-2 border-dashed border-slate-700 bg-slate-950/40 px-4 py-3 text-sm font-medium text-slate-400 transition hover:border-violet-500 hover:bg-slate-900/60 hover:text-violet-400"
-			>
-				+ New task
-			</button>
-		</div>
-	{/if}
 </div>

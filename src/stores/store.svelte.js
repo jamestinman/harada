@@ -49,6 +49,22 @@ class Store {
 			this.isOnline = false;
 		});
 
+		// Listen for visibility changes - sync when app comes back into focus
+		document.addEventListener('visibilitychange', () => {
+			if (!document.hidden && this.isOnline && authStore.user && this._isInitialized) {
+				// App came back into focus, sync with Supabase
+				this.syncOnFocus();
+			}
+		});
+
+		// Also listen for window focus events (for better cross-browser support)
+		window.addEventListener('focus', () => {
+			if (this.isOnline && authStore.user && this._isInitialized) {
+				// Window gained focus, sync with Supabase
+				this.syncOnFocus();
+			}
+		});
+
 		// Initialize on creation (local-first; auth effects handled at module level)
 		this.initialize();
 	}
@@ -118,20 +134,8 @@ class Store {
 						}
 					}
 					
-					// Subscribe to realtime updates
-					this.subscribeToRealtimeUpdates((update) => {
-						const currentStr = JSON.stringify(this.harada_chart);
-						const updateStr = JSON.stringify({ grid: update.grid, todos: update.todos });
-						
-						if (currentStr !== updateStr) {
-							this.harada_chart = {
-								grid: update.grid || Array.from({ length: 81 }, () => defaultCell()),
-								todos: update.todos || []
-							};
-							// Update localStorage when receiving realtime updates
-							this.saveData(this.harada_chart.grid, this.harada_chart.todos);
-						}
-					});
+					// Realtime updates disabled - they were causing conflicts with local edits
+					// Instead, we sync when the app comes back into focus (see visibility listener in constructor)
 				} else {
 					// No Supabase data, use local and upload if there's data
 					this.harada_chart = {
@@ -505,6 +509,42 @@ class Store {
 		}
 	}
 
+	// Sync with Supabase when app comes back into focus
+	async syncOnFocus() {
+		if (!browser || !this.isOnline || !authStore.user || !supabase || !this._isInitialized) return;
+		
+		try {
+			const supabaseData = await this.loadFromSupabase();
+			
+			if (supabaseData) {
+				// Compare timestamps to see which is more recent
+				const localTimestamp = this.getLocalTimestamp();
+				const supabaseTimestamp = supabaseData.updated_at ? new Date(supabaseData.updated_at).getTime() : 0;
+				
+				if (supabaseTimestamp > localTimestamp) {
+					// Supabase is more recent, use it
+					const currentStr = JSON.stringify(this.harada_chart);
+					const updateStr = JSON.stringify({ grid: supabaseData.grid || [], todos: supabaseData.todos || [] });
+					
+					if (currentStr !== updateStr) {
+						this.harada_chart = {
+							grid: supabaseData.grid || Array.from({ length: 81 }, () => defaultCell()),
+							todos: supabaseData.todos || []
+						};
+						// Update localStorage with Supabase data
+						this.saveData(this.harada_chart.grid, this.harada_chart.todos);
+					}
+				} else if (localTimestamp > supabaseTimestamp) {
+					// Local is more recent, sync to Supabase
+					await this.saveToSupabase(this.harada_chart.grid, this.harada_chart.todos);
+				}
+			}
+		} catch (error) {
+			console.error('Error syncing on focus:', error);
+			this.syncError = error.message;
+		}
+	}
+
 	// Handle auth state changes
 	handleAuthChange() {
 		if (!browser) return;
@@ -513,7 +553,7 @@ class Store {
 		this._isInitialized = false;
 		
 		if (!authStore.user) {
-			// User logged out, unsubscribe from realtime
+			// User logged out, unsubscribe from realtime (if any)
 			this.unsubscribeFromRealtimeUpdates();
 		} else {
 			// User logged in, reinitialize to sync with Supabase

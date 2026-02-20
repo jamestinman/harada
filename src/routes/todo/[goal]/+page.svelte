@@ -97,6 +97,57 @@
 		return text || indexToNomenclature(index);
 	}
 
+	const ORDER_STEP = 1024;
+
+	function getTodoOrdering(todo) {
+		if (typeof todo?.ordering === 'number' && Number.isFinite(todo.ordering)) return todo.ordering;
+		if (typeof todo?.createdAt === 'number' && Number.isFinite(todo.createdAt)) return todo.createdAt;
+		return 0;
+	}
+
+	function getSiblingTodos(listId, parentId, excludeId = null) {
+		return todos
+			.filter((t) => t.listId === listId && (t.parentId ?? null) === (parentId ?? null) && t.id !== excludeId)
+			.sort((a, b) => getTodoOrdering(a) - getTodoOrdering(b));
+	}
+
+	function getTopOrdering(listId, parentId) {
+		const siblings = getSiblingTodos(listId, parentId);
+		if (siblings.length === 0) return ORDER_STEP;
+		return getTodoOrdering(siblings[0]) - ORDER_STEP;
+	}
+
+	function normalizeSiblingOrderings(listId, parentId) {
+		const siblings = getSiblingTodos(listId, parentId);
+		const updates = new Map(siblings.map((todo, index) => [todo.id, (index + 1) * ORDER_STEP]));
+		store.harada_chart.todos = store.harada_chart.todos.map((todo) =>
+			updates.has(todo.id) ? { ...todo, ordering: updates.get(todo.id) } : todo
+		);
+	}
+
+	function getOrderingAfter(listId, parentId, currentTodoId) {
+		let siblings = getSiblingTodos(listId, parentId);
+		let currentIndex = siblings.findIndex((t) => t.id === currentTodoId);
+		if (currentIndex === -1) return getTopOrdering(listId, parentId);
+
+		let currentOrdering = getTodoOrdering(siblings[currentIndex]);
+		let nextSibling = siblings[currentIndex + 1];
+		if (!nextSibling) return currentOrdering + ORDER_STEP;
+
+		let nextOrdering = getTodoOrdering(nextSibling);
+		if (nextOrdering - currentOrdering <= 1) {
+			normalizeSiblingOrderings(listId, parentId);
+			siblings = getSiblingTodos(listId, parentId);
+			currentIndex = siblings.findIndex((t) => t.id === currentTodoId);
+			currentOrdering = getTodoOrdering(siblings[currentIndex]);
+			nextSibling = siblings[currentIndex + 1];
+			if (!nextSibling) return currentOrdering + ORDER_STEP;
+			nextOrdering = getTodoOrdering(nextSibling);
+		}
+
+		return currentOrdering + (nextOrdering - currentOrdering) / 2;
+	}
+
 	// Get goal markdown/readme - use edited description while editing
 	const goalMarkdown = $derived.by(() => {
 		if (goalIndex === null) return '';
@@ -186,37 +237,29 @@
 
 	// Helper function to organize todos with hierarchy
 	function organizeTodosWithHierarchy(todosList) {
-		// Sort by creation time first
-		const sorted = [...todosList].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-		
-		// Build a map of todos by ID
-		const todoMap = new Map(sorted.map(t => [t.id, t]));
-		
-		// Organize: root todos first, then their children
-		const result = [];
-		const processed = new Set();
-		
-		function addTodoAndChildren(todo) {
-			if (processed.has(todo.id)) return;
-			processed.add(todo.id);
-			result.push(todo);
-			
-			// Add all children of this todo
-			sorted.forEach(child => {
-				if (child.parentId === todo.id && !processed.has(child.id)) {
-					addTodoAndChildren(child);
-				}
-			});
+		const byParent = new Map();
+		for (const todo of todosList) {
+			const parentKey = todo.parentId ?? '__root__';
+			if (!byParent.has(parentKey)) byParent.set(parentKey, []);
+			byParent.get(parentKey).push(todo);
 		}
-		
-		// Add root todos (no parent) first
-		sorted.forEach(todo => {
-			if (!todo.parentId && !processed.has(todo.id)) {
-				addTodoAndChildren(todo);
+
+		for (const siblingList of byParent.values()) {
+			siblingList.sort((a, b) => getTodoOrdering(a) - getTodoOrdering(b));
+		}
+
+		const ordered = [];
+		function walk(parentId = null) {
+			const key = parentId ?? '__root__';
+			const siblings = byParent.get(key) || [];
+			for (const todo of siblings) {
+				ordered.push(todo);
+				walk(todo.id);
 			}
-		});
-		
-		return result;
+		}
+
+		walk(null);
+		return ordered;
 	}
 
 	function getVisibleGoalTodos(targetGoalIndex) {
@@ -282,11 +325,12 @@
 	// Todo management functions
 	function addTodo(targetGoalIndex = goalIndex) {
 		if (targetGoalIndex === null) return;
-		const activeTodo = store.harada_chart.todos.find((t) => t.id === activeTodoId);
+		const listMeta = buildGoalListMeta(targetGoalIndex);
 		const todo = {
 			...defaultTodo(),
-			...buildGoalListMeta(targetGoalIndex),
-			parentId: activeTodo?.goalIndex === targetGoalIndex ? activeTodo.parentId ?? null : null
+			...listMeta,
+			parentId: null,
+			ordering: getTopOrdering(listMeta.listId, null)
 		};
 		store.harada_chart.todos = [...store.harada_chart.todos, todo];
 		
@@ -302,7 +346,26 @@
 		return todo;
 	}
 
-	function createTodoFromComposer({ title, markdown, goalIndex: selectedGoalIndex, listType, listName }) {
+	function createTodoFromComposer({ title, markdown, goalIndex: selectedGoalIndex, listType, listName } = {}) {
+		// Handle case when called without parameters (from "+ New Task" button)
+		// Add to current goal when on a goal page
+		if (!title && !markdown && selectedGoalIndex === undefined && !listType && !listName) {
+			if (goalIndex !== null) {
+				const listMeta = buildGoalListMeta(goalIndex);
+				const todo = {
+					...defaultTodo(),
+					...listMeta,
+					parentId: null,
+					ordering: getTopOrdering(listMeta.listId, null)
+				};
+				store.harada_chart.todos = [...store.harada_chart.todos, todo];
+				updateGoalTimestamp(store.harada_chart.grid, goalIndex);
+				store.harada_chart.grid = [...store.harada_chart.grid];
+				activeTodoId = todo.id;
+			}
+			return;
+		}
+		
 		if (listType === 'custom' || (listName && listName.trim())) {
 			const customMeta = buildCustomListMeta(listName);
 			const todo = {
@@ -310,7 +373,8 @@
 				title: title || '',
 				markdown: markdown || '',
 				...customMeta,
-				parentId: null
+				parentId: null,
+				ordering: getTopOrdering(customMeta.listId, null)
 			};
 			store.harada_chart.todos = [...store.harada_chart.todos, todo];
 			return;
@@ -323,7 +387,8 @@
 			title: title || '',
 			markdown: markdown || '',
 			...buildGoalListMeta(targetGoalIndex),
-			parentId: null
+			parentId: null,
+			ordering: getTopOrdering(`goal:${targetGoalIndex}`, null)
 		};
 		store.harada_chart.todos = [...store.harada_chart.todos, todo];
 		
@@ -354,6 +419,9 @@
 				...buildGoalListMeta(patch.goalIndex)
 			};
 		}
+		
+		// Always update updatedAt when modifying a todo
+		nextPatch = { ...nextPatch, updatedAt: Date.now() };
 		
 		// Update store.harada_chart.todos
 		store.harada_chart.todos = store.harada_chart.todos.map((t) => (t.id === id ? { ...t, ...nextPatch } : t));
@@ -394,10 +462,10 @@
 			return;
 		}
 		
-		// Update store.harada_chart.todos
+		// Update store.harada_chart.todos with updatedAt
 		store.harada_chart.todos = store.harada_chart.todos.map((t) => {
 			if (t.id !== id) return t;
-			return { ...t, status: next };
+			return { ...t, status: next, updatedAt: Date.now() };
 		});
 		
 		// Update goal timestamp if todo is associated with a goal
@@ -410,34 +478,24 @@
 
 	function createNextTodo(currentTodoId, targetGoalIndex = goalIndex) {
 		if (targetGoalIndex === null) return null;
-		const goalTodosList = getVisibleGoalTodos(targetGoalIndex);
-		const currentIndex = goalTodosList.findIndex((t) => t.id === currentTodoId);
 		const currentTodo = store.harada_chart.todos.find((t) => t.id === currentTodoId);
+		if (!currentTodo) return null;
+		const normalizedCurrentTodo = normalizeTodoListMeta(currentTodo);
+		const targetListId = normalizedCurrentTodo.listId;
+		const targetParentId = normalizedCurrentTodo.parentId ?? null;
+		const newOrdering = getOrderingAfter(targetListId, targetParentId, currentTodoId);
 		
 		// Create new todo
 		const newTodo = {
 			...defaultTodo(),
-			goalIndex: targetGoalIndex,
-			listType: 'goal',
-			listId: `goal:${targetGoalIndex}`,
-			listName: null,
-			parentId: currentTodo?.parentId ?? null
+			goalIndex: normalizedCurrentTodo.goalIndex,
+			listType: normalizedCurrentTodo.listType,
+			listId: normalizedCurrentTodo.listId,
+			listName: normalizedCurrentTodo.listName || null,
+			parentId: targetParentId,
+			ordering: newOrdering
 		};
-		
-		// Insert after current todo in the full todos array
-		if (currentIndex >= 0 && currentIndex < goalTodosList.length - 1) {
-			// Insert after the current todo
-			const nextTodo = goalTodosList[currentIndex + 1];
-			const nextIndex = store.harada_chart.todos.findIndex((t) => t.id === nextTodo.id);
-			if (nextIndex >= 0) {
-				store.harada_chart.todos = [...store.harada_chart.todos.slice(0, nextIndex), newTodo, ...store.harada_chart.todos.slice(nextIndex)];
-			} else {
-				store.harada_chart.todos = [...store.harada_chart.todos, newTodo];
-			}
-		} else {
-			// Add to end
-			store.harada_chart.todos = [...store.harada_chart.todos, newTodo];
-		}
+		store.harada_chart.todos = [...store.harada_chart.todos, newTodo];
 		
 		// Update goal timestamp if todo is associated with a goal
 		if (typeof targetGoalIndex === 'number') {

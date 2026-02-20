@@ -3,7 +3,13 @@
 	import { onNavigate } from '$app/navigation';
 	import { store } from '$stores/store.svelte.js';
 	import { authStore } from '$stores/auth.svelte.js';
-	import { indexToNomenclature, canonicalGoalIndex, defaultTodo, updateGoalTimestamp } from '$lib/todoUtils.js';
+	import {
+		indexToNomenclature,
+		canonicalGoalIndex,
+		defaultTodo,
+		updateGoalTimestamp,
+		buildGoalListMeta
+	} from '$lib/todoUtils.js';
 	import DesktopNav from '$components/DesktopNav.svelte';
 	import './layout.css';
 
@@ -47,10 +53,10 @@ $effect(() => {
 	// Set status to queued
 	store.saveStatus = 'queued';
 
-	// Schedule save in 5 seconds
+	// Schedule save in 2 seconds
 	store._saveTimeout = setTimeout(() => {
 		store._performSave();
-	}, 5000);
+	}, 2000);
 });
 
 	const goalIndices = Array.from({ length: 81 }, (_, i) => i);
@@ -85,17 +91,40 @@ $effect(() => {
 			});
 	});
 
-	function createTodoFromComposer({ title, markdown, goalIndex }) {
+	function createTodoFromComposer({ title, markdown, goalIndex } = {}) {
 		const defaultCell = () => ({ text: '', status: 'todo', readme: '', color: 'default', updated_at: null });
 		const data = store.loadData(defaultCell, []);
 		const normalizedGoalIndex =
 			typeof goalIndex === 'number' ? canonicalGoalIndex(goalIndex) : null;
+		const listMeta = buildGoalListMeta(normalizedGoalIndex);
+		const siblings = (data.todos || []).filter((t) => {
+			const siblingListId =
+				typeof t?.listId === 'string'
+					? t.listId
+					: t?.goalIndex === null
+						? 'goal:none'
+						: `goal:${t.goalIndex}`;
+			return siblingListId === listMeta.listId && (t?.parentId ?? null) === null;
+		});
+		const ordering =
+			siblings.length > 0
+				? Math.min(
+						...siblings.map((t) =>
+							typeof t?.ordering === 'number' && Number.isFinite(t.ordering)
+								? t.ordering
+								: typeof t?.createdAt === 'number' && Number.isFinite(t.createdAt)
+									? t.createdAt
+									: Date.now()
+						)
+					) - 1024
+				: 1024;
 		const todo = {
 			...defaultTodo(),
 			title: title || '',
 			markdown: markdown || '',
-			goalIndex: normalizedGoalIndex,
-			parentId: null
+			...listMeta,
+			parentId: null,
+			ordering
 		};
 		const newTodos = [...(data.todos || []), todo];
 		

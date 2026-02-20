@@ -18,16 +18,6 @@ Rows:
 [8]
 [9]
 
-Each goal has 3 x 3 sub-goals, e.g.:
-[A1][A2][A3]
-[A4][A5][A6]
-[A7][A8][A9]
-
-The resultant grid is 9 x 9. The CENTRAL 8 mirror the middles of the outer goals e.g.
-[D4 = B2][E4 = E2][F4 = H2]
-[D5 = B5]  [E5]   [F5 = H5]
-[D6 = B8][E6 = E8][F6 = H8]
-
 To-do list entries hang off grid coordinates, e.g.:
 ## E5 My goal is play the piano
 ### B3 My sub-goal is to learn scales

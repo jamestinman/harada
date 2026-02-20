@@ -6,6 +6,7 @@ export function createTodoId() {
 }
 
 export function defaultTodo() {
+	const now = Date.now();
 	return {
 		id: createTodoId(),
 		goalIndex: null,
@@ -16,7 +17,9 @@ export function defaultTodo() {
 		markdown: '',
 		status: 'todo',
 		parentId: null,
-		createdAt: Date.now()
+		createdAt: now,
+		updatedAt: now,
+		ordering: now
 	};
 }
 
@@ -69,6 +72,13 @@ export function parseListSelection(value, newListName = '') {
 }
 
 export function normalizeTodoListMeta(todo) {
+	const normalizedOrdering =
+		typeof todo?.ordering === 'number' && Number.isFinite(todo.ordering)
+			? todo.ordering
+			: typeof todo?.createdAt === 'number' && Number.isFinite(todo.createdAt)
+				? todo.createdAt
+				: Date.now();
+
 	const isCustom =
 		todo?.listType === 'custom' ||
 		(typeof todo?.listId === 'string' && todo.listId.startsWith('custom:'));
@@ -87,13 +97,15 @@ export function normalizeTodoListMeta(todo) {
 			goalIndex: null,
 			listType: 'custom',
 			listId: safeId,
-			listName: safeName
+			listName: safeName,
+			ordering: normalizedOrdering
 		};
 	}
 
 	return {
 		...todo,
-		...buildGoalListMeta(todo?.goalIndex)
+		...buildGoalListMeta(todo?.goalIndex),
+		ordering: normalizedOrdering
 	};
 }
 

@@ -57,9 +57,26 @@
 		const status = grid[index]?.status ?? 'todo';
 		const customColor = grid[index]?.color;
 
-		// If custom color is set, use it
+		// If custom color is set, use it but still respect cell type for border width and shadows
 		if (customColor && customColor !== 'default') {
-			classes += `${customColor} border `;
+			// Check if border width class already exists (border or border-2, but not border-color)
+			const hasBorderWidth = /\b(border|border-\d+)\b/.test(customColor);
+			
+			// Main goal: always use border-2 and shadow-lg
+			if (isMainGoal(row, col)) {
+				// Remove any existing border width class and add border-2
+				const colorWithoutBorderWidth = customColor.replace(/\b(border|border-\d+)\b/g, '').trim();
+				classes += `${colorWithoutBorderWidth} border-2 font-bold shadow-lg z-10`;
+			} else if (isSubGoal(row, col)) {
+				// Sub-goals: ensure border class exists and add shadow-lg
+				classes += `${customColor}${hasBorderWidth ? '' : ' border'} font-semibold shadow-lg`;
+			} else if (isBlockCenter(row, col)) {
+				// Linked sub-goals: ensure border class exists and add shadow-lg
+				classes += `${customColor}${hasBorderWidth ? '' : ' border'} font-semibold shadow-lg`;
+			} else {
+				// Action / task squares: ensure border class exists (no shadow-lg)
+				classes += `${customColor}${hasBorderWidth ? '' : ' border'}`;
+			}
 		} else {
 			// Main goal: strong green when done, otherwise original styling
 			if (isMainGoal(row, col)) {
