@@ -90,6 +90,33 @@
 		return currentOrdering + (nextOrdering - currentOrdering) / 2;
 	}
 
+	function moveTodo(todoId, destination) {
+		const todo = store.harada_chart.todos.find((t) => t.id === todoId);
+		if (!todo || !destination) return;
+
+		const targetListId = destination.listId ?? todo.listId;
+		const targetParentId = destination.parentId ?? null;
+		const afterTodoId = destination.afterTodoId ?? null;
+		const ordering = afterTodoId
+			? getOrderingAfter(targetListId, targetParentId, afterTodoId)
+			: getTopOrdering(targetListId, targetParentId);
+
+		updateTodo(todoId, {
+			listType: destination.listType ?? todo.listType,
+			listId: targetListId,
+			listName:
+				destination.listType === 'custom'
+					? destination.listName || todo.listName || 'New list'
+					: null,
+			goalIndex:
+				destination.listType === 'goal'
+					? (destination.goalIndex ?? null)
+					: null,
+			parentId: targetParentId,
+			ordering
+		});
+	}
+
 	function organizeTodosWithHierarchy(todosList) {
 		const byParent = new Map();
 		for (const todo of todosList) {
@@ -538,6 +565,7 @@
 				canIndent={canIndentTodo}
 				canOutdent={(todoId) => canOutdentTodo(todoId)}
 				onCreateTodo={createTodoFromComposer}
+				onMoveTodo={moveTodo}
 			/>
 		{/if}
 	</div>

@@ -330,32 +330,6 @@
 			></textarea>
 		</div>
 
-		<!-- Move to goal -->
-		{#if goalsWithTitles.length > 0}
-			<div class="mb-3 flex items-center gap-2">
-				<SquareMap
-					goal={selectedGoalIndexForMap !== null ? indexToNomenclature(selectedGoalIndexForMap) : ''}
-				/>
-				<GoalSelect
-					allGoals={allGoals}
-					bind:value={editListValue}
-					includeUnassigned={true}
-					includeNewList={true}
-					stringValues={true}
-					hideWhenNoGoals={true}
-				/>
-			</div>
-			{#if editListValue === NEW_LIST_OPTION_VALUE}
-				<div class="mb-3">
-					<input
-						type="text"
-						bind:value={editNewListName}
-						placeholder="List name"
-						class="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
-					/>
-				</div>
-			{/if}
-		{/if}
 
 		<!-- Actions -->
 		<div class="flex items-center justify-between gap-2">
@@ -434,31 +408,6 @@
 					class="min-h-[150px] w-full resize-y rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
 				></textarea>
 			</div>
-
-			<!-- Move to goal -->
-			{#if goalsWithTitles.length > 0}
-				<div class="mb-4 flex items-center gap-2">
-          <span class="text-sm text-slate-400">Part of:</span>
-					<GoalSelect
-						allGoals={allGoals}
-						bind:value={editListValue}
-						includeUnassigned={true}
-						includeNewList={true}
-						stringValues={true}
-						hideWhenNoGoals={true}
-					/>
-				</div>
-				{#if editListValue === NEW_LIST_OPTION_VALUE}
-					<div class="mb-4">
-						<input
-							type="text"
-							bind:value={editNewListName}
-							placeholder="List name"
-							class="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
-						/>
-					</div>
-				{/if}
-			{/if}
 
 			<!-- Actions -->
 			<div class="flex flex-col gap-2">

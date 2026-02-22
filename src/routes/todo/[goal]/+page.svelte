@@ -148,6 +148,33 @@
 		return currentOrdering + (nextOrdering - currentOrdering) / 2;
 	}
 
+	function moveTodo(todoId, destination) {
+		const todo = store.harada_chart.todos.find((t) => t.id === todoId);
+		if (!todo || !destination) return;
+
+		const targetListId = destination.listId ?? todo.listId;
+		const targetParentId = destination.parentId ?? null;
+		const afterTodoId = destination.afterTodoId ?? null;
+		const ordering = afterTodoId
+			? getOrderingAfter(targetListId, targetParentId, afterTodoId)
+			: getTopOrdering(targetListId, targetParentId);
+
+		updateTodo(todoId, {
+			listType: destination.listType ?? todo.listType,
+			listId: targetListId,
+			listName:
+				destination.listType === 'custom'
+					? destination.listName || todo.listName || 'New list'
+					: null,
+			goalIndex:
+				destination.listType === 'goal'
+					? (destination.goalIndex ?? null)
+					: null,
+			parentId: targetParentId,
+			ordering
+		});
+	}
+
 	// Get goal markdown/readme - use edited description while editing
 	const goalMarkdown = $derived.by(() => {
 		if (goalIndex === null) return '';
@@ -886,6 +913,7 @@
 				canOutdent={(todoId) => canOutdentTodo(todoId)}
 				disableAutoFocus={hasNoCustomTitle}
 				onCreateTodo={createTodoFromComposer}
+				onMoveTodo={moveTodo}
 			/>
 		{/if}
 	</div>
