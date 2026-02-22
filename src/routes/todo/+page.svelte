@@ -40,11 +40,20 @@
 	}
 
 	const ORDER_STEP = 1024;
+	const GOAL_GROUP_ORDER_STEP = 1024;
 
 	function getTodoOrdering(todo) {
 		if (typeof todo?.ordering === 'number' && Number.isFinite(todo.ordering)) return todo.ordering;
 		if (typeof todo?.createdAt === 'number' && Number.isFinite(todo.createdAt)) return todo.createdAt;
 		return 0;
+	}
+
+	function getGoalGroupOrdering(goalIndex) {
+		const cell = grid[goalIndex];
+		if (typeof cell?.todo_group_ordering === 'number' && Number.isFinite(cell.todo_group_ordering)) {
+			return cell.todo_group_ordering;
+		}
+		return (goalIndex + 1) * GOAL_GROUP_ORDER_STEP;
 	}
 
 	function getSiblingTodos(listId, parentId, excludeId = null) {
@@ -65,6 +74,103 @@
 		store.harada_chart.todos = store.harada_chart.todos.map((todo) =>
 			updates.has(todo.id) ? { ...todo, ordering: updates.get(todo.id) } : todo
 		);
+	}
+
+	function getVisibleGoalGroupsByOrdering() {
+		return goalIndices
+			.map((goalIndex) => {
+				const cell = grid[goalIndex];
+				return {
+					id: `goal-${goalIndex}`,
+					groupType: 'goal',
+					goalIndex,
+					label: getGoalLabelFromIndex(goalIndex),
+					href: `/todo/${indexToNomenclature(goalIndex)}`,
+					addTitle: 'Add todo to this goal',
+					todos: getVisibleGoalTodos(goalIndex),
+					goalOrdering: getGoalGroupOrdering(goalIndex),
+					updated_at: cell?.updated_at || null
+				};
+			})
+			.filter((group) => group.todos.length > 0)
+			.sort((a, b) => {
+				if (a.goalOrdering !== b.goalOrdering) {
+					return a.goalOrdering - b.goalOrdering;
+				}
+				return a.goalIndex - b.goalIndex;
+			});
+	}
+
+	function normalizeGoalGroupOrderings(groups) {
+		const nextGrid = [...store.harada_chart.grid];
+		groups.forEach((group, index) => {
+			const goalIndex = group.goalIndex;
+			if (!nextGrid[goalIndex]) {
+				nextGrid[goalIndex] = {
+					text: '',
+					status: 'todo',
+					readme: '',
+					color: 'default',
+					updated_at: null
+				};
+			}
+			nextGrid[goalIndex] = {
+				...nextGrid[goalIndex],
+				todo_group_ordering: (index + 1) * GOAL_GROUP_ORDER_STEP
+			};
+		});
+		store.harada_chart.grid = nextGrid;
+	}
+
+	function getGoalGroupOrderingAfter(groups, afterGoalIndex) {
+		if (!afterGoalIndex && afterGoalIndex !== 0) {
+			if (groups.length === 0) return GOAL_GROUP_ORDER_STEP;
+			return groups[0].goalOrdering - GOAL_GROUP_ORDER_STEP;
+		}
+
+		const currentIndex = groups.findIndex((group) => group.goalIndex === afterGoalIndex);
+		if (currentIndex === -1) return GOAL_GROUP_ORDER_STEP;
+		const currentOrdering = groups[currentIndex].goalOrdering;
+		const nextGroup = groups[currentIndex + 1];
+		if (!nextGroup) return currentOrdering + GOAL_GROUP_ORDER_STEP;
+		const nextOrdering = nextGroup.goalOrdering;
+		if (nextOrdering - currentOrdering <= 1) {
+			normalizeGoalGroupOrderings(groups);
+			return getGoalGroupOrderingAfter(getVisibleGoalGroupsByOrdering(), afterGoalIndex);
+		}
+		return currentOrdering + (nextOrdering - currentOrdering) / 2;
+	}
+
+	function moveGoalGroup(draggedGroupId, targetGroupId, dropMode) {
+		if (!draggedGroupId || !targetGroupId || draggedGroupId === targetGroupId) return;
+		const draggedGoalIndex = Number(draggedGroupId.replace('goal-', ''));
+		const targetGoalIndex = Number(targetGroupId.replace('goal-', ''));
+		if (Number.isNaN(draggedGoalIndex) || Number.isNaN(targetGoalIndex)) return;
+
+		const visibleGoalGroups = getVisibleGoalGroupsByOrdering();
+		const withoutDragged = visibleGoalGroups.filter((group) => group.goalIndex !== draggedGoalIndex);
+		const targetIndex = withoutDragged.findIndex((group) => group.goalIndex === targetGoalIndex);
+		if (targetIndex === -1) return;
+
+		const previousIndex = dropMode === 'before' ? targetIndex - 1 : targetIndex;
+		const previousGoalIndex = previousIndex >= 0 ? withoutDragged[previousIndex].goalIndex : null;
+		const newOrdering = getGoalGroupOrderingAfter(withoutDragged, previousGoalIndex);
+
+		const nextGrid = [...store.harada_chart.grid];
+		if (!nextGrid[draggedGoalIndex]) {
+			nextGrid[draggedGoalIndex] = {
+				text: '',
+				status: 'todo',
+				readme: '',
+				color: 'default',
+				updated_at: null
+			};
+		}
+		nextGrid[draggedGoalIndex] = {
+			...nextGrid[draggedGoalIndex],
+			todo_group_ordering: newOrdering
+		};
+		store.harada_chart.grid = nextGrid;
 	}
 
 	function getOrderingAfter(listId, parentId, currentTodoId) {
@@ -231,31 +337,7 @@
 			addTitle: `Add todo to ${listName}`,
 			todos: getVisibleCustomListTodos(listId)
 		}));
-		const goalGroups = goalIndices
-			.map((goalIndex) => {
-				const cell = grid[goalIndex];
-				return {
-					id: `goal-${goalIndex}`,
-					groupType: 'goal',
-					goalIndex,
-					label: getGoalLabelFromIndex(goalIndex),
-					href: `/todo/${indexToNomenclature(goalIndex)}`,
-					addTitle: 'Add todo to this goal',
-					todos: getVisibleGoalTodos(goalIndex),
-					updated_at: cell?.updated_at || null
-				};
-			})
-			.filter((group) => group.todos.length > 0)
-			.sort((a, b) => {
-				// Sort by updated_at descending (most recently updated first)
-				const aTime = a.updated_at ? new Date(a.updated_at).getTime() : 0;
-				const bTime = b.updated_at ? new Date(b.updated_at).getTime() : 0;
-				if (aTime !== bTime) {
-					return bTime - aTime; // Descending order
-				}
-				// Fallback to index order if timestamps are equal or both null
-				return a.goalIndex - b.goalIndex;
-			});
+		const goalGroups = getVisibleGoalGroupsByOrdering();
 
 		const groups = [...goalGroups];
 		if (unassignedTodos.length > 0) {
@@ -566,6 +648,9 @@
 				canOutdent={(todoId) => canOutdentTodo(todoId)}
 				onCreateTodo={createTodoFromComposer}
 				onMoveTodo={moveTodo}
+				allowCrossListMove={true}
+				enableGroupDrag={true}
+				onMoveGroup={moveGoalGroup}
 			/>
 		{/if}
 	</div>

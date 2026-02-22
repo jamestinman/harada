@@ -914,6 +914,8 @@
 				disableAutoFocus={hasNoCustomTitle}
 				onCreateTodo={createTodoFromComposer}
 				onMoveTodo={moveTodo}
+				allowCrossListMove={false}
+				enableGroupDrag={false}
 			/>
 		{/if}
 	</div>
