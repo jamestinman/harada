@@ -56,6 +56,7 @@
 		label: '',
 		isGroup: false
 	});
+	let justDidGroupDrag = false;
 
 	$effect(() => {
 		if (taskDrag.active || groupDrag.active) {
@@ -470,9 +471,21 @@
 				groupDrag.targetGroupId !== groupDrag.draggedGroupId
 			) {
 				onMoveGroup(groupDrag.draggedGroupId, groupDrag.targetGroupId, groupDrag.dropMode);
+				justDidGroupDrag = true;
+				document.addEventListener('click', preventClickAfterGroupDrag, true);
 			}
 			stopGroupDrag();
 			clearGlobalPointerListeners();
+		}
+	}
+
+	function preventClickAfterGroupDrag(e) {
+		document.removeEventListener('click', preventClickAfterGroupDrag, true);
+		if (!justDidGroupDrag) return;
+		justDidGroupDrag = false;
+		if (e.target?.closest?.('[data-dnd-group-drop-id] a')) {
+			e.preventDefault();
+			e.stopPropagation();
 		}
 	}
 
@@ -549,7 +562,7 @@
 				>
 					<h2 class="text-lg font-semibold text-slate-100">
 						{#if group.href}
-							<a href={group.href} class="hover:text-violet-400 transition-colors">{group.label}</a>
+							<a href={group.href} class="hover:text-violet-400 transition-colors" ondragstart={(e) => e.preventDefault()}>{group.label}</a>
 						{:else}
 							{group.label}
 						{/if}
