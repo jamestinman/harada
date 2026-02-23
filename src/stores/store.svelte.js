@@ -350,14 +350,22 @@ class Store {
 		return { grid: Array.from({ length: 81 }, () => defaultCell()), todos: [] };
 	}
 
+	// Clone to plain objects so $state proxies serialize correctly (fixes "row saved but not text")
+	_toPlainGridAndTodos(gridSnapshot, todosSnapshot) {
+		return {
+			grid: JSON.parse(JSON.stringify(Array.isArray(gridSnapshot) ? gridSnapshot : [])),
+			todos: JSON.parse(JSON.stringify(Array.isArray(todosSnapshot) ? todosSnapshot : []))
+		};
+	}
+
 	// Save data in JSON format (matching Supabase structure)
 	saveData(gridSnapshot, todosSnapshot) {
 		if (!browser) return;
 
-		// Save in unified JSON format matching Supabase
+		const { grid, todos } = this._toPlainGridAndTodos(gridSnapshot, todosSnapshot);
 		const data = {
-			grid: gridSnapshot,
-			todos: todosSnapshot || [],
+			grid,
+			todos,
 			version: 2,
 			updatedAt: new Date().toISOString()
 		};
@@ -468,15 +476,19 @@ class Store {
 		}
 	}
 
+	// Push current data to Supabase (e.g. after creating a todo from composer without going through harada_chart)
+	async syncWithSupabase(gridSnapshot, todosSnapshot, title = 'My Harada Chart') {
+		return this.saveToSupabase(gridSnapshot, todosSnapshot, title);
+	}
+
 	async saveToSupabase(gridSnapshot, todosSnapshot, title = 'My Harada Chart') {
 		if (!browser || !authStore.user || !supabase) return false;
 
 		try {
 			this.syncError = null;
 
-			// Use spread operator to avoid DataCloneError with $state objects
-			const gridData = Array.isArray(gridSnapshot) ? [...gridSnapshot] : gridSnapshot;
-			const todosData = Array.isArray(todosSnapshot) ? [...todosSnapshot] : todosSnapshot;
+			// Clone to plain objects so $state proxies serialize correctly (fixes "row saved but not text")
+			const { grid: gridData, todos: todosData } = this._toPlainGridAndTodos(gridSnapshot, todosSnapshot);
 
 			const { data, error } = await supabase
 				.from('harada_charts')

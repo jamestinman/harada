@@ -34,7 +34,7 @@ $effect(() => {
 	store.handleAuthChange();
 });
 
-// Watch for changes to harada_chart and trigger debounced save
+// Watch for changes to harada_chart and save immediately (localStorage + Supabase)
 $effect(() => {
 	if (!browser) return;
 
@@ -45,18 +45,7 @@ $effect(() => {
 	// Skip until initial load is complete
 	if (!store._isInitialized) return;
 
-	// Clear existing timeout
-	if (store._saveTimeout) {
-		clearTimeout(store._saveTimeout);
-	}
-
-	// Set status to queued
-	store.saveStatus = 'queued';
-
-	// Schedule save in 2 seconds
-	store._saveTimeout = setTimeout(() => {
-		store._performSave();
-	}, 2000);
+	store._performSave();
 });
 
 	const goalIndices = Array.from({ length: 81 }, (_, i) => i);
