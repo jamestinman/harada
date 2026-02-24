@@ -370,6 +370,7 @@
 		
 		// Set active todo ID so it gets focused
 		activeTodoId = todo.id;
+		store.saveNow();
 		return todo;
 	}
 
@@ -389,6 +390,7 @@
 				updateGoalTimestamp(store.harada_chart.grid, goalIndex);
 				store.harada_chart.grid = [...store.harada_chart.grid];
 				activeTodoId = todo.id;
+				store.saveNow();
 			}
 			return;
 		}
@@ -404,6 +406,7 @@
 				ordering: getTopOrdering(customMeta.listId, null)
 			};
 			store.harada_chart.todos = [...store.harada_chart.todos, todo];
+			store.saveNow();
 			return;
 		}
 		const targetGoalIndex =
@@ -430,77 +433,19 @@
 		if (!title || title.trim() === '') {
 			activeTodoId = todo.id;
 		}
+		store.saveNow();
 	}
 
 	function updateTodo(id, patch) {
-		const oldTodo = store.harada_chart.todos.find((t) => t.id === id);
-		let nextPatch = patch;
-		if (patch?.listType === 'custom') {
-			nextPatch = {
-				...patch,
-				...buildCustomListMeta(patch.listName)
-			};
-		} else if (typeof patch?.goalIndex === 'number' || patch?.goalIndex === null) {
-			nextPatch = {
-				...patch,
-				...buildGoalListMeta(patch.goalIndex)
-			};
-		}
-		
-		// Always update updatedAt when modifying a todo
-		nextPatch = { ...nextPatch, updatedAt: Date.now() };
-		
-		// Update store.harada_chart.todos
-		store.harada_chart.todos = store.harada_chart.todos.map((t) => (t.id === id ? { ...t, ...nextPatch } : t));
-		
-		// Update goal timestamp if todo is associated with a goal
-		const newTodo = store.harada_chart.todos.find((t) => t.id === id);
-		const goalIndexToUpdate = newTodo?.goalIndex ?? oldTodo?.goalIndex;
-		if (typeof goalIndexToUpdate === 'number') {
-			updateGoalTimestamp(store.harada_chart.grid, goalIndexToUpdate);
-			// Force reactivity by reassigning
-			store.harada_chart.grid = [...store.harada_chart.grid];
-		}
+		store.updateTodo(id, patch);
 	}
 
 	function deleteTodo(id) {
-		const todo = store.harada_chart.todos.find((t) => t.id === id);
-		store.harada_chart.todos = store.harada_chart.todos.filter((t) => t.id !== id);
-		
-		// Update goal timestamp if todo was associated with a goal
-		if (todo && typeof todo.goalIndex === 'number') {
-			updateGoalTimestamp(store.harada_chart.grid, todo.goalIndex);
-			// Force reactivity by reassigning
-			store.harada_chart.grid = [...store.harada_chart.grid];
-		}
+		store.deleteTodo(id);
 	}
 
 	function cycleTodoStatus(id) {
-		const statuses = ['todo', 'done'];
-		const todo = store.harada_chart.todos.find((t) => t.id === id);
-		if (!todo) return;
-		
-		const currentIndex = statuses.indexOf(todo.status ?? 'todo');
-		const next = statuses[(currentIndex + 1) % statuses.length];
-		
-		// If marking as done and title is empty, delete it
-		if (next === 'done' && (!todo.title || todo.title.trim() === '')) {
-			deleteTodo(id);
-			return;
-		}
-		
-		// Update store.harada_chart.todos with updatedAt
-		store.harada_chart.todos = store.harada_chart.todos.map((t) => {
-			if (t.id !== id) return t;
-			return { ...t, status: next, updatedAt: Date.now() };
-		});
-		
-		// Update goal timestamp if todo is associated with a goal
-		if (typeof todo.goalIndex === 'number') {
-			updateGoalTimestamp(store.harada_chart.grid, todo.goalIndex);
-			// Force reactivity by reassigning
-			store.harada_chart.grid = [...store.harada_chart.grid];
-		}
+		store.cycleTodoStatus(id);
 	}
 
 	function createNextTodo(currentTodoId, targetGoalIndex = goalIndex) {
@@ -531,6 +476,7 @@
 			store.harada_chart.grid = [...store.harada_chart.grid];
 		}
 		
+		store.saveNow();
 		return newTodo;
 	}
 
@@ -638,7 +584,7 @@
 		}
 	}
 
-	// saveTodos removed - store.harada_chart changes trigger automatic debounced saving
+	// saveTodos removed - persistence now happens on explicit save points.
 
 	let showCompleted = $state(false);
 
@@ -697,6 +643,7 @@
 		
 		// Force reactivity by reassigning
 		store.harada_chart.grid = [...store.harada_chart.grid];
+		store.saveNow();
 	}
 
 	// Save edited goal content
@@ -731,8 +678,8 @@
 		
 		isEditingGoal = false;
 
-		// Persist immediately so changes are saved to localStorage (and Supabase); the layout's debounced save may not re-run when grid is updated from here
-		store._performSave();
+		// Persist immediately so changes are saved to localStorage and Supabase.
+		store.saveNow();
 	}
 
 	// Cancel editing

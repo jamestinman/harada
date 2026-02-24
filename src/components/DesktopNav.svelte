@@ -12,7 +12,7 @@
 	// Get save status for visual indicator
 	const saveStatus = $derived(store.saveStatus);
 	const borderColorClass = $derived.by(() => {
-		if (saveStatus === 'queued') return 'border-amber-500';
+		if (saveStatus === 'dirty') return 'border-amber-500';
 		if (saveStatus === 'saving') return 'border-red-500';
 		return 'border-slate-700';
 	});

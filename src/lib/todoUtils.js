@@ -109,6 +109,69 @@ export function normalizeTodoListMeta(todo) {
 	};
 }
 
+// Merge two todo arrays by id, preferring the todo with the newer updatedAt timestamp
+export function mergeTodoLists(localTodos, remoteTodos) {
+	const safeLocal = Array.isArray(localTodos) ? localTodos : [];
+	const safeRemote = Array.isArray(remoteTodos) ? remoteTodos : [];
+
+	const byIdLocal = new Map();
+	const byIdRemote = new Map();
+
+	for (const todo of safeLocal) {
+		if (todo && typeof todo.id === 'string') {
+			byIdLocal.set(todo.id, todo);
+		}
+	}
+
+	for (const todo of safeRemote) {
+		if (todo && typeof todo.id === 'string') {
+			byIdRemote.set(todo.id, todo);
+		}
+	}
+
+	const merged = [];
+	const allIds = new Set([...byIdLocal.keys(), ...byIdRemote.keys()]);
+
+	for (const id of allIds) {
+		const localTodo = byIdLocal.get(id);
+		const remoteTodo = byIdRemote.get(id);
+
+		if (localTodo && remoteTodo) {
+			const localUpdated =
+				typeof localTodo.updatedAt === 'number' && Number.isFinite(localTodo.updatedAt)
+					? localTodo.updatedAt
+					: 0;
+			const remoteUpdated =
+				typeof remoteTodo.updatedAt === 'number' && Number.isFinite(remoteTodo.updatedAt)
+					? remoteTodo.updatedAt
+					: 0;
+
+			merged.push(remoteUpdated > localUpdated ? remoteTodo : localTodo);
+		} else if (localTodo) {
+			merged.push(localTodo);
+		} else if (remoteTodo) {
+			merged.push(remoteTodo);
+		}
+	}
+
+	// Preserve a stable ordering using the ordering field when available
+	return merged.sort((a, b) => {
+		const aOrder =
+			typeof a?.ordering === 'number' && Number.isFinite(a.ordering)
+				? a.ordering
+				: typeof a?.createdAt === 'number' && Number.isFinite(a.createdAt)
+					? a.createdAt
+					: 0;
+		const bOrder =
+			typeof b?.ordering === 'number' && Number.isFinite(b.ordering)
+				? b.ordering
+				: typeof b?.createdAt === 'number' && Number.isFinite(b.createdAt)
+					? b.createdAt
+					: 0;
+		return aOrder - bOrder;
+	});
+}
+
 export function escapeHtml(str) {
 	if (!str) return '';
 	return str

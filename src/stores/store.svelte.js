@@ -1,6 +1,7 @@
 import { browser } from '$app/environment';
 import { localGet, localSet } from '$lib/PersistentStorage.mjs';
 import { supabase } from '$lib/supabaseClient.js';
+import { mergeTodoLists, buildGoalListMeta, buildCustomListMeta, updateGoalTimestamp } from '$lib/todoUtils.js';
 import { authStore } from './auth.svelte.js';
 
 const STORAGE_KEY = 'harada-chart-data';
@@ -9,6 +10,9 @@ const MARKDOWN_STORAGE_KEY = 'harada-markdown-data'; // Legacy - for migration o
 const JSON_STORAGE_KEY = 'harada-data-v2'; // Unified JSON format matching Supabase
 const LAST_SYNC_KEY = 'harada-last-sync';
 const MIGRATION_FLAG_KEY = 'harada-migrated-to-supabase';
+
+// Toggle this to enable verbose save/sync logging during debugging
+const DEBUG_SAVE = false;
 
 const defaultCell = () => ({ text: '', status: 'todo', readme: '', color: 'default', updated_at: null });
 
@@ -26,15 +30,16 @@ class Store {
 		todos: []
 	});
 	
-	// Save status: 'idle' | 'queued' | 'saving'
+	// Save status: 'idle' | 'dirty' | 'saving'
 	saveStatus = $state('idle');
 	isOnline = $state(browser ? navigator.onLine : true);
 	lastSyncTime = $state(null);
 	syncError = $state(null);
 	realtimeSubscription = $state(null);
 	
-	// Debounce timer for saving
-	_saveTimeout = null;
+	// Internal save coordination flags
+	_pendingSave = false;
+	_savingPromise = null;
 	_isInitialized = false;
 
 	constructor() {
@@ -65,6 +70,15 @@ class Store {
 			}
 		});
 
+		// Ensure we have a final local snapshot when the page is closed
+		window.addEventListener('beforeunload', () => {
+			try {
+				this.saveData(this.harada_chart.grid, this.harada_chart.todos);
+			} catch (error) {
+				console.error('Error saving data before unload:', error);
+			}
+		});
+
 		// Initialize on creation (local-first; auth effects handled at module level)
 		this.initialize();
 	}
@@ -75,63 +89,48 @@ class Store {
 		
 		// Load from localStorage first (always available)
 		const localData = this.loadData(defaultCell, []);
-		
-		// If online and authenticated, try to load from Supabase and compare timestamps
+		const localHasData =
+			localData.grid.some((c) => c && c.text && c.text.trim()) || localData.todos.length > 0;
+
+		// Start from local data while we optionally merge with Supabase
+		let nextGrid = localData.grid || Array.from({ length: 81 }, () => defaultCell());
+		let nextTodos = localData.todos || [];
+
+		// If online and authenticated, try to load from Supabase and merge snapshots
 		if (this.isOnline && authStore.user && supabase) {
 			try {
 				const supabaseData = await this.loadFromSupabase();
 				
 				if (supabaseData) {
-					// Compare timestamps
-					const localTimestamp = this.getLocalTimestamp();
-					const supabaseTimestamp = supabaseData.updated_at ? new Date(supabaseData.updated_at).getTime() : 0;
-					
 					// Check if Supabase data is actually empty (no goals, no todos)
-					const supabaseHasData = (supabaseData.grid || []).some(c => c && c.text && c.text.trim()) || (supabaseData.todos || []).length > 0;
-					const localHasData = localData.grid.some(c => c && c.text && c.text.trim()) || localData.todos.length > 0;
-					
-					if (supabaseTimestamp > localTimestamp) {
-						// Supabase is more recent, use it
-						this.harada_chart = {
-							grid: supabaseData.grid || Array.from({ length: 81 }, () => defaultCell()),
-							todos: supabaseData.todos || []
-						};
-						// Update localStorage with Supabase data
-						this.saveData(this.harada_chart.grid, this.harada_chart.todos);
-					} else if (localTimestamp > supabaseTimestamp) {
-						// Local is more recent, use local and sync to Supabase
-						this.harada_chart = {
-							grid: localData.grid || Array.from({ length: 81 }, () => defaultCell()),
-							todos: localData.todos || []
-						};
-						await this.saveToSupabase(this.harada_chart.grid, this.harada_chart.todos);
-					} else {
-						// Timestamps are equal - prefer the one with actual data
-						if (localHasData && !supabaseHasData) {
-							// Local has data but Supabase is empty, use local and sync
-							this.harada_chart = {
-								grid: localData.grid || Array.from({ length: 81 }, () => defaultCell()),
-								todos: localData.todos || []
-							};
-							await this.saveToSupabase(this.harada_chart.grid, this.harada_chart.todos);
-						} else if (supabaseHasData && !localHasData) {
-							// Supabase has data but local is empty, use Supabase
-							this.harada_chart = {
-								grid: supabaseData.grid || Array.from({ length: 81 }, () => defaultCell()),
-								todos: supabaseData.todos || []
-							};
-							this.saveData(this.harada_chart.grid, this.harada_chart.todos);
-						} else {
-							// Both have data or both are empty - use local (preserve user's current state)
-							this.harada_chart = {
-								grid: localData.grid || Array.from({ length: 81 }, () => defaultCell()),
-								todos: localData.todos || []
-							};
-							// Sync to Supabase if local has data (ensures first-time login saves local data)
-							if (localHasData) {
-								await this.saveToSupabase(this.harada_chart.grid, this.harada_chart.todos);
-							}
-						}
+					const supabaseHasData =
+						(supabaseData.grid || []).some((c) => c && c.text && c.text.trim()) ||
+						(supabaseData.todos || []).length > 0;
+
+					if (supabaseHasData && localHasData) {
+						// Both sides have data – merge per-cell and per-todo
+						nextGrid = this._mergeGrid(localData.grid, supabaseData.grid || []);
+						nextTodos = mergeTodoLists(localData.todos || [], supabaseData.todos || []);
+					} else if (supabaseHasData && !localHasData) {
+						// Only Supabase has data – prefer remote
+						nextGrid = supabaseData.grid || Array.from({ length: 81 }, () => defaultCell());
+						nextTodos = supabaseData.todos || [];
+					} else if (!supabaseHasData && localHasData) {
+						// Only local has data – prefer local
+						nextGrid = localData.grid || Array.from({ length: 81 }, () => defaultCell());
+						nextTodos = localData.todos || [];
+					}
+
+					// Persist merged/selected snapshot locally and remotely
+					this.harada_chart = {
+						grid: nextGrid,
+						todos: nextTodos
+					};
+					this.saveData(nextGrid, nextTodos);
+
+					// Push the merged snapshot back to Supabase so devices converge
+					if (authStore.user && supabase) {
+						await this.saveToSupabase(nextGrid, nextTodos);
 					}
 					
 					// Realtime updates disabled - they were causing conflicts with local edits
@@ -139,56 +138,119 @@ class Store {
 				} else {
 					// No Supabase data, use local and upload if there's data
 					this.harada_chart = {
-						grid: localData.grid || Array.from({ length: 81 }, () => defaultCell()),
-						todos: localData.todos || []
+						grid: nextGrid,
+						todos: nextTodos
 					};
 					
-					const hasLocalData = localData.grid.some(c => c.text.trim()) || localData.todos.length > 0;
-					if (hasLocalData) {
-						await this.saveToSupabase(this.harada_chart.grid, this.harada_chart.todos);
+					if (localHasData && authStore.user && supabase) {
+						await this.saveToSupabase(nextGrid, nextTodos);
 					}
 				}
 			} catch (error) {
 				console.error('Error initializing from Supabase:', error);
 				// Fall back to local data
 				this.harada_chart = {
-					grid: localData.grid || Array.from({ length: 81 }, () => defaultCell()),
-					todos: localData.todos || []
+					grid: nextGrid,
+					todos: nextTodos
 				};
 			}
 		} else {
 			// Offline or not authenticated, use local data
 			this.harada_chart = {
-				grid: localData.grid || Array.from({ length: 81 }, () => defaultCell()),
-				todos: localData.todos || []
+				grid: nextGrid,
+				todos: nextTodos
 			};
 		}
 		
 		this._isInitialized = true;
 	}
 
-	// Perform the actual save operation
-	async _performSave() {
+	// Mark that there are unsaved changes
+	markDirty() {
+		if (!browser || !this._isInitialized) return;
+		this._pendingSave = true;
+		// Only move to 'dirty' when currently idle; do not override 'saving'
+		if (this.saveStatus === 'idle') {
+			this.saveStatus = 'dirty';
+		}
+	}
+
+	// Save immediately (localStorage + optional Supabase)
+	saveNow() {
+		if (!browser || !this._isInitialized) return Promise.resolve();
+		this.markDirty();
+		return this._performSave();
+	}
+
+	// Backward-compatible alias for older call sites
+	queueSave() {
+		return this.saveNow();
+	}
+
+	// Perform one concrete save to localStorage and (optionally) Supabase
+	async _executeSaveOnce() {
 		if (!browser) return;
-		
-		this.saveStatus = 'saving';
-		
+
 		// Always save to localStorage immediately
+		if (DEBUG_SAVE) {
+			console.debug('[Store] Saving to localStorage', {
+				todos: (this.harada_chart.todos || []).length,
+				grid: (this.harada_chart.grid || []).length,
+				at: new Date().toISOString()
+			});
+		}
 		this.saveData(this.harada_chart.grid, this.harada_chart.todos);
-    console.log('Saved to localStorage');
 		
 		// If online and authenticated, save to Supabase
 		if (this.isOnline && authStore.user && supabase) {
 			try {
+				if (DEBUG_SAVE) {
+					console.debug('[Store] Saving to Supabase');
+				}
 				await this.saveToSupabase(this.harada_chart.grid, this.harada_chart.todos);
-        console.log('Saved to Supabase');
 			} catch (error) {
 				console.error('Error saving to Supabase:', error);
 				this.syncError = error.message;
 			}
 		}
-		
-		this.saveStatus = 'idle';
+	}
+
+	// Coordinate save calls so only one Supabase write is in-flight at a time
+	async _performSave() {
+		if (!browser) return;
+
+		// If a save is already in-flight, just note that we need to run again afterwards
+		if (this._savingPromise) {
+			this._pendingSave = true;
+			return this._savingPromise;
+		}
+
+		this._pendingSave = false;
+		this.saveStatus = 'saving';
+
+		const run = async () => {
+			// First pass
+			await this._executeSaveOnce();
+
+			// If any additional saves were requested while we were saving, run once more
+			while (this._pendingSave) {
+				this._pendingSave = false;
+				await this._executeSaveOnce();
+			}
+		};
+
+		this._savingPromise = (async () => {
+			try {
+				await run();
+			} finally {
+				this._savingPromise = null;
+				// If more saves were requested while we were saving, reflect that as 'dirty',
+				// otherwise return to neutral 'idle'.
+				this.saveStatus = this._pendingSave ? 'dirty' : 'idle';
+			}
+		})();
+
+		return this._savingPromise;
 	}
 
 	// Get local timestamp from stored data
@@ -350,12 +412,64 @@ class Store {
 		return { grid: Array.from({ length: 81 }, () => defaultCell()), todos: [] };
 	}
 
-	// Clone to plain objects so $state proxies serialize correctly (fixes "row saved but not text")
+	// Clone to plain objects so $state proxies serialize correctly (fixes \"row/todo saved but not its text/title\")
 	_toPlainGridAndTodos(gridSnapshot, todosSnapshot) {
-		return {
-			grid: JSON.parse(JSON.stringify(Array.isArray(gridSnapshot) ? gridSnapshot : [])),
-			todos: JSON.parse(JSON.stringify(Array.isArray(todosSnapshot) ? todosSnapshot : []))
+		const cloneArrayOfObjects = (value) => {
+			if (!Array.isArray(value)) return [];
+			return value.map((item) => {
+				if (item && typeof item === 'object') {
+					return { ...item };
+				}
+				return item;
+			});
 		};
+
+		return {
+			grid: cloneArrayOfObjects(gridSnapshot),
+			todos: cloneArrayOfObjects(todosSnapshot)
+		};
+	}
+
+	// Merge two grid snapshots cell-by-cell based on updated_at timestamps
+	_mergeGrid(localGrid, remoteGrid) {
+		const safeLocal = Array.isArray(localGrid) ? localGrid : [];
+		const safeRemote = Array.isArray(remoteGrid) ? remoteGrid : [];
+		const merged = [];
+
+		for (let i = 0; i < 81; i += 1) {
+			const localCell = safeLocal[i];
+			const remoteCell = safeRemote[i];
+
+			if (!localCell && !remoteCell) {
+				merged.push(defaultCell());
+				continue;
+			}
+
+			const localTime =
+				localCell && typeof localCell.updated_at === 'string'
+					? new Date(localCell.updated_at).getTime()
+					: 0;
+			const remoteTime =
+				remoteCell && typeof remoteCell.updated_at === 'string'
+					? new Date(remoteCell.updated_at).getTime()
+					: 0;
+
+			if (remoteTime > localTime) {
+				merged.push({
+					...defaultCell(),
+					...(remoteCell || {}),
+					updated_at: remoteCell?.updated_at || localCell?.updated_at || null
+				});
+			} else {
+				merged.push({
+					...defaultCell(),
+					...(localCell || remoteCell || {}),
+					updated_at: localCell?.updated_at || remoteCell?.updated_at || null
+				});
+			}
+		}
+
+		return merged;
 	}
 
 	// Save data in JSON format (matching Supabase structure)
@@ -529,32 +643,146 @@ class Store {
 			const supabaseData = await this.loadFromSupabase();
 			
 			if (supabaseData) {
-				// Compare timestamps to see which is more recent
-				const localTimestamp = this.getLocalTimestamp();
-				const supabaseTimestamp = supabaseData.updated_at ? new Date(supabaseData.updated_at).getTime() : 0;
-				
-				if (supabaseTimestamp > localTimestamp) {
-					// Supabase is more recent, use it
-					const currentStr = JSON.stringify(this.harada_chart);
-					const updateStr = JSON.stringify({ grid: supabaseData.grid || [], todos: supabaseData.todos || [] });
-					
-					if (currentStr !== updateStr) {
-						this.harada_chart = {
-							grid: supabaseData.grid || Array.from({ length: 81 }, () => defaultCell()),
-							todos: supabaseData.todos || []
-						};
-						// Update localStorage with Supabase data
-						this.saveData(this.harada_chart.grid, this.harada_chart.todos);
-					}
-				} else if (localTimestamp > supabaseTimestamp) {
-					// Local is more recent, sync to Supabase
-					await this.saveToSupabase(this.harada_chart.grid, this.harada_chart.todos);
+				const current = this.harada_chart || { grid: [], todos: [] };
+				const mergedGrid = this._mergeGrid(current.grid || [], supabaseData.grid || []);
+				const mergedTodos = mergeTodoLists(current.todos || [], supabaseData.todos || []);
+
+				const currentStr = JSON.stringify({
+					grid: current.grid || [],
+					todos: current.todos || []
+				});
+				const mergedStr = JSON.stringify({ grid: mergedGrid, todos: mergedTodos });
+
+				if (currentStr !== mergedStr) {
+					this.harada_chart = {
+						grid: mergedGrid,
+						todos: mergedTodos
+					};
+					this.saveData(mergedGrid, mergedTodos);
+					// Push merged snapshot back to Supabase so both sides match
+					await this.saveToSupabase(mergedGrid, mergedTodos);
 				}
 			}
 		} catch (error) {
 			console.error('Error syncing on focus:', error);
 			this.syncError = error.message;
 		}
+	}
+
+	// --- Todo mutation helpers (domain logic) ---
+
+	updateTodo(id, patch) {
+		if (!id || !patch) return;
+
+		let nextPatch = patch;
+
+		if (patch?.listType === 'custom') {
+			nextPatch = {
+				...patch,
+				...buildCustomListMeta(patch.listName)
+			};
+		} else if (typeof patch?.goalIndex === 'number' || patch?.goalIndex === null) {
+			nextPatch = {
+				...patch,
+				...buildGoalListMeta(patch.goalIndex)
+			};
+		}
+
+		nextPatch = { ...nextPatch, updatedAt: Date.now() };
+
+		const previousTodos = this.harada_chart.todos || [];
+		let previousTodo = null;
+
+		for (const todo of previousTodos) {
+			if (todo.id === id) {
+				previousTodo = todo;
+				break;
+			}
+		}
+
+		const updatedTodos = previousTodos.map((t) => (t.id === id ? { ...t, ...nextPatch } : t));
+
+		this.harada_chart = {
+			...this.harada_chart,
+			todos: updatedTodos
+		};
+
+		const updatedTodo = updatedTodos.find((t) => t.id === id);
+		const goalIndexToUpdate = updatedTodo?.goalIndex ?? previousTodo?.goalIndex;
+
+		if (typeof goalIndexToUpdate === 'number') {
+			const nextGrid = [...this.harada_chart.grid];
+			updateGoalTimestamp(nextGrid, goalIndexToUpdate);
+			this.harada_chart = {
+				...this.harada_chart,
+				grid: nextGrid
+			};
+		}
+
+		this.saveNow();
+	}
+
+	deleteTodo(id) {
+		if (!id) return;
+
+		const previousTodos = this.harada_chart.todos || [];
+		const todo = previousTodos.find((t) => t.id === id);
+
+		const nextTodos = previousTodos.filter((t) => t.id !== id);
+
+		this.harada_chart = {
+			...this.harada_chart,
+			todos: nextTodos
+		};
+
+		if (todo && typeof todo.goalIndex === 'number') {
+			const nextGrid = [...this.harada_chart.grid];
+			updateGoalTimestamp(nextGrid, todo.goalIndex);
+			this.harada_chart = {
+				...this.harada_chart,
+				grid: nextGrid
+			};
+		}
+
+		this.saveNow();
+	}
+
+	cycleTodoStatus(id) {
+		if (!id) return;
+
+		const previousTodos = this.harada_chart.todos || [];
+		const todo = previousTodos.find((t) => t.id === id);
+		if (!todo) return;
+
+		const statuses = ['todo', 'done'];
+		const currentIndex = statuses.indexOf(todo.status ?? 'todo');
+		const nextStatus = statuses[(currentIndex + 1) % statuses.length];
+
+		// If marking as done and title is empty, delete it
+		if (nextStatus === 'done' && (!todo.title || todo.title.trim() === '')) {
+			this.deleteTodo(id);
+			return;
+		}
+
+		const nextTodos = previousTodos.map((t) =>
+			t.id === id ? { ...t, status: nextStatus, updatedAt: Date.now() } : t
+		);
+
+		this.harada_chart = {
+			...this.harada_chart,
+			todos: nextTodos
+		};
+
+		if (typeof todo.goalIndex === 'number') {
+			const nextGrid = [...this.harada_chart.grid];
+			updateGoalTimestamp(nextGrid, todo.goalIndex);
+			this.harada_chart = {
+				...this.harada_chart,
+				grid: nextGrid
+			};
+		}
+
+		this.saveNow();
 	}
 
 	// Handle auth state changes

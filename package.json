@@ -7,6 +7,7 @@
 		"dev": "vite dev --open",
 		"build": "vite build",
 		"preview": "vite preview",
+		"test:todo-utils": "node --test src/lib/todoUtils.test.mjs",
 		"prepare": "svelte-kit sync || echo ''"
 	},
 	"devDependencies": {

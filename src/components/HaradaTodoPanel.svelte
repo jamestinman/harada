@@ -99,7 +99,13 @@
 								class="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs font-medium text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
 								placeholder="Title for this to-do"
 								value={todo.title}
-								oninput={(e) => updateTodo(todo.id, { title: e.target.value })}
+								onkeydown={(e) => {
+									if (e.key === 'Enter') {
+										e.preventDefault();
+										e.currentTarget.blur();
+									}
+								}}
+								onblur={(e) => updateTodo(todo.id, { title: e.target.value })}
 							/>
 							<div class="mt-1 text-[10px] text-slate-400">
 								{getGoalLabel(todo.goalIndex)}
@@ -142,7 +148,7 @@
 								class="min-h-[80px] w-full resize-y rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] leading-snug text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
 								placeholder="Write detailed notes, checklists or context for this to-do using Markdown…"
 								value={todo.markdown}
-								oninput={(e) => updateTodo(todo.id, { markdown: e.target.value })}
+								onblur={(e) => updateTodo(todo.id, { markdown: e.target.value })}
 							></textarea>
 						</div>
 						<div class="flex flex-col gap-1">

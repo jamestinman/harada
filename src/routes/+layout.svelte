@@ -34,20 +34,6 @@ $effect(() => {
 	store.handleAuthChange();
 });
 
-// Watch for changes to harada_chart and save immediately (localStorage + Supabase)
-$effect(() => {
-	if (!browser) return;
-
-	// Access harada_chart properties to create reactive dependency
-	const grid = store.harada_chart.grid;
-	const todos = store.harada_chart.todos;
-
-	// Skip until initial load is complete
-	if (!store._isInitialized) return;
-
-	store._performSave();
-});
-
 	const goalIndices = Array.from({ length: 81 }, (_, i) => i);
 	const allGoals = $derived.by(() => {
 		const uniqueCanonical = [...new Set(goalIndices.map((idx) => canonicalGoalIndex(idx)))];
@@ -131,6 +117,11 @@ $effect(() => {
 	// Enable view transitions for all navigation
 	onNavigate((navigation) => {
 		if (!document.startViewTransition) return;
+
+		// Flush any pending changes to localStorage/Supabase before navigating away.
+		if (browser && store._isInitialized) {
+			store.saveNow();
+		}
 
 		return new Promise((resolve) => {
 			document.startViewTransition(async () => {

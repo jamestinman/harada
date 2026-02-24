@@ -1,6 +1,12 @@
 <script>
 	import { goto } from '$app/navigation';
-	import { indexToNomenclature, canonicalGoalIndex, getLinkedGoalIndex, updateGoalTimestamp } from '$lib/todoUtils.js';
+	import {
+		indexToNomenclature,
+		canonicalGoalIndex,
+		getLinkedGoalIndex,
+		updateGoalTimestamp
+	} from '$lib/todoUtils.js';
+	import { store } from '$stores/store.svelte.js';
 
 	let { grid, onUpdateGrid = null } = $props();
 	
@@ -227,6 +233,236 @@
 			cancelEdit();
 		}
 	}
+
+	const GOAL_DRAG_START_PX = 6;
+	const GOAL_LONG_PRESS_MS = 260;
+	let goalPressTimer = null;
+	let pendingGoalDrag = null;
+	let goalDrag = $state({
+		active: false,
+		pointerId: null,
+		sourceIndex: null,
+		targetIndex: null
+	});
+
+	function isMainGoalIndex(index) {
+		return index === 40;
+	}
+
+	function isDraggableGoalIndex(index) {
+		// Ultimate goal (E5, index 40) is not movable at all
+		return !isMainGoalIndex(index);
+	}
+
+	function clearGoalPressTimer() {
+		if (goalPressTimer) {
+			clearTimeout(goalPressTimer);
+			goalPressTimer = null;
+		}
+	}
+
+	function clearPendingGoalDrag() {
+		clearGoalPressTimer();
+		pendingGoalDrag = null;
+	}
+
+	function resetGoalDrag() {
+		goalDrag = {
+			active: false,
+			pointerId: null,
+			sourceIndex: null,
+			targetIndex: null
+		};
+	}
+
+	function handleCellPointerDown(event, index) {
+		if (!isDraggableGoalIndex(index)) return;
+		if (!event.isPrimary) return;
+		if (event.button !== 0) return;
+
+		clearPendingGoalDrag();
+
+		pendingGoalDrag = {
+			pointerId: event.pointerId,
+			startX: event.clientX,
+			startY: event.clientY,
+			index,
+			pointerType: event.pointerType || 'mouse'
+		};
+
+		window.addEventListener('pointermove', handleGlobalGoalPointerMove, { passive: false });
+		window.addEventListener('pointerup', handleGlobalGoalPointerUp, { passive: false });
+		window.addEventListener('pointercancel', handleGlobalGoalPointerUp, { passive: false });
+
+		if (pendingGoalDrag.pointerType === 'touch') {
+			const cx = event.clientX;
+			const cy = event.clientY;
+			const startIndex = index;
+			goalPressTimer = setTimeout(() => {
+				startGoalDrag(event.pointerId, startIndex, cx, cy);
+				pendingGoalDrag = null;
+			}, GOAL_LONG_PRESS_MS);
+		}
+	}
+
+	function handleCellPointerEnter(_event, index) {
+		if (!goalDrag.active) return;
+		if (!isDraggableGoalIndex(index)) return;
+		if (goalDrag.targetIndex === index) return;
+		goalDrag = { ...goalDrag, targetIndex: index };
+	}
+
+	function startGoalDrag(pointerId, index, _clientX, _clientY) {
+		if (!isDraggableGoalIndex(index)) return;
+		goalDrag = {
+			active: true,
+			pointerId,
+			sourceIndex: index,
+			targetIndex: index
+		};
+	}
+
+	function handleGlobalGoalPointerMove(event) {
+		if (pendingGoalDrag && pendingGoalDrag.pointerId === event.pointerId) {
+			const distance = Math.hypot(
+				event.clientX - pendingGoalDrag.startX,
+				event.clientY - pendingGoalDrag.startY
+			);
+
+			if (pendingGoalDrag.pointerType === 'touch') {
+				if (distance > GOAL_DRAG_START_PX) {
+					clearPendingGoalDrag();
+				}
+			} else if (distance >= GOAL_DRAG_START_PX) {
+				startGoalDrag(event.pointerId, pendingGoalDrag.index, event.clientX, event.clientY);
+				pendingGoalDrag = null;
+			}
+		}
+
+		if (goalDrag.active && goalDrag.pointerId === event.pointerId) {
+			event.preventDefault();
+			// Update target index based on current pointer position
+			const targetElement = document.elementFromPoint(event.clientX, event.clientY);
+			const cellElement = targetElement?.closest?.('[data-harada-cell-index]');
+			if (!cellElement) return;
+			const indexAttr = cellElement.getAttribute('data-harada-cell-index');
+			if (indexAttr == null) return;
+			const index = Number(indexAttr);
+			if (!Number.isInteger(index)) return;
+			if (!isDraggableGoalIndex(index)) return;
+			if (goalDrag.targetIndex === index) return;
+			goalDrag = { ...goalDrag, targetIndex: index };
+		}
+	}
+
+	function clearGlobalGoalPointerListeners() {
+		window.removeEventListener('pointermove', handleGlobalGoalPointerMove);
+		window.removeEventListener('pointerup', handleGlobalGoalPointerUp);
+		window.removeEventListener('pointercancel', handleGlobalGoalPointerUp);
+	}
+
+	function swapGoalData(sourceIndex, targetIndex) {
+		if (!onUpdateGrid) return;
+
+		const sourceCanonical = canonicalGoalIndex(sourceIndex);
+		const targetCanonical = canonicalGoalIndex(targetIndex);
+
+		// Do not move or overwrite the ultimate goal (E5, index 40)
+		if (sourceCanonical === 40 || targetCanonical === 40) {
+			return;
+		}
+
+		if (sourceCanonical === targetCanonical) return;
+
+		const newGrid = [...grid];
+
+		const sourceCell = newGrid[sourceCanonical]
+			? { ...newGrid[sourceCanonical] }
+			: undefined;
+		const targetCell = newGrid[targetCanonical]
+			? { ...newGrid[targetCanonical] }
+			: undefined;
+
+		newGrid[sourceCanonical] = targetCell;
+		newGrid[targetCanonical] = sourceCell;
+
+		function syncLinkedGoal(gridArray, canonicalIndex) {
+			const linkedIndex = getLinkedGoalIndex(canonicalIndex);
+			if (linkedIndex === null || linkedIndex === canonicalIndex) return;
+			const canonicalCell = gridArray[canonicalIndex]
+				? { ...gridArray[canonicalIndex] }
+				: undefined;
+			if (canonicalCell) {
+				gridArray[linkedIndex] = { ...canonicalCell };
+			} else {
+				gridArray[linkedIndex] = undefined;
+			}
+		}
+
+		// Keep linked goal pairs (outer block center <-> center sub-goal) in sync
+		syncLinkedGoal(newGrid, sourceCanonical);
+		syncLinkedGoal(newGrid, targetCanonical);
+
+		// Update goal timestamps for both goals
+		updateGoalTimestamp(newGrid, sourceCanonical);
+		updateGoalTimestamp(newGrid, targetCanonical);
+
+		// Swap todos that belong to these goals
+		const currentTodos = store.harada_chart.todos || [];
+		const nextTodos = currentTodos.map((todo) => {
+			if (todo?.listType && todo.listType !== 'goal') return todo;
+			const goalIndex = typeof todo?.goalIndex === 'number' ? todo.goalIndex : null;
+			if (goalIndex === sourceCanonical) {
+				return {
+					...todo,
+					goalIndex: targetCanonical,
+					listType: 'goal',
+					listId: `goal:${targetCanonical}`
+				};
+			}
+			if (goalIndex === targetCanonical) {
+				return {
+					...todo,
+					goalIndex: sourceCanonical,
+					listType: 'goal',
+					listId: `goal:${sourceCanonical}`
+				};
+			}
+			return todo;
+		});
+
+		store.harada_chart.todos = nextTodos;
+
+		onUpdateGrid(newGrid);
+	}
+
+	function handleGlobalGoalPointerUp(event) {
+		if (pendingGoalDrag && pendingGoalDrag.pointerId === event.pointerId) {
+			clearPendingGoalDrag();
+			clearGlobalGoalPointerListeners();
+			return;
+		}
+
+		if (goalDrag.active && goalDrag.pointerId === event.pointerId) {
+			event.preventDefault();
+			if (
+				goalDrag.sourceIndex != null &&
+				goalDrag.targetIndex != null &&
+				goalDrag.sourceIndex !== goalDrag.targetIndex
+			) {
+				swapGoalData(goalDrag.sourceIndex, goalDrag.targetIndex);
+			}
+			resetGoalDrag();
+			clearGlobalGoalPointerListeners();
+		}
+	}
+
+	function goalDragClass(index) {
+		if (!goalDrag.active) return '';
+		if (goalDrag.sourceIndex === index) return 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-950';
+		if (goalDrag.targetIndex === index) return 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-950';
+		return '';
+	}
 </script>
 
 <!-- Full-screen chart grid -->
@@ -243,9 +479,12 @@
 
 		{#if isEditing}
 			<div
-				class="group aspect-square transition-all duration-200 hover:scale-105 hover:z-20 {cellClasses} rounded-md cursor-pointer"
+				class={`group aspect-square transition-all duration-200 hover:scale-105 hover:z-20 ${cellClasses} rounded-md cursor-pointer ${goalDragClass(
+					i
+				)}`}
 				class:mt-1={row === 3 || row === 6}
 				class:ml-1={col === 3 || col === 6}
+				data-harada-cell-index={i}
 			>
 				<div class="relative flex h-full w-full flex-col items-center justify-center p-0.5 sm:p-1">
 					<input
@@ -260,13 +499,18 @@
 			</div>
 		{:else if hasTitle}
 			{@const canonicalIndex = canonicalGoalIndex(i)}
-			<!-- Link through to navigate when title exists -->
-			<a
+			<!-- Navigate to goal when title exists -->
+			<button
 				type="button"
-				class="group aspect-square transition-all duration-200 hover:scale-105 hover:z-20 {cellClasses} rounded-md cursor-pointer"
+				onpointerdown={(event) => handleCellPointerDown(event, i)}
+				onpointerenter={(event) => handleCellPointerEnter(event, i)}
+				onclick={() => goto(`/todo/${indexToNomenclature(i)}`)}
+				class={`group aspect-square transition-all duration-200 hover:scale-105 hover:z-20 ${cellClasses} rounded-md cursor-pointer ${goalDragClass(
+					i
+				)}`}
 				class:mt-1={row === 3 || row === 6}
 				class:ml-1={col === 3 || col === 6}
-				href={`/todo/${indexToNomenclature(i)}`}
+				data-harada-cell-index={i}
 			>
 				<div class="relative flex h-full w-full flex-col items-center justify-center p-0.5 sm:p-1">
 					<div
@@ -285,15 +529,20 @@
 						</div>
 					{/if}
 				</div>
-			</a>
+			</button>
 		{:else}
 			<!-- Click to edit when no title -->
 			<button
 				type="button"
 				onclick={(e) => handleCellClick(i, e)}
-				class="group aspect-square transition-all duration-200 hover:scale-105 hover:z-20 {cellClasses} rounded-md cursor-pointer w-full h-full border-0 p-0"
+				onpointerdown={(event) => handleCellPointerDown(event, i)}
+				onpointerenter={(event) => handleCellPointerEnter(event, i)}
+				class={`group aspect-square transition-all duration-200 hover:scale-105 hover:z-20 ${cellClasses} rounded-md cursor-pointer w-full h-full border-0 p-0 ${goalDragClass(
+					i
+				)}`}
 				class:mt-1={row === 3 || row === 6}
 				class:ml-1={col === 3 || col === 6}
+				data-harada-cell-index={i}
 				aria-label="Edit goal"
 				title="Edit goal"
 			>

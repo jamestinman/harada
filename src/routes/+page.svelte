@@ -15,9 +15,9 @@
 	});
 
 	function handleUpdateGrid(newGrid) {
-		// Update the store's harada_chart - this will trigger the debounced save
-		// Reassign the grid array to ensure reactivity
+		// Update grid and persist immediately.
 		store.harada_chart.grid = [...newGrid];
+		store.saveNow();
 	}
 </script>
 

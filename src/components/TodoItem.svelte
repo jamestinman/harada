@@ -210,7 +210,11 @@
 
 <!-- Compact single-line view -->
 {#if !isEditing}
-	<div data-todo-item-id={todo.id} class="group flex items-center gap-2 rounded-lg border border-slate-700/50 bg-slate-950/40 px-3 py-2 transition hover:border-slate-600 hover:bg-slate-900/50" style="margin-left: {indentLevel * 1.5}rem;">
+	<div
+		data-todo-item-id={todo.id}
+		class="group flex items-center gap-2 rounded-lg border border-slate-700/50 bg-slate-950/40 px-3 py-2 transition hover:border-slate-600 hover:bg-slate-900/50 select-none"
+		style="margin-left: {indentLevel * 1.5}rem;"
+	>
 		<!-- Checkbox -->
 		<button
 			type="button"

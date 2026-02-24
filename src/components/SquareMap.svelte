@@ -7,14 +7,6 @@
 	
 	// Use store.harada_chart.grid if grid prop is not provided
 	const chartGrid = $derived(grid ?? store.harada_chart.grid);
-	
-	// Get save status for visual indicator
-	const saveStatus = $derived(store.saveStatus);
-	const borderColorClass = $derived.by(() => {
-		if (saveStatus === 'queued') return 'border-amber-500';
-		if (saveStatus === 'saving') return 'border-red-500';
-		return '';
-	});
 
 	// All squares are valid todo targets.
 	const goalIndices = $derived.by(() => {
@@ -76,7 +68,7 @@
 
 <button
 	type="button"
-	class="inline-flex flex-col gap-0.5 rounded-lg p-1 border-2 transition-all hover:bg-slate-800/50 active:scale-95 cursor-pointer {borderColorClass}"
+class="inline-flex flex-col gap-0.5 rounded-lg p-1 border-2 transition-all hover:bg-slate-800/50 active:scale-95 cursor-pointer {store.saveStatus == 'dirty' ? 'border-amber-500' : store.saveStatus == 'saving' ? 'border-red-500' : 'border-transparent'} "
 	onclick={() => {
     goto("/");
 	}}
