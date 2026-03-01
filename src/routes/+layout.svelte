@@ -10,7 +10,7 @@
 		updateGoalTimestamp,
 		buildGoalListMeta
 	} from '$lib/todoUtils.js';
-	import DesktopNav from '$components/DesktopNav.svelte';
+	import Nav from '$components/Nav.svelte';
 	import './layout.css';
 
 	let { children } = $props();
@@ -33,6 +33,16 @@ $effect(() => {
 	// Delegate logic to the store instance
 	store.handleAuthChange();
 });
+
+	// Hide iOS keyboard accessory bar (Done/Prev/Next) so it doesn’t overlap the bottom nav
+  /*
+	$effect(() => {
+		if (!browser) return;
+		import('@capacitor/keyboard').then(({ Keyboard }) => {
+			Keyboard.setAccessoryBarVisible({ isVisible: false }).catch(() => {});
+		});
+	});
+  */
 
 	const goalIndices = Array.from({ length: 81 }, (_, i) => i);
 	const allGoals = $derived.by(() => {
@@ -141,7 +151,7 @@ $effect(() => {
 >
 	{@render children()}
 
-  <DesktopNav
+  <Nav
     {allGoals}
     defaultGoalIndex={null}
     onCreateTodo={createTodoFromComposer}

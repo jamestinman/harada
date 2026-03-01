@@ -12,7 +12,7 @@
 		updateGoalTimestamp
 	} from '$lib/todoUtils.js';
 	import TodoList from '$components/TodoList.svelte';
-	import DesktopNav from '$components/DesktopNav.svelte';
+	import Nav from '$components/Nav.svelte';
 
   // Use store.harada_chart directly - it's reactive
 	const grid = $derived(store.harada_chart.grid);
@@ -592,7 +592,7 @@
 			/>
 		{/if}
 	</div>
-	<DesktopNav
+	<Nav
 		{allGoals}
 		defaultGoalIndex={null}
 		onCreateTodo={createTodoFromComposer}

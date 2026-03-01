@@ -91,8 +91,8 @@
 	function handleTitleKeydown(e) {
 		if (e.key === 'Enter') {
 			e.preventDefault();
+			saveTitle(); // Save before setting isCreatingNext so the guard doesn't block it
 			isCreatingNext = true;
-			saveTitle();
 			// Create new todo below and focus it
 			if (onCreateNext) {
 				const newTodo = onCreateNext();

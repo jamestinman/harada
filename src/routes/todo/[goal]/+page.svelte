@@ -20,7 +20,7 @@
 	} from '$lib/todoUtils.js';
 	import SquareMap from '$components/SquareMap.svelte';
 	import TodoList from '$components/TodoList.svelte';
-	import DesktopNav from '$components/DesktopNav.svelte';
+	import Nav from '$components/Nav.svelte';
 
 	// Use store.harada_chart directly - it's reactive
 	const grid = $derived(store.harada_chart.grid);
@@ -737,7 +737,7 @@
 									bind:this={goalTitleInputElement}
 									bind:value={editedGoalTitle}
 									class="w-full rounded-md border border-violet-500 bg-slate-900 px-3 py-2 text-2xl font-bold text-slate-100 placeholder-slate-500 outline-none focus:ring-2 focus:ring-violet-500/50"
-									placeholder={`Goal ${indexToNomenclature(goalIndex)} title`}
+									placeholder="Goal title"
 									onkeydown={(e) => {
 										if (e.key === 'Enter') {
 											e.preventDefault();
@@ -869,7 +869,7 @@
 			/>
 		{/if}
 	</div>
-	<DesktopNav
+	<Nav
 		{allGoals}
 		defaultGoalIndex={goalIndex}
 		onCreateTodo={createTodoFromComposer}

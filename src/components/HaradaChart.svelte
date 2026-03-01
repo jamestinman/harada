@@ -375,40 +375,50 @@
 	}
 </script>
 
-<!-- Full-screen chart grid -->
+<!-- Full-screen chart grid: 3×3 blocks so block gaps don't change cell size -->
 <div
-	class="mx-auto grid gap-0.5 sm:gap-1"
-	style="grid-template-columns: repeat(9, minmax(0, 1fr)); max-width: min(95vw, 95vh, 100dvw - 32px, 100dvh - 200px); touch-action: none;"
+	class="mx-auto grid grid-cols-3 gap-1 sm:gap-1.5"
+	style="max-width: min(95vw, 95vh, 100dvw - 32px, 100dvh - 200px); touch-action: none;"
 >
-	{#each { length: 81 } as _, i}
-		{@const row = Math.floor(i / 9)}
-		{@const col = i % 9}
-		{@const cellClasses = getCellClasses(row, col, i)}
-		{@const hasTitle = hasCustomTitle(i)}
-
-		<button
-			type="button"
-			onpointerdown={(event) => handleCellPointerDown(event, i)}
-			onpointerenter={(event) => handleCellPointerEnter(event, i)}
-			onclick={() => goto(`/todo/${indexToNomenclature(i)}`)}
-			class={`group aspect-square transition-all duration-200 hover:scale-105 hover:z-20 ${cellClasses} rounded-md cursor-pointer touch-none ${goalDragClass(i)}`}
-			class:mt-1={row === 3 || row === 6}
-			class:ml-1={col === 3 || col === 6}
-			data-harada-cell-index={i}
-			aria-label={hasTitle ? grid[i]?.text : 'Add goal'}
+	{#each { length: 9 } as _, blockIndex}
+		{@const blockRow = Math.floor(blockIndex / 3)}
+		{@const blockCol = blockIndex % 3}
+		<div
+			class="grid gap-0.5 sm:gap-1"
+			style="grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); aspect-ratio: 1;"
 		>
-			<div class="relative flex h-full w-full flex-col items-center justify-center p-0.5 sm:p-1">
-				{#if hasTitle}
-					<div class="w-full text-center text-[8px] leading-tight sm:text-[10px] md:text-xs overflow-hidden line-clamp-3">
-						{grid[i]?.text || ''}
+			{#each { length: 9 } as _, innerIndex}
+				{@const r = Math.floor(innerIndex / 3)}
+				{@const c = innerIndex % 3}
+				{@const row = blockRow * 3 + r}
+				{@const col = blockCol * 3 + c}
+				{@const i = row * 9 + col}
+				{@const cellClasses = getCellClasses(row, col, i)}
+				{@const hasTitle = hasCustomTitle(i)}
+
+				<button
+					type="button"
+					onpointerdown={(event) => handleCellPointerDown(event, i)}
+					onpointerenter={(event) => handleCellPointerEnter(event, i)}
+					onclick={() => goto(`/todo/${indexToNomenclature(i)}`)}
+					class={`group aspect-square min-h-0 min-w-0 transition-all duration-200 hover:scale-105 hover:z-20 ${cellClasses} rounded-md cursor-pointer touch-none ${goalDragClass(i)}`}
+					data-harada-cell-index={i}
+					aria-label={hasTitle ? grid[i]?.text : 'Add goal'}
+				>
+					<div class="relative flex h-full w-full flex-col items-center justify-center p-0.5 sm:p-1">
+						{#if hasTitle}
+							<div class="w-full text-center text-[8px] leading-tight sm:text-[10px] md:text-xs overflow-hidden line-clamp-3">
+								{grid[i]?.text || ''}
+							</div>
+							{#if grid[i]?.status === 'underway'}
+								<div class="absolute bottom-0.5 left-0.5 text-[8px] sm:text-[10px]" title="Underway">⏳</div>
+							{:else if grid[i]?.status === 'done'}
+								<div class="absolute bottom-0.5 left-0.5 text-[8px] sm:text-[10px]" title="Done">✓</div>
+							{/if}
+						{/if}
 					</div>
-					{#if grid[i]?.status === 'underway'}
-						<div class="absolute bottom-0.5 left-0.5 text-[8px] sm:text-[10px]" title="Underway">⏳</div>
-					{:else if grid[i]?.status === 'done'}
-						<div class="absolute bottom-0.5 left-0.5 text-[8px] sm:text-[10px]" title="Done">✓</div>
-					{/if}
-				{/if}
-			</div>
-		</button>
+				</button>
+			{/each}
+		</div>
 	{/each}
 </div>
