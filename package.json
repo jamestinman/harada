@@ -1,11 +1,13 @@
 {
 	"name": "harada",
 	"private": true,
-	"version": "0.0.1",
+	"version": "0.0.7",
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev --open",
 		"build": "vite build",
+		"ios": "./prepare.sh dev && BUILD_TARGET=static vite build && npx cap run ios --target=\"370C98FE-A014-483B-8DA2-96F896BBE035\"",
+		"android": "./prepare.sh dev && BUILD_TARGET=static vite build && npx cap run android",
 		"preview": "vite preview",
 		"test:todo-utils": "node --test src/lib/todoUtils.test.mjs",
 		"prepare": "svelte-kit sync || echo ''"

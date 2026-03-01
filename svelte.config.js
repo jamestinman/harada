@@ -7,7 +7,11 @@ const config = {
 
 	kit: {
 		adapter: process.env.BUILD_TARGET === 'static' 
-			? adapterStatic({ fallback: 'index.html' }) 
+			? adapterStatic({
+				pages: 'build',
+				assets: 'build',
+				fallback: 'index.html'
+			})
 			: adapterVercel(),
 		alias: {
 			$components: './src/components',

@@ -106,6 +106,33 @@ npx cap open ios
 npx cap open android
 ```
 
+## Release Builds
+
+Use the helper scripts to bump versions, build web assets, sync Capacitor, and create native release artifacts.
+
+```bash
+# Prep only (build web + cap sync for available platforms)
+./prepare.sh prod
+
+# Build all available release targets (android/ios/macos if present)
+./buildRelease.sh prod
+
+# Build selected targets only
+./buildRelease.sh prod android ios
+./buildRelease.sh prod macos
+```
+
+Expected outputs:
+
+- Android bundle: `android/app/build/outputs/bundle/release/app-release.aab`
+- iOS archive: `ios/App/build/App.xcarchive`
+- macOS archive (if `macos` platform exists): `macos/App/build/App-macos.xcarchive`
+
+Notes:
+
+- Version metadata is bumped by `tools/updateVersion.sh` before release builds.
+- To enable desktop macOS release, first add the platform: `npx cap add macos`
+
 
 ## TODO / Roadmap
 

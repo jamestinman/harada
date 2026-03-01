@@ -1,11 +1,18 @@
 import { browser } from '$app/environment';
 import { localGet, localSet } from '$lib/PersistentStorage.mjs';
 import { supabase } from '$lib/supabaseClient.js';
-import { mergeTodoLists, buildGoalListMeta, buildCustomListMeta, updateGoalTimestamp } from '$lib/todoUtils.js';
+import {
+	mergeTodoLists,
+	buildGoalListMeta,
+	buildCustomListMeta,
+	updateGoalTimestamp,
+	normalizeTodoListMeta
+} from '$lib/todoUtils.js';
 import { authStore } from './auth.svelte.js';
 
 const STORAGE_KEY = 'harada-chart-data';
 const TODO_STORAGE_KEY = 'harada-todos-v1';
+const TODO_TOMBSTONES_KEY = 'harada-todo-tombstones-v1';
 const MARKDOWN_STORAGE_KEY = 'harada-markdown-data'; // Legacy - for migration only
 const JSON_STORAGE_KEY = 'harada-data-v2'; // Unified JSON format matching Supabase
 const LAST_SYNC_KEY = 'harada-last-sync';
@@ -17,7 +24,7 @@ const DEBUG_SAVE = false;
 const defaultCell = () => ({ text: '', status: 'todo', readme: '', color: 'default', updated_at: null });
 
 class Store {
-  version = $state("0.0.1"); // Note: use tools/updateVersion.sh to update this so it stays in sync with package.json, android, ios
+  version = $state("0.0.7"); // Note: use tools/updateVersion.sh to update this so it stays in sync with package.json, android, ios
 	activeTab = $state('harada');
 	selectedGoalFilter = $state('all'); // 'all' | goalIndex as string
 	selectedGoalForNew = $state(''); // filled once goals are known
@@ -29,6 +36,7 @@ class Store {
 		grid: Array.from({ length: 81 }, () => defaultCell()),
 		todos: []
 	});
+	todoTombstones = $state({});
 	
 	// Save status: 'idle' | 'dirty' | 'saving'
 	saveStatus = $state('idle');
@@ -73,7 +81,7 @@ class Store {
 		// Ensure we have a final local snapshot when the page is closed
 		window.addEventListener('beforeunload', () => {
 			try {
-				this.saveData(this.harada_chart.grid, this.harada_chart.todos);
+				this.saveData(this.harada_chart.grid, this.harada_chart.todos, this.todoTombstones);
 			} catch (error) {
 				console.error('Error saving data before unload:', error);
 			}
@@ -95,6 +103,7 @@ class Store {
 		// Start from local data while we optionally merge with Supabase
 		let nextGrid = localData.grid || Array.from({ length: 81 }, () => defaultCell());
 		let nextTodos = localData.todos || [];
+		let nextTombstones = localData.todoTombstones || {};
 
 		// If online and authenticated, try to load from Supabase and merge snapshots
 		if (this.isOnline && authStore.user && supabase) {
@@ -105,20 +114,30 @@ class Store {
 					// Check if Supabase data is actually empty (no goals, no todos)
 					const supabaseHasData =
 						(supabaseData.grid || []).some((c) => c && c.text && c.text.trim()) ||
-						(supabaseData.todos || []).length > 0;
+						(supabaseData.todos || []).length > 0 ||
+						Object.keys(supabaseData.todoTombstones || {}).length > 0;
 
 					if (supabaseHasData && localHasData) {
 						// Both sides have data – merge per-cell and per-todo
 						nextGrid = this._mergeGrid(localData.grid, supabaseData.grid || []);
-						nextTodos = mergeTodoLists(localData.todos || [], supabaseData.todos || []);
+						const mergedTasks = this._mergeTodosAndTombstones(
+							localData.todos || [],
+							localData.todoTombstones || {},
+							supabaseData.todos || [],
+							supabaseData.todoTombstones || {}
+						);
+						nextTodos = mergedTasks.todos;
+						nextTombstones = mergedTasks.todoTombstones;
 					} else if (supabaseHasData && !localHasData) {
 						// Only Supabase has data – prefer remote
 						nextGrid = supabaseData.grid || Array.from({ length: 81 }, () => defaultCell());
 						nextTodos = supabaseData.todos || [];
+						nextTombstones = supabaseData.todoTombstones || {};
 					} else if (!supabaseHasData && localHasData) {
 						// Only local has data – prefer local
 						nextGrid = localData.grid || Array.from({ length: 81 }, () => defaultCell());
 						nextTodos = localData.todos || [];
+						nextTombstones = localData.todoTombstones || {};
 					}
 
 					// Persist merged/selected snapshot locally and remotely
@@ -126,11 +145,12 @@ class Store {
 						grid: nextGrid,
 						todos: nextTodos
 					};
-					this.saveData(nextGrid, nextTodos);
+					this.todoTombstones = nextTombstones;
+					this.saveData(nextGrid, nextTodos, nextTombstones);
 
 					// Push the merged snapshot back to Supabase so devices converge
 					if (authStore.user && supabase) {
-						await this.saveToSupabase(nextGrid, nextTodos);
+						await this.saveToSupabase(nextGrid, nextTodos, 'My Harada Chart', nextTombstones);
 					}
 					
 					// Realtime updates disabled - they were causing conflicts with local edits
@@ -141,9 +161,10 @@ class Store {
 						grid: nextGrid,
 						todos: nextTodos
 					};
+					this.todoTombstones = nextTombstones;
 					
 					if (localHasData && authStore.user && supabase) {
-						await this.saveToSupabase(nextGrid, nextTodos);
+						await this.saveToSupabase(nextGrid, nextTodos, 'My Harada Chart', nextTombstones);
 					}
 				}
 			} catch (error) {
@@ -153,6 +174,7 @@ class Store {
 					grid: nextGrid,
 					todos: nextTodos
 				};
+				this.todoTombstones = nextTombstones;
 			}
 		} else {
 			// Offline or not authenticated, use local data
@@ -160,6 +182,7 @@ class Store {
 				grid: nextGrid,
 				todos: nextTodos
 			};
+			this.todoTombstones = nextTombstones;
 		}
 		
 		this._isInitialized = true;
@@ -199,7 +222,7 @@ class Store {
 				at: new Date().toISOString()
 			});
 		}
-		this.saveData(this.harada_chart.grid, this.harada_chart.todos);
+		this.saveData(this.harada_chart.grid, this.harada_chart.todos, this.todoTombstones);
 		
 		// If online and authenticated, save to Supabase
 		if (this.isOnline && authStore.user && supabase) {
@@ -207,7 +230,12 @@ class Store {
 				if (DEBUG_SAVE) {
 					console.debug('[Store] Saving to Supabase');
 				}
-				await this.saveToSupabase(this.harada_chart.grid, this.harada_chart.todos);
+				await this.saveToSupabase(
+					this.harada_chart.grid,
+					this.harada_chart.todos,
+					'My Harada Chart',
+					this.todoTombstones
+				);
 			} catch (error) {
 				console.error('Error saving to Supabase:', error);
 				this.syncError = error.message;
@@ -326,7 +354,7 @@ class Store {
 	// Load data in JSON format (matching Supabase structure)
 	loadData(defaultCell, goalIndices) {
 		if (!browser) {
-			return { grid: Array.from({ length: 81 }, () => defaultCell()), todos: [] };
+			return { grid: Array.from({ length: 81 }, () => defaultCell()), todos: [], todoTombstones: {} };
 		}
 
 		// Try to load from new unified JSON format
@@ -379,7 +407,9 @@ class Store {
 							.filter(Boolean)
 					: [];
 
-				return { grid, todos };
+				const todoTombstones = this._normalizeTombstones(jsonData.todoTombstones || {});
+
+				return { grid, todos, todoTombstones };
 			} catch (e) {
 				console.error('Failed to parse JSON data:', e);
 			}
@@ -403,13 +433,14 @@ class Store {
 		const hasData = jsonGrid.some((c) => c.text.trim()) || jsonTodos.length > 0;
 		if (hasData) {
 			// Migrate to new format
-			const data = { grid: jsonGrid, todos: jsonTodos, version: 2 };
+			const todoTombstones = this._normalizeTombstones(localGet(TODO_TOMBSTONES_KEY, {}));
+			const data = { grid: jsonGrid, todos: jsonTodos, todoTombstones, version: 2 };
 			localSet(JSON_STORAGE_KEY, data);
-			return { grid: jsonGrid, todos: jsonTodos };
+			return { grid: jsonGrid, todos: jsonTodos, todoTombstones };
 		}
 
 		// Return empty data
-		return { grid: Array.from({ length: 81 }, () => defaultCell()), todos: [] };
+		return { grid: Array.from({ length: 81 }, () => defaultCell()), todos: [], todoTombstones: {} };
 	}
 
 	// Clone to plain objects so $state proxies serialize correctly (fixes \"row/todo saved but not its text/title\")
@@ -472,18 +503,168 @@ class Store {
 		return merged;
 	}
 
+	_getTodoUpdatedAt(todo) {
+		return typeof todo?.updatedAt === 'number' && Number.isFinite(todo.updatedAt) ? todo.updatedAt : 0;
+	}
+
+	_normalizeTombstones(tombstones) {
+		const normalized = {};
+		if (!tombstones || typeof tombstones !== 'object') return normalized;
+
+		for (const [id, value] of Object.entries(tombstones)) {
+			if (!id || !value || typeof value !== 'object') continue;
+			const updatedAt =
+				typeof value.updatedAt === 'number' && Number.isFinite(value.updatedAt)
+					? value.updatedAt
+					: typeof value.deletedAt === 'string'
+						? new Date(value.deletedAt).getTime()
+						: 0;
+			const deletedAt =
+				typeof value.deletedAt === 'string' ? value.deletedAt : new Date(updatedAt || Date.now()).toISOString();
+			normalized[id] = {
+				id,
+				updatedAt,
+				deletedAt
+			};
+		}
+		return normalized;
+	}
+
+	_mergeTombstones(localTombstones, remoteTombstones) {
+		const local = this._normalizeTombstones(localTombstones);
+		const remote = this._normalizeTombstones(remoteTombstones);
+		const merged = { ...local };
+
+		for (const [id, remoteValue] of Object.entries(remote)) {
+			const localValue = merged[id];
+			if (!localValue || remoteValue.updatedAt > localValue.updatedAt) {
+				merged[id] = remoteValue;
+			}
+		}
+
+		return merged;
+	}
+
+	_mergeTodosAndTombstones(localTodos, localTombstones, remoteTodos, remoteTombstones) {
+		const mergedTodos = mergeTodoLists(localTodos || [], remoteTodos || []);
+		let mergedTombstones = this._mergeTombstones(localTombstones || {}, remoteTombstones || {});
+		const survivors = [];
+
+		for (const todo of mergedTodos) {
+			const tombstone = mergedTombstones[todo.id];
+			if (!tombstone) {
+				survivors.push(todo);
+				continue;
+			}
+
+			if (this._getTodoUpdatedAt(todo) > tombstone.updatedAt) {
+				survivors.push(todo);
+				delete mergedTombstones[todo.id];
+			}
+		}
+
+		return {
+			todos: survivors,
+			todoTombstones: mergedTombstones
+		};
+	}
+
+	_taskRowToTodo(row) {
+		if (!row || typeof row !== 'object' || typeof row.id !== 'string') return null;
+
+		const updatedAt = row.updated_at ? new Date(row.updated_at).getTime() : Date.now();
+		const createdAt = row.created_at ? new Date(row.created_at).getTime() : updatedAt;
+
+		return normalizeTodoListMeta({
+			id: row.id,
+			title: typeof row.title === 'string' ? row.title : '',
+			markdown: typeof row.markdown === 'string' ? row.markdown : '',
+			status: row.status === 'done' ? 'done' : 'todo',
+			listType: row.list_type === 'custom' ? 'custom' : 'goal',
+			listId: typeof row.list_id === 'string' ? row.list_id : 'goal:none',
+			listName: typeof row.list_name === 'string' ? row.list_name : null,
+			goalIndex: typeof row.goal_index === 'number' ? row.goal_index : null,
+			parentId: typeof row.parent_id === 'string' ? row.parent_id : null,
+			ordering:
+				typeof row.ordering === 'number' && Number.isFinite(row.ordering)
+					? row.ordering
+					: createdAt,
+			createdAt,
+			updatedAt
+		});
+	}
+
+	_todoToTaskRow(todo, userId) {
+		if (!todo || typeof todo.id !== 'string') return null;
+		const normalized = normalizeTodoListMeta(todo);
+		const updatedAtMs = this._getTodoUpdatedAt(normalized) || Date.now();
+		const createdAtMs =
+			typeof normalized.createdAt === 'number' && Number.isFinite(normalized.createdAt)
+				? normalized.createdAt
+				: updatedAtMs;
+
+		return {
+			id: normalized.id,
+			user_id: userId,
+			title: typeof normalized.title === 'string' ? normalized.title : '',
+			markdown: typeof normalized.markdown === 'string' ? normalized.markdown : '',
+			status: normalized.status === 'done' ? 'done' : 'todo',
+			list_type: normalized.listType === 'custom' ? 'custom' : 'goal',
+			list_id: typeof normalized.listId === 'string' ? normalized.listId : 'goal:none',
+			list_name: typeof normalized.listName === 'string' ? normalized.listName : null,
+			goal_index: typeof normalized.goalIndex === 'number' ? normalized.goalIndex : null,
+			parent_id: typeof normalized.parentId === 'string' ? normalized.parentId : null,
+			ordering:
+				typeof normalized.ordering === 'number' && Number.isFinite(normalized.ordering)
+					? normalized.ordering
+					: createdAtMs,
+			created_at: new Date(createdAtMs).toISOString(),
+			updated_at: new Date(updatedAtMs).toISOString(),
+			deleted_at: null
+		};
+	}
+
+	_rowsToTodosAndTombstones(rows) {
+		const todos = [];
+		const todoTombstones = {};
+
+		for (const row of rows || []) {
+			if (!row || typeof row.id !== 'string') continue;
+			const updatedAt = row.updated_at ? new Date(row.updated_at).getTime() : Date.now();
+
+			if (row.deleted_at) {
+				const deletedAt = typeof row.deleted_at === 'string' ? row.deleted_at : new Date(updatedAt).toISOString();
+				const existing = todoTombstones[row.id];
+				if (!existing || updatedAt > existing.updatedAt) {
+					todoTombstones[row.id] = { id: row.id, updatedAt, deletedAt };
+				}
+				continue;
+			}
+
+			const todo = this._taskRowToTodo(row);
+			if (todo) {
+				todos.push(todo);
+			}
+		}
+
+		return { todos, todoTombstones };
+	}
+
 	// Save data in JSON format (matching Supabase structure)
-	saveData(gridSnapshot, todosSnapshot) {
+	saveData(gridSnapshot, todosSnapshot, todoTombstonesSnapshot = this.todoTombstones) {
 		if (!browser) return;
 
 		const { grid, todos } = this._toPlainGridAndTodos(gridSnapshot, todosSnapshot);
+		const todoTombstones = this._normalizeTombstones(todoTombstonesSnapshot);
 		const data = {
 			grid,
 			todos,
+			todoTombstones,
 			version: 2,
 			updatedAt: new Date().toISOString()
 		};
 		localSet(JSON_STORAGE_KEY, data);
+		localSet(TODO_TOMBSTONES_KEY, todoTombstones);
 	}
 
 	// Legacy method for migration - loads from markdown if available
@@ -502,7 +683,7 @@ class Store {
 			return this.loadData(defaultCell, goalIndices);
 		}
 
-		return { grid: Array.from({ length: 81 }, () => defaultCell()), todos: [] };
+		return { grid: Array.from({ length: 81 }, () => defaultCell()), todos: [], todoTombstones: {} };
 	}
 
 	exportMarkdown(serializeToMarkdown, grid, todos) {
@@ -536,7 +717,7 @@ class Store {
 							confirm('Import markdown data? This will replace your current chart and todos.')
 						) {
 							// Save imported data in JSON format
-							this.saveData(parsed.grid, parsed.todos);
+							this.saveData(parsed.grid, parsed.todos, this.todoTombstones);
 							onLoaded(parsed);
 						}
 					} catch (error) {
@@ -557,32 +738,43 @@ class Store {
 		try {
 			this.syncError = null;
 
-			const { data, error } = await supabase
-				.from('harada_charts')
-				.select('*')
-				.eq('user_id', authStore.user.id)
-				.single();
+			const [chartResult, tasksResult] = await Promise.all([
+				supabase.from('harada_charts').select('*').eq('user_id', authStore.user.id).single(),
+				supabase.from('tasks').select('*').eq('user_id', authStore.user.id)
+			]);
 
-			if (error) {
-				// If no chart exists yet, return null (not an error)
-				if (error.code === 'PGRST116') {
-					return null;
-				}
-				throw error;
+			const { data: chartData, error: chartError } = chartResult;
+			const { data: taskRows, error: tasksError } = tasksResult;
+
+			if (tasksError) throw tasksError;
+			if (chartError && chartError.code !== 'PGRST116') throw chartError;
+
+			const { todos, todoTombstones } = this._rowsToTodosAndTombstones(taskRows || []);
+			const chartUpdatedAt = chartData?.updated_at ? new Date(chartData.updated_at).getTime() : 0;
+			const tasksUpdatedAt = (taskRows || []).reduce((max, row) => {
+				const updated = row?.updated_at ? new Date(row.updated_at).getTime() : 0;
+				return updated > max ? updated : max;
+			}, 0);
+			const maxUpdatedAt = Math.max(chartUpdatedAt, tasksUpdatedAt);
+
+			if (maxUpdatedAt > 0) {
+				const syncIso = new Date(maxUpdatedAt).toISOString();
+				this.lastSyncTime = new Date(syncIso);
+				localStorage.setItem(LAST_SYNC_KEY, syncIso);
 			}
 
-			if (data) {
-				this.lastSyncTime = new Date(data.updated_at);
-				localStorage.setItem(LAST_SYNC_KEY, data.updated_at);
-				return {
-					grid: data.grid || [],
-					todos: data.todos || [],
-					title: data.title || 'My Harada Chart',
-					updated_at: data.updated_at
-				};
+			// If neither charts nor tasks exist remotely, treat as empty.
+			if (!chartData && (!taskRows || taskRows.length === 0)) {
+				return null;
 			}
 
-			return null;
+			return {
+				grid: chartData?.grid || [],
+				todos,
+				todoTombstones,
+				title: chartData?.title || 'My Harada Chart',
+				updated_at: chartData?.updated_at || null
+			};
 		} catch (error) {
 			console.error('Failed to load from Supabase:', error);
 			this.syncError = error.message;
@@ -591,26 +783,31 @@ class Store {
 	}
 
 	// Push current data to Supabase (e.g. after creating a todo from composer without going through harada_chart)
-	async syncWithSupabase(gridSnapshot, todosSnapshot, title = 'My Harada Chart') {
-		return this.saveToSupabase(gridSnapshot, todosSnapshot, title);
+	async syncWithSupabase(gridSnapshot, todosSnapshot, title = 'My Harada Chart', todoTombstonesSnapshot = this.todoTombstones) {
+		return this.saveToSupabase(gridSnapshot, todosSnapshot, title, todoTombstonesSnapshot);
 	}
 
-	async saveToSupabase(gridSnapshot, todosSnapshot, title = 'My Harada Chart') {
+	async saveToSupabase(
+		gridSnapshot,
+		todosSnapshot,
+		title = 'My Harada Chart',
+		todoTombstonesSnapshot = this.todoTombstones
+	) {
 		if (!browser || !authStore.user || !supabase) return false;
 
 		try {
 			this.syncError = null;
 
-			// Clone to plain objects so $state proxies serialize correctly (fixes "row saved but not text")
-			const { grid: gridData, todos: todosData } = this._toPlainGridAndTodos(gridSnapshot, todosSnapshot);
+			// Clone to plain objects so $state proxies serialize correctly.
+			const { grid: gridData } = this._toPlainGridAndTodos(gridSnapshot, todosSnapshot);
 
-			const { data, error } = await supabase
+			// Save chart metadata/grid (todos are now in tasks table)
+			const { data: chartData, error: chartError } = await supabase
 				.from('harada_charts')
 				.upsert(
 					{
 						user_id: authStore.user.id,
 						grid: gridData,
-						todos: todosData,
 						title
 					},
 					{
@@ -620,11 +817,43 @@ class Store {
 				.select()
 				.single();
 
-			if (error) throw error;
+			if (chartError) throw chartError;
 
-			if (data) {
-				this.lastSyncTime = new Date(data.updated_at);
-				localStorage.setItem(LAST_SYNC_KEY, data.updated_at);
+			const taskRows = [];
+			for (const todo of todosSnapshot || []) {
+				const row = this._todoToTaskRow(todo, authStore.user.id);
+				if (row) taskRows.push(row);
+			}
+			const tombstones = this._normalizeTombstones(todoTombstonesSnapshot);
+			for (const tombstone of Object.values(tombstones)) {
+				taskRows.push({
+					id: tombstone.id,
+					user_id: authStore.user.id,
+					title: '',
+					markdown: '',
+					status: 'todo',
+					list_type: 'goal',
+					list_id: 'goal:none',
+					list_name: null,
+					goal_index: null,
+					parent_id: null,
+					ordering: tombstone.updatedAt || Date.now(),
+					created_at: new Date(tombstone.updatedAt || Date.now()).toISOString(),
+					updated_at: new Date(tombstone.updatedAt || Date.now()).toISOString(),
+					deleted_at: tombstone.deletedAt || new Date(tombstone.updatedAt || Date.now()).toISOString()
+				});
+			}
+
+			if (taskRows.length > 0) {
+				const { error: tasksError } = await supabase.rpc('upsert_tasks_if_newer', {
+					in_rows: taskRows
+				});
+				if (tasksError) throw tasksError;
+			}
+
+			if (chartData?.updated_at) {
+				this.lastSyncTime = new Date(chartData.updated_at);
+				localStorage.setItem(LAST_SYNC_KEY, chartData.updated_at);
 			}
 
 			return true;
@@ -645,22 +874,35 @@ class Store {
 			if (supabaseData) {
 				const current = this.harada_chart || { grid: [], todos: [] };
 				const mergedGrid = this._mergeGrid(current.grid || [], supabaseData.grid || []);
-				const mergedTodos = mergeTodoLists(current.todos || [], supabaseData.todos || []);
+				const mergedTaskState = this._mergeTodosAndTombstones(
+					current.todos || [],
+					this.todoTombstones || {},
+					supabaseData.todos || [],
+					supabaseData.todoTombstones || {}
+				);
+				const mergedTodos = mergedTaskState.todos;
+				const mergedTombstones = mergedTaskState.todoTombstones;
 
 				const currentStr = JSON.stringify({
 					grid: current.grid || [],
-					todos: current.todos || []
+					todos: current.todos || [],
+					todoTombstones: this.todoTombstones || {}
 				});
-				const mergedStr = JSON.stringify({ grid: mergedGrid, todos: mergedTodos });
+				const mergedStr = JSON.stringify({
+					grid: mergedGrid,
+					todos: mergedTodos,
+					todoTombstones: mergedTombstones
+				});
 
 				if (currentStr !== mergedStr) {
 					this.harada_chart = {
 						grid: mergedGrid,
 						todos: mergedTodos
 					};
-					this.saveData(mergedGrid, mergedTodos);
+					this.todoTombstones = mergedTombstones;
+					this.saveData(mergedGrid, mergedTodos, mergedTombstones);
 					// Push merged snapshot back to Supabase so both sides match
-					await this.saveToSupabase(mergedGrid, mergedTodos);
+					await this.saveToSupabase(mergedGrid, mergedTodos, 'My Harada Chart', mergedTombstones);
 				}
 			}
 		} catch (error) {
@@ -670,6 +912,30 @@ class Store {
 	}
 
 	// --- Todo mutation helpers (domain logic) ---
+
+	_upsertTodoTombstone(id, updatedAt = Date.now()) {
+		if (!id) return;
+		const next = { ...(this.todoTombstones || {}) };
+		const existing = next[id];
+		if (!existing || updatedAt >= existing.updatedAt) {
+			next[id] = {
+				id,
+				updatedAt,
+				deletedAt: new Date(updatedAt).toISOString()
+			};
+			this.todoTombstones = next;
+		}
+	}
+
+	_clearTodoTombstone(id, updatedAt = Date.now()) {
+		if (!id) return;
+		const next = { ...(this.todoTombstones || {}) };
+		const existing = next[id];
+		if (existing && updatedAt >= existing.updatedAt) {
+			delete next[id];
+			this.todoTombstones = next;
+		}
+	}
 
 	updateTodo(id, patch) {
 		if (!id || !patch) return;
@@ -719,6 +985,8 @@ class Store {
 			};
 		}
 
+		this._clearTodoTombstone(id, nextPatch.updatedAt);
+
 		this.saveNow();
 	}
 
@@ -744,6 +1012,8 @@ class Store {
 			};
 		}
 
+		this._upsertTodoTombstone(id, Date.now());
+
 		this.saveNow();
 	}
 
@@ -767,6 +1037,7 @@ class Store {
 		const nextTodos = previousTodos.map((t) =>
 			t.id === id ? { ...t, status: nextStatus, updatedAt: Date.now() } : t
 		);
+		const updatedTodo = nextTodos.find((t) => t.id === id);
 
 		this.harada_chart = {
 			...this.harada_chart,
@@ -781,6 +1052,8 @@ class Store {
 				grid: nextGrid
 			};
 		}
+
+		this._clearTodoTombstone(id, updatedTodo?.updatedAt ?? Date.now());
 
 		this.saveNow();
 	}

@@ -7,7 +7,7 @@
 	} from '$lib/todoUtils.js';
 	import SquareMap from './SquareMap.svelte';
 	import GoalSelect from './GoalSelect.svelte';
-	import { ArrowRightToLine, ArrowLeftFromLine } from 'lucide-svelte';
+	import { ArrowRightToLine, ArrowLeftFromLine, ChevronDown } from 'lucide-svelte';
 
 	let { 
 		todo,
@@ -24,7 +24,10 @@
 		canIndent = false,
 		canOutdent = false,
 		onTitleFocus = null,
-		disableAutoFocus = false
+		disableAutoFocus = false,
+		hasChildren = false,
+		isCollapsed = false,
+		onToggleCollapse = null
 	} = $props();
 
 	let isEditing = $state(false);
@@ -212,9 +215,22 @@
 {#if !isEditing}
 	<div
 		data-todo-item-id={todo.id}
-		class="group flex items-center gap-2 rounded-lg border border-slate-700/50 bg-slate-950/40 px-3 py-2 transition hover:border-slate-600 hover:bg-slate-900/50 select-none"
+		class="group relative flex items-center gap-2 rounded-lg border border-slate-700/50 bg-slate-950/40 px-3 py-2 transition hover:border-slate-600 hover:bg-slate-900/50 select-none"
 		style="margin-left: {indentLevel * 1.5}rem;"
 	>
+		<!-- Collapse toggle: absolutely positioned in the left padding so checkboxes always line up -->
+		{#if hasChildren}
+			<button
+				type="button"
+				onpointerdown={(e) => e.stopPropagation()}
+				onclick={(e) => { e.stopPropagation(); onToggleCollapse && onToggleCollapse(); }}
+				class="absolute -left-6 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 transition hover:bg-slate-800 hover:text-slate-200"
+				title={isCollapsed ? 'Expand subtasks' : 'Collapse subtasks'}
+			>
+				<ChevronDown class={`h-5 w-5 transition-transform duration-150 ${isCollapsed ? '-rotate-90' : ''}`} />
+			</button>
+		{/if}
+
 		<!-- Checkbox -->
 		<button
 			type="button"
@@ -248,7 +264,7 @@
 							saveTitle();
 						}
 					}}
-					class={`flex-1 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-sm outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50 ${
+					class={`flex-1 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-base md:text-sm outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50 ${
 						todo.status === 'done'
 							? 'text-slate-500 line-through'
 							: 'text-slate-200'
@@ -400,7 +416,7 @@
 					type="text"
 					bind:value={editTitle}
 					placeholder="Task"
-					class="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
+					class="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-base text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
 				/>
 			</div>
 
@@ -409,7 +425,7 @@
 				<textarea
 					bind:value={editMarkdown}
 					placeholder="Add notes, checklists, etc..."
-					class="min-h-[150px] w-full resize-y rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
+					class="min-h-[150px] w-full resize-y rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-base text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
 				></textarea>
 			</div>
 
@@ -421,14 +437,14 @@
 					disabled={editListValue === NEW_LIST_OPTION_VALUE && !editNewListName.trim()}
 					class="w-full rounded-md border border-violet-600/70 bg-violet-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-violet-500"
 				>
-					Save Changes
+					Save
 				</button>
 				<button
 					type="button"
 					onclick={handleDelete}
 					class="w-full rounded-md border border-rose-700/70 bg-rose-900/40 px-4 py-3 text-sm font-semibold text-rose-200 transition hover:bg-rose-900/60"
 				>
-					Delete Todo
+					Delete
 				</button>
 			</div>
 		</div>

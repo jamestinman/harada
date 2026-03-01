@@ -71,8 +71,11 @@
 	function normalizeSiblingOrderings(listId, parentId) {
 		const siblings = getSiblingTodos(listId, parentId);
 		const updates = new Map(siblings.map((todo, index) => [todo.id, (index + 1) * ORDER_STEP]));
+		const ts = Date.now();
 		store.harada_chart.todos = store.harada_chart.todos.map((todo) =>
-			updates.has(todo.id) ? { ...todo, ordering: updates.get(todo.id) } : todo
+			updates.has(todo.id)
+				? { ...todo, ordering: updates.get(todo.id), updatedAt: ts }
+				: todo
 		);
 	}
 
@@ -552,7 +555,7 @@
 	<title>All Todos - Haradato</title>
 </svelte:head>
 
-<div class="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-violet-950 p-4 pb-24 md:p-8 md:pb-8 lg:pr-28">
+<div class="p-4 pb-24 md:p-8 md:pb-8">
 	<div class="mx-auto max-w-4xl">
 		{#if !dataLoaded}
 			<div class="flex items-center justify-center py-12">
@@ -566,18 +569,6 @@
 					{allTodos.length} todo{allTodos.length !== 1 ? 's' : ''} across {todoGroups.filter((g) => g.id !== 'no-goal').length} goal{todoGroups.filter((g) => g.id !== 'no-goal').length !== 1 ? 's' : ''}
 				</p>
 			</div>
-
-			{#if allTodos.length === 0}
-				<div class="rounded-lg border border-slate-700/70 bg-slate-950/60 p-8 text-center">
-					<p class="text-slate-400 mb-4">No todos yet. Click a square on the chart to add todos for that goal!</p>
-					<a
-						href="/"
-						class="inline-block rounded-md border border-violet-600/70 bg-violet-600/90 px-4 py-2 text-sm font-semibold text-slate-950 shadow-sm transition hover:bg-violet-500"
-					>
-						Go to Chart
-					</a>
-				</div>
-			{/if}
 
 			<TodoList
 				groups={todoGroups}

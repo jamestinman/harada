@@ -1,6 +1,7 @@
 <script>
 	import { tick } from 'svelte';
 	import { cubicOut } from 'svelte/easing';
+	import { page } from '$app/stores';
 	import { NEW_LIST_OPTION_VALUE, parseListSelection } from '$lib/todoUtils.js';
 	import { store } from '$stores/store.svelte.js';
 	import { authStore } from '$stores/auth.svelte.js';
@@ -99,10 +100,20 @@
 		if (!name) return 'U';
 		return name.charAt(0).toUpperCase();
 	});
+
+	// Only show mobile hamburger on the HaradaChart (index) page
+	const isHaradaChartPage = $derived($page.url.pathname === '/');
 </script>
 
-<!-- Mobile top-right hamburger menu -->
-<div class="fixed right-4 top-4 z-40 lg:hidden">
+<!-- Mobile top-right hamburger menu (HaradaChart page only) -->
+{#if isHaradaChartPage}
+<div
+	class="fixed z-40 lg:hidden"
+	style="
+		top: calc(env(safe-area-inset-top, 0px) + 1rem);
+		right: calc(env(safe-area-inset-right, 0px) + 1rem);
+	"
+>
 	<button
 		type="button"
 		onclick={() => (showMobileMenu = !showMobileMenu)}
@@ -169,9 +180,13 @@
 		></button>
 	{/if}
 </div>
+{/if}
 
 <!-- Mobile bottom nav -->
-<div class="fixed inset-x-0 bottom-0 z-40 lg:hidden">
+<div
+	class="fixed inset-x-0 bottom-0 z-40 lg:hidden"
+	style="padding-bottom: env(safe-area-inset-bottom, 0px);"
+>
 	<div class="relative border-t {borderColorClass} bg-slate-900/95 backdrop-blur transition-colors">
 		<div class="grid grid-cols-2 py-3 text-center text-sm font-semibold text-slate-300">
 			<a href="/" class="transition hover:text-slate-100">Harada</a>
@@ -298,7 +313,7 @@
 					disabled={composerGoalValue === NEW_LIST_OPTION_VALUE && !composerNewListName.trim()}
 					class="w-full rounded-md border border-violet-600/70 bg-violet-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-violet-500"
 				>
-					Save Changes
+					Save
 				</button>
 			</div>
 		</div>

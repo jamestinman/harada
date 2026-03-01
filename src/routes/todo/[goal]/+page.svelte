@@ -120,8 +120,11 @@
 	function normalizeSiblingOrderings(listId, parentId) {
 		const siblings = getSiblingTodos(listId, parentId);
 		const updates = new Map(siblings.map((todo, index) => [todo.id, (index + 1) * ORDER_STEP]));
+		const ts = Date.now();
 		store.harada_chart.todos = store.harada_chart.todos.map((todo) =>
-			updates.has(todo.id) ? { ...todo, ordering: updates.get(todo.id) } : todo
+			updates.has(todo.id)
+				? { ...todo, ordering: updates.get(todo.id), updatedAt: ts }
+				: todo
 		);
 	}
 
@@ -704,7 +707,7 @@
 	<title>{goalLabel} - Todos - Haradato</title>
 </svelte:head>
 
-<div class="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-violet-950 p-4 pb-24 md:p-8 md:pb-8 lg:pr-28">
+<div class="p-4 pb-24 md:p-8 md:pb-8">
 	<div class="mx-auto max-w-4xl">
 		{#if !dataLoaded}
 			<div class="flex items-center justify-center py-12">
@@ -754,7 +757,7 @@
 								<textarea
 									bind:this={goalDescriptionTextareaElement}
 									bind:value={editedGoalDescription}
-									class="w-full min-h-[6rem] rounded-md border border-violet-500 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:ring-2 focus:ring-violet-500/50 resize-none"
+									class="w-full min-h-[6rem] rounded-md border border-violet-500 bg-slate-900 px-3 py-2 text-base text-slate-100 placeholder-slate-500 outline-none focus:ring-2 focus:ring-violet-500/50 resize-none"
 									placeholder="Add description (supports markdown)..."
 									onkeydown={(e) => {
 										if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {

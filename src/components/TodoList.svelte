@@ -26,11 +26,14 @@
 
 	const LONG_PRESS_MS = 260;
 	const DRAG_START_PX = 6;
-	const INDENT_THRESHOLD_PX = 56;
-	const TASK_EDGE_HITBOX_PX = 5;
-	const TASK_CHILD_CENTER_HITBOX_PX = 5;
+	const CHILD_ZONE_TOP = 0.25;
+	const CHILD_ZONE_BOTTOM = 0.75;
+	const SCROLL_ZONE_PX = 80;
+	const MAX_SCROLL_SPEED = 14;
 	let pressTimer = null;
 	let pendingDrag = null;
+	let autoScrollRAF = null;
+	let currentDragY = 0;
 	let taskDrag = $state({
 		active: false,
 		pointerId: null,
@@ -57,6 +60,7 @@
 		isGroup: false
 	});
 	let justDidGroupDrag = false;
+	let collapsedTodos = $state(new Set());
 
 	$effect(() => {
 		if (taskDrag.active || groupDrag.active) {
@@ -84,6 +88,14 @@
 			}
 		}
 		return all;
+	});
+
+	const parentTodoIds = $derived.by(() => {
+		const ids = new Set();
+		for (const todo of flatTodos) {
+			if (todo.parentId) ids.add(todo.parentId);
+		}
+		return ids;
 	});
 
 	function getTodoById(todoId) {
@@ -119,12 +131,68 @@
 		return false;
 	}
 
+	function isHiddenByCollapse(todoId) {
+		let todo = getTodoById(todoId);
+		const seen = new Set();
+		while (todo?.parentId) {
+			if (seen.has(todo.id)) break;
+			seen.add(todo.id);
+			if (collapsedTodos.has(todo.parentId)) return true;
+			todo = getTodoById(todo.parentId);
+		}
+		return false;
+	}
+
+	function toggleCollapse(todoId) {
+		const next = new Set(collapsedTodos);
+		if (next.has(todoId)) {
+			next.delete(todoId);
+		} else {
+			next.add(todoId);
+		}
+		collapsedTodos = next;
+	}
+
 	function clearPendingDrag() {
 		if (pressTimer) {
 			clearTimeout(pressTimer);
 			pressTimer = null;
 		}
 		pendingDrag = null;
+	}
+
+	// Prevent the browser from classifying the active drag as a scroll gesture,
+	// which would fire pointercancel and kill the drag mid-flight on mobile.
+	function preventTouchScroll(e) {
+		e.preventDefault();
+	}
+
+	function startAutoScroll() {
+		stopAutoScroll();
+		function loop() {
+			if (!taskDrag.active && !groupDrag.active) {
+				autoScrollRAF = null;
+				return;
+			}
+			const vh = window.innerHeight;
+			const y = currentDragY;
+			if (y > 0 && y < SCROLL_ZONE_PX) {
+				const t = 1 - y / SCROLL_ZONE_PX;
+				window.scrollBy(0, -Math.round(MAX_SCROLL_SPEED * t));
+			} else if (y > vh - SCROLL_ZONE_PX && y < vh) {
+				const t = (y - (vh - SCROLL_ZONE_PX)) / SCROLL_ZONE_PX;
+				window.scrollBy(0, Math.round(MAX_SCROLL_SPEED * t));
+			}
+			autoScrollRAF = requestAnimationFrame(loop);
+		}
+		autoScrollRAF = requestAnimationFrame(loop);
+	}
+
+	function stopAutoScroll() {
+		if (autoScrollRAF !== null) {
+			cancelAnimationFrame(autoScrollRAF);
+			autoScrollRAF = null;
+		}
 	}
 
 	function startTaskDrag(pointerId, todoId, clientX, clientY) {
@@ -148,6 +216,9 @@
 			targetGroupId: null,
 			dropMode: 'after'
 		};
+		currentDragY = clientY;
+		document.addEventListener('touchmove', preventTouchScroll, { passive: false });
+		startAutoScroll();
 	}
 
 	function startGroupDrag(pointerId, groupId, clientX, clientY) {
@@ -171,6 +242,9 @@
 			targetGroupId: groupId,
 			dropMode: 'after'
 		};
+		currentDragY = clientY;
+		document.addEventListener('touchmove', preventTouchScroll, { passive: false });
+		startAutoScroll();
 	}
 
 	function handleTaskPointerDown(event, todo) {
@@ -190,7 +264,7 @@
 		};
 		window.addEventListener('pointermove', handleGlobalPointerMove, { passive: false });
 		window.addEventListener('pointerup', handleGlobalPointerUp, { passive: false });
-		window.addEventListener('pointercancel', handleGlobalPointerUp, { passive: false });
+		window.addEventListener('pointercancel', handleGlobalPointerCancel, { passive: false });
 
 		if (pendingDrag.pointerType === 'touch') {
 			const cx = event.clientX;
@@ -218,7 +292,7 @@
 		};
 		window.addEventListener('pointermove', handleGlobalPointerMove, { passive: false });
 		window.addEventListener('pointerup', handleGlobalPointerUp, { passive: false });
-		window.addEventListener('pointercancel', handleGlobalPointerUp, { passive: false });
+		window.addEventListener('pointercancel', handleGlobalPointerCancel, { passive: false });
 
 		if (pendingDrag.pointerType === 'touch') {
 			const cx = event.clientX;
@@ -238,26 +312,15 @@
 			if (!targetTodoId) return null;
 
 			const rect = itemElement.getBoundingClientRect();
-			const y = clientY - rect.top;
-			const height = Math.max(rect.height, 1);
-			const distanceFromTop = y;
-			const distanceFromBottom = height - y;
-			const distanceFromCenter = Math.abs(y - height / 2);
+			const ratio = (clientY - rect.top) / Math.max(rect.height, 1);
 
 			let dropMode;
-			if (distanceFromTop <= TASK_EDGE_HITBOX_PX) {
+			if (ratio < CHILD_ZONE_TOP) {
 				dropMode = 'before';
-			} else if (distanceFromBottom <= TASK_EDGE_HITBOX_PX) {
+			} else if (ratio > CHILD_ZONE_BOTTOM) {
 				dropMode = 'after';
-			} else if (
-				clientX - rect.left > INDENT_THRESHOLD_PX &&
-				distanceFromCenter <= TASK_CHILD_CENTER_HITBOX_PX
-			) {
-				// Very slim center strip for "drop as child"
-				dropMode = 'child';
 			} else {
-				// Default to insertion behavior so the list keeps making space
-				dropMode = y < height / 2 ? 'before' : 'after';
+				dropMode = 'child';
 			}
 
 			return { targetTodoId, targetGroupId: null, dropMode };
@@ -304,6 +367,7 @@
 
 		if (taskDrag.active && taskDrag.pointerId === event.pointerId) {
 			event.preventDefault();
+			currentDragY = event.clientY;
 			dragGhost = { ...dragGhost, x: event.clientX, y: event.clientY };
 			const target = resolveTaskDropTarget(event.clientX, event.clientY);
 			if (!target) return;
@@ -329,6 +393,7 @@
 
 		if (!groupDrag.active || groupDrag.pointerId !== event.pointerId) return;
 		event.preventDefault();
+		currentDragY = event.clientY;
 		dragGhost = { ...dragGhost, x: event.clientX, y: event.clientY };
 		const target = resolveGroupDropTarget(event.clientX, event.clientY);
 		if (!target) return;
@@ -416,6 +481,8 @@
 	}
 
 	function stopTaskDrag() {
+		document.removeEventListener('touchmove', preventTouchScroll);
+		stopAutoScroll();
 		dragGhost = { ...dragGhost, show: false };
 		taskDrag = {
 			active: false,
@@ -428,6 +495,8 @@
 	}
 
 	function stopGroupDrag() {
+		document.removeEventListener('touchmove', preventTouchScroll);
+		stopAutoScroll();
 		dragGhost = { ...dragGhost, show: false };
 		groupDrag = {
 			active: false,
@@ -441,7 +510,7 @@
 	function clearGlobalPointerListeners() {
 		window.removeEventListener('pointermove', handleGlobalPointerMove);
 		window.removeEventListener('pointerup', handleGlobalPointerUp);
-		window.removeEventListener('pointercancel', handleGlobalPointerUp);
+		window.removeEventListener('pointercancel', handleGlobalPointerCancel);
 	}
 
 	function handleGlobalPointerUp(event) {
@@ -479,6 +548,25 @@
 		}
 	}
 
+	// pointercancel means the browser reclaimed the touch (e.g. system gesture).
+	// Stop the drag cleanly without applying any move.
+	function handleGlobalPointerCancel(event) {
+		if (pendingDrag && pendingDrag.pointerId === event.pointerId) {
+			clearPendingDrag();
+			clearGlobalPointerListeners();
+			return;
+		}
+		if (taskDrag.active && taskDrag.pointerId === event.pointerId) {
+			stopTaskDrag();
+			clearGlobalPointerListeners();
+			return;
+		}
+		if (groupDrag.active && groupDrag.pointerId === event.pointerId) {
+			stopGroupDrag();
+			clearGlobalPointerListeners();
+		}
+	}
+
 	function preventClickAfterGroupDrag(e) {
 		document.removeEventListener('click', preventClickAfterGroupDrag, true);
 		if (!justDidGroupDrag) return;
@@ -493,7 +581,12 @@
 		if (!taskDrag.active) return '';
 		if (taskDrag.draggedTodoId === todoId) return 'opacity-0 pointer-events-none';
 		if (taskDrag.targetTodoId !== todoId) return '';
-		return 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-950';
+		if (taskDrag.dropMode === 'child') return 'ring-2 ring-violet-400 ring-offset-1 ring-offset-slate-950 bg-violet-950/50';
+		return '';
+	}
+
+	function showChildIndicator(todoId) {
+		return taskDrag.active && taskDrag.targetTodoId === todoId && taskDrag.dropMode === 'child';
 	}
 
 	function showPlaceholderBefore(todoId) {
@@ -589,39 +682,47 @@
 									<p class="text-sm text-slate-500">No todos in this section.</p>
 								</div>
 							{:else}
-								<div class="space-y-2">
-									{#each subGroup.todos as todo (todo.id)}
-										{#if showPlaceholderBefore(todo.id)}
-											<div class="h-12 rounded-lg border-2 border-dashed border-violet-400/80 bg-violet-500/10"></div>
+						<div class="space-y-2">
+								{#each subGroup.todos.filter(t => !isHiddenByCollapse(t.id)) as todo (todo.id)}
+									{#if showPlaceholderBefore(todo.id)}
+										<div class="h-12 rounded-lg border-2 border-dashed border-violet-400/80 bg-violet-500/10"></div>
+									{/if}
+									<div
+										data-dnd-item-id={todo.id}
+										onpointerdown={(event) => handleTaskPointerDown(event, todo)}
+										class={`relative rounded-lg transition ${itemDragClass(todo.id)}`}
+									>
+										{#if showChildIndicator(todo.id)}
+											<div class="pointer-events-none absolute right-2 top-1/2 z-10 -translate-y-1/2">
+												<span class="rounded bg-violet-800/90 px-1.5 py-0.5 text-xs text-violet-200">nest inside</span>
+											</div>
 										{/if}
-										<div
-											data-dnd-item-id={todo.id}
-											onpointerdown={(event) => handleTaskPointerDown(event, todo)}
-											class={`rounded-lg transition ${itemDragClass(todo.id)}`}
-										>
-											<TodoItem
-												{todo}
-												onUpdate={(patch) => onUpdate && onUpdate(todo.id, patch)}
-												onDelete={() => onDelete && onDelete(todo.id)}
-												onToggleStatus={() => onToggleStatus && onToggleStatus(todo.id)}
-												onCreateNext={() => onCreateNext && onCreateNext(todo.id, subGroup)}
-												onDeletePrevious={() => onDeletePrevious && onDeletePrevious(todo.id, subGroup)}
-												onMakeSubtask={() => onMakeSubtask && onMakeSubtask(todo.id, subGroup)}
-												onOutdent={() => onOutdent && onOutdent(todo.id, subGroup)}
-												onTitleFocus={(id) => onTitleFocus && onTitleFocus(id)}
-												indentLevel={getIndentLevel ? getIndentLevel(todo.id, subGroup) : 0}
-												canIndent={canIndent ? canIndent(todo.id, subGroup) : false}
-												canOutdent={canOutdent ? canOutdent(todo.id, subGroup) : false}
-												{allGoals}
-												allTodos={subGroup.todos}
-												{disableAutoFocus}
-											/>
-										</div>
-										{#if showPlaceholderAfter(todo.id)}
-											<div class="h-12 rounded-lg border-2 border-dashed border-violet-400/80 bg-violet-500/10"></div>
-										{/if}
-									{/each}
-								</div>
+										<TodoItem
+											{todo}
+											onUpdate={(patch) => onUpdate && onUpdate(todo.id, patch)}
+											onDelete={() => onDelete && onDelete(todo.id)}
+											onToggleStatus={() => onToggleStatus && onToggleStatus(todo.id)}
+											onCreateNext={() => onCreateNext && onCreateNext(todo.id, subGroup)}
+											onDeletePrevious={() => onDeletePrevious && onDeletePrevious(todo.id, subGroup)}
+											onMakeSubtask={() => onMakeSubtask && onMakeSubtask(todo.id, subGroup)}
+											onOutdent={() => onOutdent && onOutdent(todo.id, subGroup)}
+											onTitleFocus={(id) => onTitleFocus && onTitleFocus(id)}
+											indentLevel={getIndentLevel ? getIndentLevel(todo.id, subGroup) : 0}
+											canIndent={canIndent ? canIndent(todo.id, subGroup) : false}
+											canOutdent={canOutdent ? canOutdent(todo.id, subGroup) : false}
+											{allGoals}
+											allTodos={subGroup.todos}
+											{disableAutoFocus}
+											hasChildren={parentTodoIds.has(todo.id)}
+											isCollapsed={collapsedTodos.has(todo.id)}
+											onToggleCollapse={() => toggleCollapse(todo.id)}
+										/>
+									</div>
+									{#if showPlaceholderAfter(todo.id)}
+										<div class="h-12 rounded-lg border-2 border-dashed border-violet-400/80 bg-violet-500/10"></div>
+									{/if}
+								{/each}
+							</div>
 							{/if}
 						</div>
 					{/each}
@@ -634,42 +735,50 @@
 					<p class="text-sm text-slate-500">No todos in this section.</p>
 				</div>
 			{:else}
-				<div class="space-y-2">
-					{#if showHeaderTopPlaceholder(group.id)}
+			<div class="space-y-2">
+				{#if showHeaderTopPlaceholder(group.id)}
+					<div class="h-12 rounded-lg border-2 border-dashed border-violet-400/80 bg-violet-500/10"></div>
+				{/if}
+				{#each group.todos.filter(t => !isHiddenByCollapse(t.id)) as todo (todo.id)}
+					{#if showPlaceholderBefore(todo.id)}
 						<div class="h-12 rounded-lg border-2 border-dashed border-violet-400/80 bg-violet-500/10"></div>
 					{/if}
-					{#each group.todos as todo (todo.id)}
-						{#if showPlaceholderBefore(todo.id)}
-							<div class="h-12 rounded-lg border-2 border-dashed border-violet-400/80 bg-violet-500/10"></div>
+					<div
+						data-dnd-item-id={todo.id}
+						onpointerdown={(event) => handleTaskPointerDown(event, todo)}
+						class={`relative rounded-lg transition ${itemDragClass(todo.id)}`}
+					>
+						{#if showChildIndicator(todo.id)}
+							<div class="pointer-events-none absolute right-2 top-1/2 z-10 -translate-y-1/2">
+								<span class="rounded bg-violet-800/90 px-1.5 py-0.5 text-xs text-violet-200">nest inside</span>
+							</div>
 						{/if}
-						<div
-							data-dnd-item-id={todo.id}
-							onpointerdown={(event) => handleTaskPointerDown(event, todo)}
-							class={`rounded-lg transition ${itemDragClass(todo.id)}`}
-						>
-							<TodoItem
-								{todo}
-								onUpdate={(patch) => onUpdate && onUpdate(todo.id, patch)}
-								onDelete={() => onDelete && onDelete(todo.id)}
-								onToggleStatus={() => onToggleStatus && onToggleStatus(todo.id)}
-								onCreateNext={() => onCreateNext && onCreateNext(todo.id, group)}
-								onDeletePrevious={() => onDeletePrevious && onDeletePrevious(todo.id, group)}
-								onMakeSubtask={() => onMakeSubtask && onMakeSubtask(todo.id, group)}
-								onOutdent={() => onOutdent && onOutdent(todo.id, group)}
-								onTitleFocus={(id) => onTitleFocus && onTitleFocus(id)}
-								indentLevel={getIndentLevel ? getIndentLevel(todo.id, group) : 0}
-								canIndent={canIndent ? canIndent(todo.id, group) : false}
-								canOutdent={canOutdent ? canOutdent(todo.id, group) : false}
-								{allGoals}
-								allTodos={group.todos}
-								{disableAutoFocus}
-							/>
-						</div>
-						{#if showPlaceholderAfter(todo.id)}
-							<div class="h-12 rounded-lg border-2 border-dashed border-violet-400/80 bg-violet-500/10"></div>
-						{/if}
-					{/each}
-				</div>
+						<TodoItem
+							{todo}
+							onUpdate={(patch) => onUpdate && onUpdate(todo.id, patch)}
+							onDelete={() => onDelete && onDelete(todo.id)}
+							onToggleStatus={() => onToggleStatus && onToggleStatus(todo.id)}
+							onCreateNext={() => onCreateNext && onCreateNext(todo.id, group)}
+							onDeletePrevious={() => onDeletePrevious && onDeletePrevious(todo.id, group)}
+							onMakeSubtask={() => onMakeSubtask && onMakeSubtask(todo.id, group)}
+							onOutdent={() => onOutdent && onOutdent(todo.id, group)}
+							onTitleFocus={(id) => onTitleFocus && onTitleFocus(id)}
+							indentLevel={getIndentLevel ? getIndentLevel(todo.id, group) : 0}
+							canIndent={canIndent ? canIndent(todo.id, group) : false}
+							canOutdent={canOutdent ? canOutdent(todo.id, group) : false}
+							{allGoals}
+							allTodos={group.todos}
+							{disableAutoFocus}
+							hasChildren={parentTodoIds.has(todo.id)}
+							isCollapsed={collapsedTodos.has(todo.id)}
+							onToggleCollapse={() => toggleCollapse(todo.id)}
+						/>
+					</div>
+					{#if showPlaceholderAfter(todo.id)}
+						<div class="h-12 rounded-lg border-2 border-dashed border-violet-400/80 bg-violet-500/10"></div>
+					{/if}
+				{/each}
+			</div>
 			{/if}
 		</div>
 	{/each}
