@@ -32,11 +32,11 @@
 </svelte:head>
 
 <div
-  class="min-h-screen flex items-center justify-center"
-  onclick={(e) => e.stopPropagation()}
-  onkeydown={(e) => e.key === 'Escape' && (store.showHaradaChart = false)}
-  role="dialog"
-  tabindex="-1"
+	class="min-h-screen flex items-center justify-center pt-10 pb-28 lg:pt-0 lg:pb-0"
+	onclick={(e) => e.stopPropagation()}
+	onkeydown={(e) => e.key === 'Escape' && (store.showHaradaChart = false)}
+	role="dialog"
+	tabindex="-1"
 >
-  <HaradaChart {grid} onUpdateGrid={handleUpdateGrid} />
+	<HaradaChart {grid} onUpdateGrid={handleUpdateGrid} />
 </div>
