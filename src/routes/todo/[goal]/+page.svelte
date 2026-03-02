@@ -861,7 +861,7 @@
 				getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
 				canIndent={(todoId, group) => canIndentTodo(todoId, group.goalIndex)}
 				canOutdent={(todoId) => canOutdentTodo(todoId)}
-				disableAutoFocus={hasNoCustomTitle}
+				disableAutoFocus={hasNoCustomTitle || isEditingGoal}
 				onCreateTodo={createTodoFromComposer}
 				onMoveTodo={moveTodo}
 				allowCrossListMove={false}

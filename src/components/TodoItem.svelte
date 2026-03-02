@@ -7,7 +7,7 @@
 	} from '$lib/todoUtils.js';
 	import SquareMap from './SquareMap.svelte';
 	import GoalSelect from './GoalSelect.svelte';
-	import { ArrowRightToLine, ArrowLeftFromLine, ChevronDown } from 'lucide-svelte';
+	import { ArrowRightToLine, ArrowLeftFromLine, ChevronDown, Check } from 'lucide-svelte';
 
 	let { 
 		todo,
@@ -290,6 +290,15 @@
 
 		<!-- Notes button - opens full editor -->
 		{#if isEditingTitle}
+			<button
+				type="button"
+				onmousedown={(e) => e.preventDefault()}
+				onclick={() => saveTitle()}
+				class="flex-shrink-0 p-1 rounded text-emerald-400 transition hover:bg-emerald-500/20 hover:text-emerald-300"
+				title="Save and close (don’t create new task)"
+			>
+				<Check class="w-4 h-4" />
+			</button>
 			<button
 				type="button"
 				onmousedown={(e) => e.preventDefault()}
