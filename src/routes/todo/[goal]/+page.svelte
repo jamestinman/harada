@@ -21,11 +21,12 @@
 	import SquareMap from '$components/SquareMap.svelte';
 	import TodoList from '$components/TodoList.svelte';
 	import Nav from '$components/Nav.svelte';
+	import { Trash2 } from 'lucide-svelte';
 
 	// Use store.harada_chart directly - it's reactive
 	const grid = $derived(store.harada_chart.grid);
 	const todos = $derived(store.harada_chart.todos.map((todo) => normalizeTodoListMeta(todo)));
-	const dataLoaded = $derived(true); // Always loaded since store handles initialization
+	const dataLoaded = $derived(!store.isLoading);
 	let activeTodoId = $state(null);
 	
 	// Goal editing state (declared early so it can be used in derived values)
@@ -681,8 +682,14 @@
 		
 		isEditingGoal = false;
 
-		// Persist immediately so changes are saved to localStorage and Supabase.
 		store.saveNow();
+	}
+
+	// Clear the goal's name and description (tasks and sub-goals are preserved)
+	function clearGoal() {
+		if (goalIndex === null) return;
+		editedGoalTitle = '';
+		editedGoalDescription = '';
 	}
 
 	// Cancel editing
@@ -814,6 +821,14 @@
 					</div>
 					{#if isEditingGoal}
 						<div class="flex items-center gap-2">
+							<button
+								type="button"
+								onclick={clearGoal}
+								class="rounded-md border border-slate-700 bg-slate-900 px-2 py-2 text-sm font-semibold text-slate-400 shadow-sm transition hover:border-rose-500 hover:bg-rose-900/40 hover:text-rose-200"
+								title="Clear goal name and description"
+							>
+								<Trash2 class="w-4 h-4" />
+							</button>
 							<button
 								type="button"
 								onclick={saveGoalEdit}

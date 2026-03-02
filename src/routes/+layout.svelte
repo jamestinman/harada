@@ -15,24 +15,15 @@
 
 	let { children } = $props();
 
-	let grid = $state([]);
-	let dataLoaded = $state(false);
+	// Grid is reactive via the store — no local copy needed
+	const grid = $derived(store.harada_chart.grid);
 
+	// Watch for auth changes and (re)initialize Supabase sync when needed
 	$effect(() => {
-		if (!browser || dataLoaded) return;
-		const defaultCell = () => ({ text: '', status: 'todo', readme: '', color: 'default', updated_at: null });
-		const data = store.loadData(defaultCell, []);
-		grid = data.grid || [];
-		dataLoaded = true;
+		if (!browser) return;
+		const user = authStore.user;
+		store.handleAuthChange();
 	});
-
-  // Watch for auth changes and (re)initialize Supabase sync when needed
-$effect(() => {
-	if (!browser) return;
-	const user = authStore.user;
-	// Delegate logic to the store instance
-	store.handleAuthChange();
-});
 
 	// Hide iOS keyboard accessory bar (Done/Prev/Next) so it doesn’t overlap the bottom nav
   /*
@@ -77,20 +68,12 @@ $effect(() => {
 	});
 
 	function createTodoFromComposer({ title, markdown, goalIndex } = {}) {
-		const defaultCell = () => ({ text: '', status: 'todo', readme: '', color: 'default', updated_at: null });
-		const data = store.loadData(defaultCell, []);
 		const normalizedGoalIndex =
 			typeof goalIndex === 'number' ? canonicalGoalIndex(goalIndex) : null;
 		const listMeta = buildGoalListMeta(normalizedGoalIndex);
-		const siblings = (data.todos || []).filter((t) => {
-			const siblingListId =
-				typeof t?.listId === 'string'
-					? t.listId
-					: t?.goalIndex === null
-						? 'goal:none'
-						: `goal:${t.goalIndex}`;
-			return siblingListId === listMeta.listId && (t?.parentId ?? null) === null;
-		});
+		const siblings = store.harada_chart.todos.filter(
+			(t) => t.listId === listMeta.listId && (t?.parentId ?? null) === null
+		);
 		const ordering =
 			siblings.length > 0
 				? Math.min(
@@ -111,17 +94,12 @@ $effect(() => {
 			parentId: null,
 			ordering
 		};
-		const newTodos = [...(data.todos || []), todo];
-		
-		// Update goal timestamp if todo is associated with a goal
+		store.harada_chart.todos = [...store.harada_chart.todos, todo];
 		if (typeof normalizedGoalIndex === 'number') {
-			updateGoalTimestamp(data.grid, normalizedGoalIndex);
+			updateGoalTimestamp(store.harada_chart.grid, normalizedGoalIndex);
+			store.harada_chart.grid = [...store.harada_chart.grid];
 		}
-		
-		store.saveData(data.grid, newTodos);
-		if (authStore.user) {
-			store.syncWithSupabase(data.grid, newTodos);
-		}
+		store.saveNow();
 	}
 
 	// Enable view transitions for all navigation

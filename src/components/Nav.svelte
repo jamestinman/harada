@@ -289,7 +289,7 @@
 					allGoals={allGoals}
 					bind:value={composerGoalValue}
 					includeUnassigned={true}
-					includeNewList={true}
+					includeNewList={false}
 					stringValues={true}
 				/>
 			</div>
