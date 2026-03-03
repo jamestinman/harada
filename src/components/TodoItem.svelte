@@ -350,6 +350,20 @@
 			class="mb-3 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
 		/>
 
+		<!-- Goal selection -->
+		<div class="mb-3 flex flex-col gap-1">
+			<GoalSelect
+				allGoals={allGoals}
+				bind:value={editListValue}
+				includeUnassigned={true}
+				includeNewList={false}
+				hideWhenNoGoals={true}
+				stringValues={true}
+				unassignedLabel="No goal assigned"
+				selectClass="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
+			/>
+		</div>
+
 		<!-- Notes -->
 		<div class="mb-3">
 			<textarea
@@ -426,6 +440,23 @@
 					bind:value={editTitle}
 					placeholder="Task"
 					class="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-base text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
+				/>
+			</div>
+
+			<!-- Goal selection -->
+			<div class="mb-4 flex flex-col gap-1">
+				<label class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+					Goal
+				</label>
+				<GoalSelect
+					allGoals={allGoals}
+					bind:value={editListValue}
+					includeUnassigned={true}
+					includeNewList={false}
+					hideWhenNoGoals={true}
+					stringValues={true}
+					unassignedLabel="No goal assigned"
+					selectClass="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-base text-slate-100 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
 				/>
 			</div>
 

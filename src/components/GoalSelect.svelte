@@ -8,15 +8,16 @@
 		includeNewList = false,
 		hideWhenNoGoals = false,
 		stringValues = false,
-		unassignedLabel = 'No list assigned',
+		unassignedLabel = 'No goal assigned',
 		newListLabel = '* New list',
 		selectClass = 'flex-1 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50'
 	} = $props();
 
 	const goalsWithTitles = $derived.by(() => {
-		return allGoals.filter((goal) => {
-			return goal.label && goal.label !== goal.code;
-		});
+		return allGoals
+			.filter((goal) => goal.label && goal.label !== goal.code)
+			.slice()
+			.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
 	});
 
 	function getGoalValue(goal) {
@@ -34,7 +35,7 @@
 		{/if}
 		{#each goalsWithTitles as goal}
 			<option value={getGoalValue(goal)}>
-				{goal.code} - {goal.label}
+				{goal.label}
 			</option>
 		{/each}
 	</select>
