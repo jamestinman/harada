@@ -63,7 +63,7 @@
 
 <button
 	type="button"
-	class="inline-flex flex-col gap-[1px] rounded p-1 border-2 transition-all hover:bg-slate-800/50 active:scale-95 cursor-pointer {store.saveStatus == 'dirty' ? 'border-amber-500' : store.saveStatus == 'saving' ? 'border-red-500' : 'border-transparent'}"
+	class="inline-flex flex-col gap-[1px] rounded p-1 border-2 transition-all hover:bg-slate-800/50 active:scale-95 cursor-pointer {store.isLoading ? 'border-purple-500' : store.saveStatus == 'dirty' ? 'border-amber-500' : store.saveStatus == 'saving' ? 'border-red-500' : 'border-transparent'}"
 	onclick={() => goto('/')}
 	title="View full Harada Chart"
 >

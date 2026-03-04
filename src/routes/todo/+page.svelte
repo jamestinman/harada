@@ -557,40 +557,34 @@
 
 <div class="p-4 pb-24 md:p-8 md:pb-8">
 	<div class="mx-auto max-w-4xl">
-		{#if !dataLoaded}
-			<div class="flex items-center justify-center py-12">
-				<div class="text-slate-400">Loading...</div>
-			</div>
-		{:else}
-			<!-- Header -->
-			<div class="mb-6">
-				<h1 class="text-2xl font-bold text-slate-100">Todo</h1>
-				<p class="mt-1 text-sm text-slate-400">
-					{allTodos.length} todo{allTodos.length !== 1 ? 's' : ''} across {todoGroups.filter((g) => g.id !== 'no-goal').length} goal{todoGroups.filter((g) => g.id !== 'no-goal').length !== 1 ? 's' : ''}
-				</p>
-			</div>
+    <!-- Header -->
+    <div class="mb-6">
+      <h1 class="text-2xl font-bold text-slate-100">Todo</h1>
+      <p class="mt-1 text-sm text-slate-400">
+        {allTodos.length} todo{allTodos.length !== 1 ? 's' : ''} across {todoGroups.filter((g) => g.id !== 'no-goal').length} goal{todoGroups.filter((g) => g.id !== 'no-goal').length !== 1 ? 's' : ''}
+      </p>
+    </div>
 
-			<TodoList
-				groups={todoGroups}
-				{allGoals}
-				onUpdate={updateTodo}
-				onDelete={deleteTodo}
-				onToggleStatus={cycleTodoStatus}
-				onCreateNext={createNextTodo}
-				onDeletePrevious={deleteAndFocusPrevious}
-				onMakeSubtask={makeSubtask}
-				onOutdent={(todoId) => outdentTodo(todoId)}
-				onTitleFocus={(id) => (activeTodoId = id)}
-				getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
-				canIndent={canIndentTodo}
-				canOutdent={(todoId) => canOutdentTodo(todoId)}
-				onCreateTodo={createTodoFromComposer}
-				onMoveTodo={moveTodo}
-				allowCrossListMove={true}
-				enableGroupDrag={true}
-				onMoveGroup={moveGoalGroup}
-			/>
-		{/if}
+    <TodoList
+      groups={todoGroups}
+      {allGoals}
+      onUpdate={updateTodo}
+      onDelete={deleteTodo}
+      onToggleStatus={cycleTodoStatus}
+      onCreateNext={createNextTodo}
+      onDeletePrevious={deleteAndFocusPrevious}
+      onMakeSubtask={makeSubtask}
+      onOutdent={(todoId) => outdentTodo(todoId)}
+      onTitleFocus={(id) => (activeTodoId = id)}
+      getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
+      canIndent={canIndentTodo}
+      canOutdent={(todoId) => canOutdentTodo(todoId)}
+      onCreateTodo={createTodoFromComposer}
+      onMoveTodo={moveTodo}
+      allowCrossListMove={true}
+      enableGroupDrag={true}
+      onMoveGroup={moveGoalGroup}
+    />
 	</div>
 	<Nav
 		{allGoals}
