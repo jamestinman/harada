@@ -581,7 +581,7 @@
 		if (!taskDrag.active) return '';
 		if (taskDrag.draggedTodoId === todoId) return 'opacity-0 pointer-events-none';
 		if (taskDrag.targetTodoId !== todoId) return '';
-		if (taskDrag.dropMode === 'child') return 'ring-2 ring-violet-400 ring-offset-1 ring-offset-slate-950 bg-violet-950/50';
+		if (taskDrag.dropMode === 'child') return 'todo-drag-child-target';
 		return '';
 	}
 
@@ -612,18 +612,18 @@
 
 {#if dragGhost.show}
 	<div
-		class="fixed z-[9999] pointer-events-none rounded-lg border border-violet-400/70 bg-slate-800/95 px-3 py-2.5 shadow-2xl shadow-black/70 backdrop-blur-sm"
+		class="todo-drag-ghost"
 		style="left: {dragGhost.x - dragGhost.offsetX}px; top: {dragGhost.y - dragGhost.offsetY}px; width: {dragGhost.width}px; transform: rotate(1.5deg) scale(1.03); will-change: left, top;"
 	>
 		{#if dragGhost.isGroup}
 			<div class="flex items-center gap-2">
 				<div class="h-1 w-4 flex-shrink-0 rounded-full bg-violet-400/60"></div>
-				<span class="text-sm font-semibold text-slate-100 truncate">{dragGhost.label || 'Group'}</span>
+				<span class="todo-drag-ghost-title">{dragGhost.label || 'Group'}</span>
 			</div>
 		{:else}
 			<div class="flex items-center gap-2">
-				<div class="h-4 w-4 flex-shrink-0 rounded-full border-2 border-slate-400/60"></div>
-				<span class="text-sm text-slate-100 truncate">{dragGhost.label || '—'}</span>
+				<div class="todo-drag-ghost-dot"></div>
+				<span class="todo-drag-ghost-title">{dragGhost.label || '—'}</span>
 			</div>
 		{/if}
 	</div>
@@ -635,7 +635,7 @@
 			<button
 				type="button"
 				onclick={onCreateTodo}
-				class="w-full rounded-lg border-2 border-dashed border-slate-700 bg-slate-950/40 px-4 py-3 text-sm font-medium text-slate-400 transition hover:border-violet-500 hover:bg-slate-900/60 hover:text-violet-400"
+				class="rounded-btn"
 			>
 				+ New task
 			</button>
@@ -653,7 +653,7 @@
 					class="mb-4 {enableGroupDrag && group.groupType === 'goal' ? 'cursor-grab active:cursor-grabbing' : ''}"
 					onpointerdown={(event) => handleGroupPointerDown(event, group.id)}
 				>
-					<h2 class="text-lg font-semibold text-slate-100">
+					<h2 class="todo-group-heading">
 						{#if group.href}
 							<a href={group.href} class="hover:text-violet-400 transition-colors" ondragstart={(e) => e.preventDefault()}>{group.label}</a>
 						{:else}
@@ -665,11 +665,11 @@
 
 			{#if group.subGroups}
 				<!-- Render nested sub-groups -->
-				<div class="space-y-4 ml-4 border-l border-slate-700 pl-4">
+				<div class="todo-subgroup-container">
 					{#each group.subGroups as subGroup}
 						<div>
 							<div class="mb-2">
-								<h3 class="text-base font-medium text-slate-200">
+								<h3 class="todo-subgroup-heading">
 									{#if subGroup.href}
 										<a href={subGroup.href} class="hover:text-violet-400 transition-colors">{subGroup.label}</a>
 									{:else}
@@ -678,8 +678,8 @@
 								</h3>
 							</div>
 							{#if subGroup.todos.length === 0}
-								<div class="rounded-lg border border-slate-700/70 bg-slate-950/60 p-4">
-									<p class="text-sm text-slate-500">No todos in this section.</p>
+								<div class="todo-empty-section-card">
+									<p class="todo-empty-section-text">No todos in this section.</p>
 								</div>
 							{:else}
 						<div class="space-y-2">
@@ -731,8 +731,8 @@
 				{#if showHeaderTopPlaceholder(group.id)}
 					<div class="mb-2 h-12 rounded-lg border-2 border-dashed border-violet-400/80 bg-violet-500/10"></div>
 				{/if}
-				<div class="rounded-lg border border-slate-700/70 bg-slate-950/60 p-4">
-					<p class="text-sm text-slate-500">No todos in this section.</p>
+				<div class="todo-empty-section-card">
+					<p class="todo-empty-section-text">No todos in this section.</p>
 				</div>
 			{:else}
 			<div class="space-y-2">

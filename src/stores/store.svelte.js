@@ -1,4 +1,5 @@
 import { browser } from '$app/environment';
+import { localGet, localSet } from '$lib/PersistentStorage.mjs';
 import { supabase } from '$lib/supabaseClient.js';
 import {
 	buildGoalListMeta,
@@ -17,6 +18,12 @@ class Store {
 	selectedGoalForNew = $state('');
 	sidebarOpen = $state(false);
 	currentGoalIndex = $state(null);
+	theme = $state(localGet('theme', 'dark'));
+
+  setTheme(value) {
+    this.theme = value;
+    localSet('theme', value);
+  }
 
 	harada_chart = $state({
 		grid: Array.from({ length: 81 }, () => defaultCell()),

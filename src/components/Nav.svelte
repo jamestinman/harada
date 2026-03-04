@@ -14,9 +14,9 @@
 	// Get save status for visual indicator
 	const saveStatus = $derived(store.saveStatus);
 	const borderColorClass = $derived.by(() => {
-		if (saveStatus === 'dirty') return 'border-amber-500';
-		if (saveStatus === 'saving') return 'border-red-500';
-		return 'border-slate-700';
+		if (saveStatus === 'dirty') return 'save-border-dirty';
+		if (saveStatus === 'saving') return 'save-border-saving';
+		return 'save-border-default';
 	});
 
 	let {
@@ -25,15 +25,15 @@
 		onCreateTodo = null
 	} = $props();
 
-	let showComposer = $state(false);
+let showComposer = $state(false);
 	let composerTitle = $state('');
 	let composerMarkdown = $state('');
 	let composerGoalValue = $state('');
 	let composerNewListName = $state('');
 	let composerTitleInputElement = $state(null);
 	let showMobileMenu = $state(false);
-	let showSettingsModal = $state(false);
-	let showAuthModal = $state(false);
+let showSettingsModal = $state(false);
+let showAuthModal = $state(false);
 
 	async function openComposer() {
 		composerTitle = '';
@@ -116,28 +116,27 @@
 	<button
 		type="button"
 		onclick={() => (showMobileMenu = !showMobileMenu)}
-		class="flex h-10 w-10 items-center justify-center rounded-md border border-slate-700 bg-slate-900/95 backdrop-blur text-slate-300 transition hover:bg-slate-800 hover:text-slate-100"
+		class="nav-hamburger-button"
 		aria-label="Open menu"
 	>
 		<svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
 		</svg>
 	</button>
-
 	{#if showMobileMenu}
-		<div class="absolute right-0 mt-2 w-56 rounded-lg border border-slate-700 bg-slate-900 shadow-xl z-50">
+		<div class="mobile-menu-panel">
 			<div class="py-2">
 				{#if authStore.user}
-					<div class="px-4 py-2 border-b border-slate-700">
-						<div class="text-sm font-semibold text-slate-100">{userName}</div>
+					<div class="mobile-menu-header">
+						<div class="mobile-menu-header-name">{userName}</div>
 						{#if authStore.user?.email}
-							<div class="text-xs text-slate-400">{authStore.user.email}</div>
+							<div class="mobile-menu-header-email">{authStore.user.email}</div>
 						{/if}
 					</div>
 					<button
 						type="button"
 						onclick={openSettings}
-						class="w-full text-left px-4 py-2 text-sm text-slate-300 transition hover:bg-slate-800"
+						class="mobile-menu-item"
 					>
 						Settings
 					</button>
@@ -145,7 +144,7 @@
 					<button
 						type="button"
 						onclick={() => { showMobileMenu = false; showAuthModal = true; }}
-						class="w-full text-left px-4 py-2 text-sm text-slate-300 transition hover:bg-slate-800"
+						class="mobile-menu-item"
 					>
 						Sign In
 					</button>
@@ -153,22 +152,21 @@
 				<a
 					href="/about"
 					onclick={() => (showMobileMenu = false)}
-					class="block w-full text-left px-4 py-2 text-sm text-slate-300 transition hover:bg-slate-800"
+					class="mobile-menu-item"
 				>
 					About
 				</a>
 				{#if authStore.user}
-					<div class="border-t border-slate-700 my-1"></div>
 					<button
 						type="button"
 						onclick={handleLogout}
-						class="w-full text-left px-4 py-2 text-sm text-red-400 transition hover:bg-slate-800"
+						class="mobile-menu-item-logout"
 					>
 						Logout
 					</button>
 				{/if}
-				<div class="border-t border-slate-700 mt-1 pt-2 px-4 pb-2">
-					<div class="text-xs text-slate-500 text-center">Version {store.version}</div>
+				<div class="mobile-menu-footer">
+					<div class="mobile-menu-footer-text">Version {store.version}</div>
 				</div>
 			</div>
 		</div>
@@ -183,18 +181,18 @@
 
 <!-- Mobile bottom nav -->
 <div
-	class="fixed inset-x-0 bottom-0 z-40 lg:hidden bg-slate-900/95 backdrop-blur"
+	class="mobile-bottom-nav"
 	style="padding-bottom: env(safe-area-inset-bottom, 0px);"
 >
-	<div class="relative border-t {borderColorClass} transition-colors">
-		<div class="grid grid-cols-2 py-3 text-center text-sm font-semibold text-slate-300">
-			<a href="/" class="transition hover:text-slate-100">Harada</a>
-			<a href="/todo" class="transition hover:text-slate-100">Todo</a>
+	<div class="mobile-bottom-nav-inner {borderColorClass}">
+		<div class="mobile-bottom-nav-links">
+			<a href="/" class="mobile-bottom-nav-link">Harada</a>
+			<a href="/todo" class="mobile-bottom-nav-link">Todo</a>
 		</div>
 		<button
 			type="button"
 			onclick={openComposer}
-			class="absolute left-1/2 top-0 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-violet-300 bg-violet-600 p-0 text-3xl font-bold text-slate-950 shadow-lg transition hover:bg-violet-500"
+			class="mobile-bottom-nav-fab"
 			aria-label="Add todo"
 		>
 			+
@@ -209,7 +207,7 @@
 		<button
 			type="button"
 			onclick={() => (showSettingsModal = true)}
-			class="rounded px-3 py-2 text-sm font-medium text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
+			class="nav-desktop-link"
 			title="Settings"
 		>
 			{userName}
@@ -218,7 +216,7 @@
 		<button
 			type="button"
 			onclick={() => (showAuthModal = true)}
-			class="rounded px-3 py-2 text-sm font-medium text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
+			class="nav-desktop-link"
 			title="Sign In"
 		>
 			Sign In
@@ -226,13 +224,13 @@
 	{/if}
 	<a
 		href="/"
-		class="rounded px-3 py-2 text-sm font-medium text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
+		class="nav-desktop-link"
 	>
 		Harada
 	</a>
 	<a
 		href="/todo"
-		class="rounded px-3 py-2 text-sm font-medium text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
+		class="nav-desktop-link"
 	>
 		Todo
 	</a>
@@ -240,7 +238,7 @@
 
 {#if showComposer}
 	<div
-		class="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0"
+		class="composer-backdrop"
 		onclick={(e) => e.target === e.currentTarget && closeComposer()}
 		onkeydown={(e) => e.key === 'Escape' && closeComposer()}
 		role="button"
@@ -249,14 +247,14 @@
 	>
 		<div
 			transition:sheet3d
-			class="w-full max-w-3xl mx-auto max-h-[85vh] overflow-y-auto rounded-t-2xl bg-slate-900 p-4 shadow-2xl will-change-transform"
+			class="composer-panel"
 		>
 			<div class="mb-4 flex items-center justify-between">
-				<h3 class="text-lg font-semibold text-slate-100">New task</h3>
+				<h3 class="composer-title">New task</h3>
 				<button
 					type="button"
 					onclick={closeComposer}
-					class="text-slate-400 hover:text-slate-200"
+					class="composer-close-button"
 					aria-label="Close panel"
 				>
 					<svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -271,7 +269,7 @@
 					type="text"
 					bind:value={composerTitle}
 					placeholder="Task"
-					class="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
+					class="composer-input"
 				/>
 			</div>
 
@@ -279,12 +277,12 @@
 				<textarea
 					bind:value={composerMarkdown}
 					placeholder="Add notes, checklists, etc..."
-					class="min-h-[140px] w-full resize-y rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
+					class="composer-textarea"
 				></textarea>
 			</div>
 
 			<div class="mb-4 flex items-center gap-2">
-				<span class="text-sm text-slate-400">Part of:</span>
+				<span class="composer-meta-label">Part of:</span>
 				<GoalSelect
 					allGoals={allGoals}
 					bind:value={composerGoalValue}
@@ -300,7 +298,7 @@
 						type="text"
 						bind:value={composerNewListName}
 						placeholder="List name"
-						class="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
+						class="composer-input"
 					/>
 				</div>
 			{/if}

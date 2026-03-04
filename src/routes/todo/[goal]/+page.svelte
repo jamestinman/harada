@@ -718,11 +718,11 @@
 	<div class="mx-auto max-w-4xl">
 		{#if !dataLoaded}
 			<div class="flex items-center justify-center py-12">
-				<div class="text-slate-400">Loading...</div>
+				<div class="goal-loading-message">Loading...</div>
 			</div>
 		{:else if goalIndex === null}
 			<div class="flex items-center justify-center py-12">
-				<div class="text-slate-400">Invalid goal. Redirecting...</div>
+				<div class="goal-loading-message">Invalid goal. Redirecting...</div>
 			</div>
 		{:else}
 			<!-- Header -->
@@ -732,7 +732,7 @@
             <!--
 						<button
 							onclick={moveUpALevel}
-							class="mb-2 text-sm text-slate-400 hover:text-slate-200 transition-colors"
+							class="mb-2 text-sm transition-colors"
 						>
 							← {parentGoalLabel ? `Back to ${parentGoalLabel}` : 'Back to all'}
 						</button>
@@ -743,7 +743,7 @@
 									type="text"
 									bind:this={goalTitleInputElement}
 									bind:value={editedGoalTitle}
-									class="w-full rounded-md border border-violet-500 bg-slate-900 px-3 py-2 text-2xl font-bold text-slate-100 placeholder-slate-500 outline-none focus:ring-2 focus:ring-violet-500/50"
+									class="!text-2xl font-bold"
 									placeholder="Goal title"
 									onkeydown={(e) => {
 										if (e.key === 'Enter') {
@@ -764,7 +764,7 @@
 								<textarea
 									bind:this={goalDescriptionTextareaElement}
 									bind:value={editedGoalDescription}
-									class="w-full min-h-[6rem] rounded-md border border-violet-500 bg-slate-900 px-3 py-2 text-base text-slate-100 placeholder-slate-500 outline-none focus:ring-2 focus:ring-violet-500/50 resize-none"
+									class="!min-h-[6rem] resize-none"
 									placeholder="Add description (supports markdown)..."
 									onkeydown={(e) => {
 										if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -784,16 +784,16 @@
 								class="text-left w-full cursor-pointer group"
 							>
 								<h1
-									class="text-2xl font-bold text-slate-100 group-hover:text-violet-300 transition-colors"
+									class="goal-header-title"
 								>
 									{goalLabel || indexToNomenclature(goalIndex)}
 								</h1>
 								{#if goalMarkdown}
-									<div class="markdown mt-2 text-sm leading-relaxed text-slate-300 group-hover:text-slate-200 transition-colors">
+									<div class="markdown mt-2 text-sm leading-relaxed transition-colors">
 										{@html renderMarkdown(goalMarkdown)}
 									</div>
 								{:else}
-									<div class="mt-2 text-sm text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity">
+									<div class="goal-header-placeholder">
 										Click to add description...
 									</div>
 								{/if}
@@ -811,9 +811,9 @@
 						{#each goalColors as color}
 							<button
 								type="button"
-								class="h-6 w-6 rounded border-2 transition-all {selectedColor === color.value
-									? 'border-violet-400 ring-2 ring-violet-300'
-									: 'border-slate-600'} {color.preview || 'bg-slate-700'}"
+								class="goal-color-button {selectedColor === color.value
+									? 'goal-color-selected'
+									: 'goal-color-unselected'} {color.preview || 'goal-color-default-bg'}"
 								title={color.label}
 								onclick={() => updateGoalColor(color.value)}
 							></button>
@@ -824,7 +824,7 @@
 							<button
 								type="button"
 								onclick={clearGoal}
-								class="rounded-md border border-slate-700 bg-slate-900 px-2 py-2 text-sm font-semibold text-slate-400 shadow-sm transition hover:border-rose-500 hover:bg-rose-900/40 hover:text-rose-200"
+								class="rounded-md border px-2 py-2 text-sm font-semibold shadow-sm transition hover:border-rose-500 hover:bg-rose-900/40 hover:text-rose-200"
 								title="Clear goal name and description"
 							>
 								<Trash2 class="w-4 h-4" />
@@ -832,14 +832,14 @@
 							<button
 								type="button"
 								onclick={saveGoalEdit}
-								class="rounded-md border border-violet-600/70 bg-violet-600/90 px-4 py-2 text-sm font-semibold text-slate-950 shadow-sm transition hover:bg-violet-500"
+								class="rounded-md border border-violet-600/70 bg-violet-600/90 px-4 py-2 text-sm font-semibold text-black shadow-sm transition hover:bg-violet-500"
 							>
 								Save
 							</button>
 							<button
 								type="button"
 								onclick={cancelGoalEdit}
-								class="rounded-md border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-300 shadow-sm transition hover:bg-slate-700"
+								class="todo-desktop-cancel"
 							>
 								Cancel
 							</button>
@@ -854,9 +854,9 @@
 					<input
 						type="checkbox"
 						bind:checked={showCompleted}
-						class="h-4 w-4 rounded border-slate-600 bg-slate-900 text-violet-600 focus:ring-2 focus:ring-violet-500/50"
+						class="h-4 w-4 rounded border text-violet-600 focus:ring-2 focus:ring-violet-500/50"
 					/>
-					<span class="text-sm text-slate-300">Show completed tasks</span>
+					<span class="text-sm">Show completed tasks</span>
 				</label>
 			</div>
 

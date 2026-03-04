@@ -25,19 +25,27 @@ class AuthStore {
 			const {
 				data: { session }
 			} = await supabase.auth.getSession();
-			this.session = session;
-			this.user = session?.user ?? null;
+			this._applySession(session);
 
 			// Listen for auth changes
 			supabase.auth.onAuthStateChange((_event, session) => {
-				this.session = session;
-				this.user = session?.user ?? null;
+				this._applySession(session);
 			});
 		} catch (err) {
 			console.error('Auth initialization error:', err);
 			this.error = err.message;
 		} finally {
 			this.loading = false;
+		}
+	}
+
+	_applySession(session) {
+		this.session = session;
+		const user = session?.user ?? null;
+		if (user) {
+			this.user = { ...user };
+		} else {
+			this.user = null;
 		}
 	}
 
@@ -92,6 +100,10 @@ class AuthStore {
 
 			if (error) throw error;
 
+			if (data?.session) {
+				this._applySession(data.session);
+			}
+
 			return { success: true };
 		} catch (err) {
 			console.error('Sign in error:', err);
@@ -141,8 +153,7 @@ class AuthStore {
 			const { error } = await supabase.auth.signOut();
 			if (error) throw error;
 
-			this.user = null;
-			this.session = null;
+			this._applySession(null);
 
 			return { success: true };
 		} catch (err) {

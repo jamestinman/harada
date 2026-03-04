@@ -36,22 +36,20 @@
 
 {#if isOpen}
 	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+		class="settings-backdrop"
 		onclick={(e) => e.target === e.currentTarget && closeModal()}
 		onkeydown={(e) => e.key === 'Escape' && closeModal()}
 		role="button"
 		tabindex="-1"
 		aria-label="Close settings modal"
 	>
-		<div
-			class="w-full max-w-md rounded-lg bg-slate-900 p-6 shadow-xl border border-slate-700"
-		>
+		<div class="settings-modal">
 			<div class="mb-6 flex items-center justify-between">
-				<h2 class="text-xl font-semibold text-slate-100">Settings</h2>
+				<h2 class="text-xl font-semibold">Settings</h2>
 				<button
 					type="button"
 					onclick={closeModal}
-					class="text-slate-400 hover:text-slate-200 transition-colors"
+					class="settings-close-button"
 					aria-label="Close modal"
 				>
 					<svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -65,33 +63,66 @@
 					<img
 						src={userAvatar}
 						alt={userName || 'User avatar'}
-						class="h-20 w-20 rounded-full border-2 border-slate-700"
+						class="settings-avatar"
 					/>
 				{:else}
-					<div class="flex h-20 w-20 items-center justify-center rounded-full border-2 border-slate-700 bg-violet-600 text-2xl font-bold text-white">
+					<div class="settings-avatar-placeholder">
 						{userInitial}
 					</div>
 				{/if}
 				<div class="text-center">
-					<div class="text-lg font-semibold text-slate-100">{userName}</div>
+					<div class="settings-name">{userName}</div>
 					{#if userEmail}
-						<div class="text-sm text-slate-400">{userEmail}</div>
+						<div class="settings-email">{userEmail}</div>
 					{/if}
 				</div>
 			</div>
 
-			<div class="mb-6 border-t border-slate-700 pt-4">
-				<button
-					type="button"
-					onclick={handleLogout}
-					class="w-full rounded-md border border-red-600/70 bg-red-600/90 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-500"
-				>
-					Logout
-				</button>
+			<div class="settings-section-divider">
+				<div class="flex items-center justify-between">
+					<div>
+						<div class="settings-appearance-label">Appearance</div>
+						<div class="settings-appearance-help">Light or dark mode for this account</div>
+					</div>
+					<div class="settings-appearance-toggle">
+						<button
+							type="button"
+							onclick={() => store.setTheme('light')}
+							class={`settings-theme-option ${
+								store.theme == 'light'
+									? 'settings-theme-option-active'
+									: 'settings-theme-option-inactive'
+							}`}
+						>
+							Light
+						</button>
+						<button
+							type="button"
+							onclick={() => store.setTheme('dark')}
+							class={`settings-theme-option ${
+								store.theme == 'dark'
+									? 'settings-theme-option-active'
+									: 'settings-theme-option-inactive'
+							}`}
+						>
+							Dark
+						</button>
+					</div>
+				</div>
+
+				<div class="settings-logout-section">
+					<button
+						type="button"
+						onclick={handleLogout}
+						class="settings-logout-button"
+					>
+						Logout
+					</button>
+				</div>
 			</div>
 
-			<div class="border-t border-slate-700 pt-4 text-center">
-				<div class="text-xs text-slate-500">Version {store.version}</div>
+			<div class="settings-footer">
+				<div class="settings-footer-text">Version {store.version}</div>
 			</div>
 		</div>
 	</div>

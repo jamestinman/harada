@@ -1,7 +1,7 @@
-<div class="mt-8 text-center text-xs text-slate-500">
+<div class="harada-footer">
     <!-- Instructions -->
-    <div
-    class="justify-center flex flex-wrap items-center gap-3 rounded-lg border border-slate-700/50 bg-slate-800/30 px-3 py-1.5 text-xs text-slate-300 backdrop-blur-sm"
+  <div
+    class="harada-footer-instructions"
   >
   <span class="flex items-center gap-1.5">
       <span
@@ -16,7 +16,7 @@
       <span>8 Sub-Goals</span>
     </span>
     <span class="flex items-center gap-1.5">
-      <span class="inline-block h-3 w-3 rounded bg-slate-800 ring-1 ring-slate-600"></span>
+      <span class="harada-footer-dot-action"></span>
       <span>Action Items</span>
     </span>
     <span class="flex items-center gap-1.5">

@@ -10,7 +10,6 @@
 		stringValues = false,
 		unassignedLabel = 'No goal assigned',
 		newListLabel = '* New list',
-		selectClass = 'flex-1 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50'
 	} = $props();
 
 	const goalsWithTitles = $derived.by(() => {
@@ -26,7 +25,7 @@
 </script>
 
 {#if !hideWhenNoGoals || goalsWithTitles.length > 0}
-	<select bind:value={value} class={selectClass}>
+	<select bind:value={value}>
 		{#if includeUnassigned}
 			<option value="">{unassignedLabel}</option>
 		{/if}

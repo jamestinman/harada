@@ -54,16 +54,16 @@
       return customColor;
     }
 
-		if (cellType === 'main') return 'bg-slate-400';
-		if (cellType === 'sub') return 'bg-slate-600/80';
-		if (cellType === 'outer') return 'bg-slate-600/60';
-		return 'bg-slate-600/40';
+		if (cellType === 'main') return 'squaremap-main-dot';
+		if (cellType === 'sub') return 'squaremap-sub-dot';
+		if (cellType === 'outer') return 'squaremap-outer-dot';
+		return 'squaremap-inner-dot';
 	}
 </script>
 
 <button
 	type="button"
-	class="inline-flex flex-col gap-[1px] rounded p-1 border-2 transition-all hover:bg-slate-800/50 active:scale-95 cursor-pointer {store.isLoading ? 'border-purple-500' : store.saveStatus == 'dirty' ? 'border-amber-500' : store.saveStatus == 'saving' ? 'border-red-500' : 'border-transparent'}"
+	class="squaremap-button {store.isLoading ? 'border-purple-500' : store.saveStatus == 'dirty' ? 'border-amber-500' : store.saveStatus == 'saving' ? 'border-red-500' : 'border-transparent'}"
 	onclick={() => goto('/')}
 	title="View full Harada Chart"
 >
@@ -75,7 +75,7 @@
 				{@const canonicalIndex = canonicalGoalIndex(index)}
 				{@const isCurrentGoal = currentGoalIndex !== null && (canonicalIndex === currentGoalIndex || index === currentGoalIndex || getLinkedGoalIndex(index) === currentGoalIndex)}
 				{@const cellColor = getCellColor(index, cellType, isCurrentGoal)}
-				<div class={`h-1.5 w-1.5 rounded-full transition-all ${cellColor}`}></div>
+				<div class={`${cellColor}`}></div>
 			{/each}
 		</div>
 	{/each}

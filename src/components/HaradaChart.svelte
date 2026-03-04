@@ -114,8 +114,7 @@
 					classes +=
 						'bg-gradient-to-br from-yellow-600 to-amber-600 border border-yellow-400 text-white font-semibold shadow-lg shadow-yellow-500/40';
 				} else {
-					classes +=
-						'bg-gradient-to-br from-slate-700/80 to-slate-800/80 border border-slate-500/50 text-slate-100 font-semibold';
+					classes += 'harada-chart-center-default';
 				}
 			} else {
 				// Action / task squares: color driven by status
@@ -126,7 +125,7 @@
 					classes +=
 						'bg-emerald-900/80 border-emerald-500/80 text-emerald-50 shadow-inner shadow-emerald-500/25';
 				} else {
-					classes += getBlockColor(row, col) + ' border border-slate-700/50 text-slate-200';
+					classes += getBlockColor(row, col) + ' harada-chart-task-default';
 				}
 			}
 		}
@@ -369,8 +368,8 @@
 
 	function goalDragClass(index) {
 		if (!goalDrag.active) return '';
-		if (goalDrag.sourceIndex === index) return 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-950';
-		if (goalDrag.targetIndex === index) return 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-950';
+		if (goalDrag.sourceIndex === index) return 'harada-goal-ring-source';
+		if (goalDrag.targetIndex === index) return 'harada-goal-ring-target';
 		return '';
 	}
 </script>

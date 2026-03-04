@@ -559,8 +559,8 @@
 	<div class="mx-auto max-w-4xl">
     <!-- Header -->
     <div class="mb-6">
-      <h1 class="text-2xl font-bold text-slate-100">Todo</h1>
-      <p class="mt-1 text-sm text-slate-400">
+      <h1>Todo</h1>
+      <p class="page-subtitle">
         {allTodos.length} todo{allTodos.length !== 1 ? 's' : ''} across {todoGroups.filter((g) => g.id !== 'no-goal').length} goal{todoGroups.filter((g) => g.id !== 'no-goal').length !== 1 ? 's' : ''}
       </p>
     </div>

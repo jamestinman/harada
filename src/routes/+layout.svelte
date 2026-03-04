@@ -121,7 +121,8 @@
 </script>
 
 <div
-	class="min-h-dvh overflow-x-hidden lg:pr-28 bg-gradient-to-br from-slate-950 via-slate-900 to-violet-950"
+  id="root-container"
+	class="{store.theme} min-h-dvh overflow-x-hidden lg:pr-28"
 	style="
 		padding-top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
 		padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem);

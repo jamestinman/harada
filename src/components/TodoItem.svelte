@@ -215,7 +215,7 @@
 {#if !isEditing}
 	<div
 		data-todo-item-id={todo.id}
-		class="group relative flex items-center gap-2 rounded-lg border border-slate-700/50 bg-slate-950/40 px-3 py-2 transition hover:border-slate-600 hover:bg-slate-900/50 select-none"
+		class="group task"
 		style="margin-left: {indentLevel * 1.5}rem;"
 	>
 		<!-- Collapse toggle: absolutely positioned in the left padding so checkboxes always line up -->
@@ -224,7 +224,7 @@
 				type="button"
 				onpointerdown={(e) => e.stopPropagation()}
 				onclick={(e) => { e.stopPropagation(); onToggleCollapse && onToggleCollapse(); }}
-				class="absolute -left-6 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 transition hover:bg-slate-800 hover:text-slate-200"
+				class="absolute -left-6 top-1/2 -translate-y-1/2 rounded p-0.5 transition todo-collapse-toggle"
 				title={isCollapsed ? 'Expand subtasks' : 'Collapse subtasks'}
 			>
 				<ChevronDown class={`h-5 w-5 transition-transform duration-150 ${isCollapsed ? '-rotate-90' : ''}`} />
@@ -238,7 +238,7 @@
 			class={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border-2 transition ${
 				todo.status === 'done'
 					? 'border-emerald-500 bg-emerald-500 text-white'
-					: 'border-slate-600 hover:border-slate-500'
+					: 'todo-checkbox-todo'
 			}`}
 			title={todo.status === 'done' ? 'Mark as to-do' : 'Mark as done'}
 		>
@@ -264,10 +264,8 @@
 							saveTitle();
 						}
 					}}
-					class={`flex-1 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-base md:text-sm outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50 ${
-						todo.status === 'done'
-							? 'text-slate-500 line-through'
-							: 'text-slate-200'
+					class={`flex-1 px-2 py-1 text-base md:text-sm outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50 ${
+						todo.status === 'done' ? 'line-through opacity-70' : ''
 					}`}
 					placeholder="Untitled"
 				/>
@@ -278,8 +276,8 @@
 				onclick={startEditingTitle}
 				class={`flex-1 text-left text-sm min-h-[1.5rem] py-1 transition ${
 					todo.status === 'done'
-						? 'text-slate-500 line-through'
-						: 'text-slate-200 hover:text-slate-100'
+						? 'line-through'
+						: ''
 				}`}
 			>
 				<span class={!todo.title || todo.title.trim() === '' ? 'opacity-0' : ''}>
@@ -312,8 +310,8 @@
 				disabled={!canIndent && !canOutdent}
 				class={`flex-shrink-0 p-1 rounded transition ${
 					canIndent || canOutdent
-						? 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-						: 'text-slate-700 cursor-not-allowed'
+						? 'todo-indent-button-enabled'
+						: 'todo-indent-button-disabled cursor-not-allowed'
 				}`}
 				title={showOutdentAction ? 'Outdent (Ctrl/Cmd+[)' : 'Indent (Ctrl/Cmd+])'}
 			>
@@ -329,8 +327,8 @@
 			onclick={startEditingNotes}
 			class={`flex-shrink-0 transition ${
 				hasNotes
-					? 'text-slate-400 hover:text-slate-300'
-					: 'text-slate-600 hover:text-slate-400'
+					? 'todo-notes-button-has-notes'
+					: 'todo-notes-button-empty'
 			}`}
 			title={hasNotes ? 'Edit notes' : 'Add notes'}
 		>
@@ -341,13 +339,13 @@
 	</div>
 {:else}
 	<!-- Desktop expanded editor -->
-	<div class="rounded-lg border border-slate-600 bg-slate-900/60 p-4">
-		<!-- Title input -->
+			<div class="desktop-expanded-editor">
+
+    <!-- Title input -->
 		<input
 			type="text"
 			bind:value={editTitle}
 			placeholder="Task"
-			class="mb-3 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
 		/>
 
 		<!-- Goal selection -->
@@ -360,7 +358,6 @@
 				hideWhenNoGoals={true}
 				stringValues={true}
 				unassignedLabel="No goal assigned"
-				selectClass="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
 			/>
 		</div>
 
@@ -369,7 +366,6 @@
 			<textarea
 				bind:value={editMarkdown}
 				placeholder="Add notes, checklists, etc..."
-				class="min-h-[120px] w-full resize-y rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
 			></textarea>
 		</div>
 
@@ -387,7 +383,7 @@
 				<button
 					type="button"
 					onclick={cancelEdit}
-					class="rounded-md border border-slate-700 bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-300 transition hover:bg-slate-700"
+					class="todo-desktop-cancel"
 				>
 					Cancel
 				</button>
@@ -407,7 +403,7 @@
 <!-- Mobile bottom sheet editor -->
 {#if showMobileEditor}
 	<div
-		class="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 md:hidden"
+		class="composer-backdrop md:hidden"
 		onclick={(e) => e.target === e.currentTarget && cancelEdit()}
 		onkeydown={(e) => e.key === 'Escape' && cancelEdit()}
 		role="button"
@@ -416,15 +412,15 @@
 	>
 		<div
 			transition:sheet3d
-			class="w-full max-h-[85vh] overflow-y-auto rounded-t-2xl bg-slate-900 p-4 shadow-2xl will-change-transform"
+			class="composer-panel"
 		>
 			<!-- Header -->
 			<div class="mb-4 flex items-center justify-between">
-				<h3 class="text-lg font-semibold text-slate-100">Edit Todo</h3>
+				<h3 class="composer-title">Edit Todo</h3>
 				<button
 					type="button"
 					onclick={cancelEdit}
-					class="text-slate-400 hover:text-slate-200"
+					class="composer-close-button"
 					aria-label="Close editor"
 				>
 					<svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -439,13 +435,13 @@
 					type="text"
 					bind:value={editTitle}
 					placeholder="Task"
-					class="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-base text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
+					class="composer-input"
 				/>
 			</div>
 
 			<!-- Goal selection -->
 			<div class="mb-4 flex flex-col gap-1">
-				<label class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+				<label class="todo-panel-label">
 					Goal
 				</label>
 				<GoalSelect
@@ -456,7 +452,7 @@
 					hideWhenNoGoals={true}
 					stringValues={true}
 					unassignedLabel="No goal assigned"
-					selectClass="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-base text-slate-100 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
+					selectClass="w-full"
 				/>
 			</div>
 
@@ -465,7 +461,7 @@
 				<textarea
 					bind:value={editMarkdown}
 					placeholder="Add notes, checklists, etc..."
-					class="min-h-[150px] w-full resize-y rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-base text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50"
+					class="composer-textarea"
 				></textarea>
 			</div>
 
