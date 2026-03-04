@@ -850,14 +850,14 @@
 
 			<!-- Show completed toggle -->
 			<div class="mb-4 flex items-center justify-between">
-				<label class="flex items-center gap-2 cursor-pointer">
+				<p class="flex items-center gap-2 cursor-pointer">
 					<input
 						type="checkbox"
 						bind:checked={showCompleted}
 						class="h-4 w-4 rounded border text-violet-600 focus:ring-2 focus:ring-violet-500/50"
 					/>
 					<span class="text-sm">Show completed tasks</span>
-				</label>
+        </p>
 			</div>
 
 			<!-- Todo list -->

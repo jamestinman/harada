@@ -141,9 +141,9 @@
 
 					<div class="mt-3 grid gap-3 md:grid-cols-2">
 						<div class="flex flex-col gap-1">
-							<label class="todo-panel-label">
+							<span class="todo-panel-label">
 								Markdown notes
-							</label>
+							</span>
 							<textarea
 								class="todo-panel-textarea"
 								placeholder="Write detailed notes, checklists or context for this to-do using Markdown…"
@@ -152,9 +152,9 @@
 							></textarea>
 						</div>
 						<div class="flex flex-col gap-1">
-							<label class="todo-panel-label">
+							<span class="todo-panel-label">
 								Preview
-							</label>
+							</span>
 							<div
 								class="todo-panel-preview"
 							>

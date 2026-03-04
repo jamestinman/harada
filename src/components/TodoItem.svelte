@@ -441,9 +441,9 @@
 
 			<!-- Goal selection -->
 			<div class="mb-4 flex flex-col gap-1">
-				<label class="todo-panel-label">
+				<span class="todo-panel-label">
 					Goal
-				</label>
+				</span>
 				<GoalSelect
 					allGoals={allGoals}
 					bind:value={editListValue}

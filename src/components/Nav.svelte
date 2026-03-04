@@ -38,8 +38,14 @@ let showAuthModal = $state(false);
 	async function openComposer() {
 		composerTitle = '';
 		composerMarkdown = '';
+		const activeGoalIndex =
+			typeof store.currentGoalIndex === 'number'
+				? store.currentGoalIndex
+				: typeof defaultGoalIndex === 'number'
+					? defaultGoalIndex
+					: null;
 		composerGoalValue =
-			typeof defaultGoalIndex === 'number' ? String(defaultGoalIndex) : '';
+			typeof activeGoalIndex === 'number' ? String(activeGoalIndex) : '';
 		composerNewListName = '';
 		showComposer = true;
 		await tick();
