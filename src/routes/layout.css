@@ -626,11 +626,18 @@ h4 {
 }
 
 .todo-notes-button-has-notes {
-  .dark & {
-    @apply text-slate-400 hover:text-slate-300;
+  @apply font-semibold;
+
+  svg {
+    stroke-width: 2.4;
   }
+
+  .dark & {
+    @apply text-violet-300 hover:text-violet-200;
+  }
+
   .light & {
-    @apply text-slate-600 hover:text-slate-900;
+    @apply text-violet-600 hover:text-violet-700;
   }
 }
 
@@ -638,6 +645,7 @@ h4 {
   .dark & {
     @apply text-slate-600 hover:text-slate-400;
   }
+
   .light & {
     @apply text-slate-400 hover:text-slate-700;
   }
@@ -920,7 +928,7 @@ h4 {
   }
 }
 
-input:not([type="checkbox"]):not([type="radio"]), select, textarea {
+input:not([type="checkbox"]):not([type="radio"]), textarea {
   @apply w-full rounded-md border px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50;
   .dark & {
     @apply border-slate-700/50 bg-slate-950/40 text-slate-100 placeholder-slate-500;
@@ -931,9 +939,15 @@ input:not([type="checkbox"]):not([type="radio"]), select, textarea {
 }
 
 
-/* select arrows (v) naturally style too far to right so we use the outline instead of the border to give extra space */
+/* select arrows (v) naturally style too far to right so we use a transparent padded border to give extra space, then apply an outline to gift a "border" back */
 select {
-  @apply p-2 rounded border-r-8 border-transparent outline outline-orange-300;
+  @apply p-2 rounded border-r-8 border-transparent;
+  .dark & {
+    @apply outline outline-slate-700/50;
+  }
+  .light & {
+    @apply outline outline-slate-500/50;
+  }
 }
 
 /* Markdown content: lists and list items */
