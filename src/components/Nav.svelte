@@ -6,6 +6,7 @@
 	import { NEW_LIST_OPTION_VALUE, parseListSelection } from '$lib/todoUtils.js';
 	import { store } from '$stores/store.svelte.js';
 	import { authStore } from '$stores/auth.svelte.js';
+	import { synthStore } from '$stores/synth.svelte.js';
 	import GoalSelect from './GoalSelect.svelte';
 	import SquareMap from './SquareMap.svelte';
 	import UserSettingsModal from './UserSettingsModal.svelte';

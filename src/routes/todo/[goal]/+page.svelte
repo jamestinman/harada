@@ -688,8 +688,50 @@
 	// Clear the goal's name and description (tasks and sub-goals are preserved)
 	function clearGoal() {
 		if (goalIndex === null) return;
+
+		// Ensure the current goal cell exists in the grid
+		if (!store.harada_chart.grid[goalIndex]) {
+			store.harada_chart.grid[goalIndex] = {
+				text: '',
+				status: 'todo',
+				readme: '',
+				color: 'default',
+				updated_at: null
+			};
+		}
+
+		// Clear the goal's title and description for this cell
+		store.harada_chart.grid[goalIndex].text = '';
+		store.harada_chart.grid[goalIndex].readme = '';
+
+		// Also clear the linked goal cell, if any, to keep them in sync
+		const linkedGoalIndex = getLinkedGoalIndex(goalIndex);
+		if (linkedGoalIndex !== null) {
+			if (!store.harada_chart.grid[linkedGoalIndex]) {
+				store.harada_chart.grid[linkedGoalIndex] = {
+					text: '',
+					status: 'todo',
+					readme: '',
+					color: 'default',
+					updated_at: null
+				};
+			}
+			store.harada_chart.grid[linkedGoalIndex].text = '';
+			store.harada_chart.grid[linkedGoalIndex].readme = '';
+		}
+
+		// Update timestamp and force reactivity
+		updateGoalTimestamp(store.harada_chart.grid, goalIndex);
+		store.harada_chart.grid = [...store.harada_chart.grid];
+
+		// Reset local editing state
 		editedGoalTitle = '';
 		editedGoalDescription = '';
+		isEditingGoal = false;
+
+		// Persist changes and return to HaradaChart screen
+		store.saveNow();
+		goto('/todo', { replaceState: true });
 	}
 
 	// Cancel editing

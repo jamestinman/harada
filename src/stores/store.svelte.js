@@ -1,6 +1,7 @@
 import { browser } from '$app/environment';
 import { localGet, localSet } from '$lib/PersistentStorage.mjs';
 import { supabase } from '$lib/supabaseClient.js';
+import { synthStore } from './synth.svelte.js';
 import {
 	buildGoalListMeta,
 	buildCustomListMeta,
@@ -18,7 +19,7 @@ class Store {
 	selectedGoalForNew = $state('');
 	sidebarOpen = $state(false);
 	currentGoalIndex = $state(null);
-	theme = $state(localGet('theme', 'dark'));
+	theme = $state(localGet('theme', 'light'));
 
   setTheme(value) {
     this.theme = value;
@@ -489,6 +490,15 @@ class Store {
 		const statuses = ['todo', 'done'];
 		const currentIndex = statuses.indexOf(todo.status ?? 'todo');
 		const nextStatus = statuses[(currentIndex + 1) % statuses.length];
+
+		// Play a subtle completion "ping" when a task is marked done (browser only)
+		if (browser && nextStatus === 'done') {
+			try {
+				synthStore.playBell();
+			} catch (err) {
+				console.error('Failed to play completion sound:', err);
+			}
+		}
 
 		if (nextStatus === 'done' && (!todo.title || todo.title.trim() === '')) {
 			this.deleteTodo(id);
