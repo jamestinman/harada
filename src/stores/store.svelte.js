@@ -1,5 +1,5 @@
 import { browser } from '$app/environment';
-import { localGet, localSet } from '$lib/PersistentStorage.mjs';
+import { localGet, localSet, prefGet, prefSet } from '$lib/PersistentStorage.mjs';
 import { supabase } from '$lib/supabaseClient.js';
 import { synthStore } from './synth.svelte.js';
 import {
@@ -11,6 +11,7 @@ import {
 import { authStore } from './auth.svelte.js';
 
 const defaultCell = () => ({ text: '', status: 'todo', readme: '', color: 'default', updated_at: null });
+	const GOAL_GROUP_ORDER_STEP = 1024;
 
 class Store {
 	version = $state('0.0.7');
@@ -40,12 +41,17 @@ class Store {
 	_realtimeChannel = null;
 	_savingPromise = null;
 	_pendingSave = false;
+	_pendingCloudSync = false;
 
 	constructor() {
 		if (!browser) return;
 
 		window.addEventListener('online', () => {
 			this.isOnline = true;
+			// Flush any pending cloud sync when connectivity returns
+			if (this._pendingCloudSync) {
+				this.saveNow();
+			}
 			if (!this._isInitialized) this.initialize();
 		});
 		window.addEventListener('offline', () => {
@@ -58,15 +64,33 @@ class Store {
 	async initialize() {
 		if (!browser || this._isInitialized) return;
 
-		if (!authStore.user || !supabase) {
-			this.isLoading = false;
-			this._isInitialized = true;
-			return;
-		}
-
 		this.isLoading = true;
 
 		try {
+			// 1) Bootstrap from local persistent storage so the app works offline
+			try {
+				const local = await prefGet('harada_chart_local', null);
+				if (local && typeof local === 'object') {
+					const localGrid = Array.isArray(local.grid) ? local.grid : [];
+					const normalizedLocalGrid = Array.from(
+						{ length: 81 },
+						(_, i) => (localGrid[i] ? { ...defaultCell(), ...localGrid[i] } : defaultCell())
+					);
+					this.harada_chart = {
+						grid: normalizedLocalGrid,
+						todos: Array.isArray(local.todos) ? local.todos : []
+					};
+				}
+			} catch (err) {
+				console.error('Failed to load local Harada chart:', err);
+			}
+
+			// 2) If not authenticated or Supabase is unavailable, stop here (offline/local-only mode)
+			if (!authStore.user || !supabase) {
+				return;
+			}
+
+			// 3) If online and authenticated, hydrate from Supabase and overwrite local snapshot
 			const data = await this.loadFromSupabase();
 			if (data) {
 				const grid = Array.isArray(data.grid) ? data.grid : [];
@@ -79,6 +103,8 @@ class Store {
 					grid: normalizedGrid,
 					todos: data.todos || []
 				};
+				// Persist the fresh cloud state locally for future offline use
+				await this._saveLocally();
 			}
 		} catch (err) {
 			console.error('Failed to initialize from Supabase:', err);
@@ -88,7 +114,10 @@ class Store {
 			this._isInitialized = true;
 		}
 
-		this._subscribeToRealtime();
+		// Only attempt realtime subscription when Supabase and auth are available
+		if (authStore.user && supabase) {
+			this._subscribeToRealtime();
+		}
 	}
 
 	// --- Realtime ---
@@ -256,13 +285,16 @@ class Store {
 	async _executeSaveOnce() {
 		if (!browser) return;
 
-		if (!authStore.user || !supabase) {
-			// Not authenticated — nothing to save to
-			this.saveStatus = 'idle';
-			return;
-		}
-
 		try {
+			// Always save locally so offline mode works even without Supabase
+			await this._saveLocally();
+
+			if (!authStore.user || !supabase) {
+				// Not authenticated — nothing to save to the cloud
+				this.saveStatus = 'idle';
+				return;
+			}
+
 			this.syncError = null;
 			await this.saveToSupabase(
 				this.harada_chart.grid,
@@ -272,6 +304,23 @@ class Store {
 		} catch (err) {
 			console.error('Save failed:', err);
 			this.syncError = err.message;
+		}
+	}
+
+	async _saveLocally() {
+		if (!browser) return;
+		try {
+			const plainGrid = this._toPlainArray(this.harada_chart.grid);
+			const plainTodos = Array.isArray(this.harada_chart.todos)
+				? this.harada_chart.todos.map((t) => (t && typeof t === 'object' ? { ...t } : t))
+				: [];
+			await prefSet('harada_chart_local', {
+				grid: plainGrid,
+				todos: plainTodos,
+				savedAt: new Date().toISOString()
+			});
+		} catch (err) {
+			console.error('Failed to save Harada chart locally:', err);
 		}
 	}
 
@@ -316,6 +365,13 @@ class Store {
 	async saveToSupabase(gridSnapshot, todosSnapshot, title = 'My Harada Chart') {
 		if (!browser || !authStore.user || !supabase) return false;
 
+		// If we're offline, remember that we have local changes that still need
+		// to be pushed once connectivity is restored.
+		if (!this.isOnline) {
+			this._pendingCloudSync = true;
+			return false;
+		}
+
 		try {
 			this.syncError = null;
 
@@ -339,6 +395,7 @@ class Store {
 				if (tasksError) throw tasksError;
 			}
 
+			this._pendingCloudSync = false;
 			return true;
 		} catch (err) {
 			console.error('Failed to save to Supabase:', err);
@@ -444,6 +501,42 @@ class Store {
 		if (typeof goalIndexToUpdate === 'number') {
 			const nextGrid = [...this.harada_chart.grid];
 			updateGoalTimestamp(nextGrid, goalIndexToUpdate);
+
+			// Move this goal's group to the top when a related task is edited.
+			// Find all goal indices (except the one we're updating) that currently have active todos.
+			const goalsWithTodos = new Set();
+			for (const todo of updatedTodos) {
+				if (
+					(todo.listType === 'goal' || !todo.listType) &&
+					todo.status !== 'done' &&
+					typeof todo.goalIndex === 'number'
+				) {
+					goalsWithTodos.add(todo.goalIndex);
+				}
+			}
+
+			let minOrdering = null;
+			for (const idx of goalsWithTodos) {
+				if (idx === goalIndexToUpdate) continue;
+				const cell = nextGrid[idx];
+				const ordering =
+					typeof cell?.todo_group_ordering === 'number' && Number.isFinite(cell.todo_group_ordering)
+						? cell.todo_group_ordering
+						: (idx + 1) * GOAL_GROUP_ORDER_STEP;
+				if (minOrdering === null || ordering < minOrdering) {
+					minOrdering = ordering;
+				}
+			}
+
+			const newOrdering =
+				minOrdering === null ? GOAL_GROUP_ORDER_STEP : minOrdering - GOAL_GROUP_ORDER_STEP;
+
+			const existingCell = nextGrid[goalIndexToUpdate] || defaultCell();
+			nextGrid[goalIndexToUpdate] = {
+				...existingCell,
+				todo_group_ordering: newOrdering
+			};
+
 			this.harada_chart = { ...this.harada_chart, grid: nextGrid };
 		}
 
