@@ -14,6 +14,8 @@
 	import TodoList from '$components/TodoList.svelte';
 	import Nav from '$components/Nav.svelte';
 
+	let searchText = $state('');
+
   // Use store.harada_chart directly - it's reactive
 	const grid = $derived(store.harada_chart.grid);
 	const todos = $derived(store.harada_chart.todos.map((todo) => normalizeTodoListMeta(todo)));
@@ -557,34 +559,45 @@
 
 <div class="p-4 pb-24 md:p-8 md:pb-8">
 	<div class="mx-auto max-w-4xl">
-    <!-- Header -->
-    <div class="mb-6">
-      <h1>Todo</h1>
-      <p class="page-subtitle">
-        {allTodos.length} todo{allTodos.length !== 1 ? 's' : ''} across {todoGroups.filter((g) => g.id !== 'no-goal').length} goal{todoGroups.filter((g) => g.id !== 'no-goal').length !== 1 ? 's' : ''}
-      </p>
-    </div>
+		<!-- Header -->
+		<div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+			<div>
+        <div class="flex flex-row gap-5 justify-between w-full">
+          <h1>Todo</h1>
+          <input
+            type="text"
+            placeholder="Search"
+            bind:value={searchText}
+            class="w-full rounded-md border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-100 placeholder:text-slate-500 shadow-sm focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/60"
+          />
+        </div>
+        <p class="page-subtitle">
+					{allTodos.length} todo{allTodos.length !== 1 ? 's' : ''} across {todoGroups.filter((g) => g.id !== 'no-goal').length} goal{todoGroups.filter((g) => g.id !== 'no-goal').length !== 1 ? 's' : ''}
+				</p>
+			</div>
+		</div>
 
-    <TodoList
-      groups={todoGroups}
-      {allGoals}
-      onUpdate={updateTodo}
-      onDelete={deleteTodo}
-      onToggleStatus={cycleTodoStatus}
-      onCreateNext={createNextTodo}
-      onDeletePrevious={deleteAndFocusPrevious}
-      onMakeSubtask={makeSubtask}
-      onOutdent={(todoId) => outdentTodo(todoId)}
-      onTitleFocus={(id) => (activeTodoId = id)}
-      getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
-      canIndent={canIndentTodo}
-      canOutdent={(todoId) => canOutdentTodo(todoId)}
-      onCreateTodo={createTodoFromComposer}
-      onMoveTodo={moveTodo}
-      allowCrossListMove={true}
-      enableGroupDrag={true}
-      onMoveGroup={moveGoalGroup}
-    />
+		<TodoList
+			groups={todoGroups}
+			{allGoals}
+			onUpdate={updateTodo}
+			onDelete={deleteTodo}
+			onToggleStatus={cycleTodoStatus}
+			onCreateNext={createNextTodo}
+			onDeletePrevious={deleteAndFocusPrevious}
+			onMakeSubtask={makeSubtask}
+			onOutdent={(todoId) => outdentTodo(todoId)}
+			onTitleFocus={(id) => (activeTodoId = id)}
+			getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
+			canIndent={canIndentTodo}
+			canOutdent={(todoId) => canOutdentTodo(todoId)}
+			onCreateTodo={createTodoFromComposer}
+			onMoveTodo={moveTodo}
+			allowCrossListMove={true}
+			enableGroupDrag={true}
+			onMoveGroup={moveGoalGroup}
+			searchText={searchText}
+		/>
 	</div>
 	<Nav
 		{allGoals}

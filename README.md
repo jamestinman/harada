@@ -140,6 +140,7 @@ Notes:
   - Ads?
   - Pro - remove ads for £2.99
   - Premium - $.99/mth (3 months free if upgrading from Pro)
+
 ## Premium Accounts (competes with Monday.com etc but ENFORCES focus!)
 - Go Ad Free
 - Export / import as .md file
