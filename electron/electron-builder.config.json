@@ -1,0 +1,30 @@
+{
+  "appId": "com.haradato.app.desktop",
+  "productName": "Haradato",
+  "directories": {
+    "buildResources": "resources"
+  },
+  "files": [
+    "assets/**/*",
+    "build/**/*",
+    "capacitor.config.*",
+    "app/**/*"
+  ],
+  "publish": {
+    "provider": "github"
+  },
+  "nsis": {
+    "allowElevation": true,
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true
+  },
+  "win": {
+    "target": "nsis",
+    "icon": "../static/icon.png"
+  },
+  "mac": {
+    "category": "public.app-category.productivity",
+    "target": "dmg",
+    "icon": "../static/icon.png"
+  }
+}

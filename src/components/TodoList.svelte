@@ -24,6 +24,8 @@
 		onMoveGroup = null
 	} = $props();
 
+	let searchText = $state('');
+
 	const LONG_PRESS_MS = 260;
 	const DRAG_START_PX = 6;
 	const CHILD_ZONE_TOP = 0.25;
@@ -141,6 +143,13 @@
 			todo = getTodoById(todo.parentId);
 		}
 		return false;
+	}
+
+	function matchesSearch(todo) {
+		const query = searchText.trim().toLowerCase();
+		if (!query) return true;
+		const title = (todo?.title ?? '').toLowerCase();
+		return title.includes(query);
 	}
 
 	function toggleCollapse(todoId) {
@@ -653,13 +662,27 @@
 					class="mb-4 {enableGroupDrag && group.groupType === 'goal' ? 'cursor-grab active:cursor-grabbing' : ''}"
 					onpointerdown={(event) => handleGroupPointerDown(event, group.id)}
 				>
-					<h2 class="todo-group-heading">
-						{#if group.href}
-							<a href={group.href} class="hover:text-violet-400 transition-colors" ondragstart={(e) => e.preventDefault()}>{group.label}</a>
-						{:else}
-							{group.label}
-						{/if}
-					</h2>
+					<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+						<h2 class="todo-group-heading">
+							{#if group.href}
+								<a
+									href={group.href}
+									class="hover:text-violet-400 transition-colors"
+									ondragstart={(e) => e.preventDefault()}
+								>
+									{group.label}
+								</a>
+							{:else}
+								{group.label}
+							{/if}
+						</h2>
+						<input
+							type="text"
+							placeholder="Search tasks"
+							bind:value={searchText}
+							class="w-full max-w-xs rounded-md border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-100 placeholder:text-slate-500 shadow-sm focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/60"
+						/>
+					</div>
 				</div>
 			{/if}
 
@@ -677,13 +700,13 @@
 									{/if}
 								</h3>
 							</div>
-							{#if subGroup.todos.length === 0}
+							{#if subGroup.todos.filter(t => !isHiddenByCollapse(t.id) && matchesSearch(t)).length === 0}
 								<div class="todo-empty-section-card">
 									<p class="todo-empty-section-text">No todos in this section.</p>
 								</div>
 							{:else}
-						<div class="space-y-2">
-								{#each subGroup.todos.filter(t => !isHiddenByCollapse(t.id)) as todo (todo.id)}
+								<div class="space-y-2">
+								{#each subGroup.todos.filter(t => !isHiddenByCollapse(t.id) && matchesSearch(t)) as todo (todo.id)}
 									{#if showPlaceholderBefore(todo.id)}
 										<div class="h-12 rounded-lg border-2 border-dashed border-violet-400/80 bg-violet-500/10"></div>
 									{/if}
@@ -722,7 +745,7 @@
 										<div class="h-12 rounded-lg border-2 border-dashed border-violet-400/80 bg-violet-500/10"></div>
 									{/if}
 								{/each}
-							</div>
+								</div>
 							{/if}
 						</div>
 					{/each}
@@ -735,50 +758,56 @@
 					<p class="todo-empty-section-text">No todos in this section.</p>
 				</div>
 			{:else}
-			<div class="space-y-2">
-				{#if showHeaderTopPlaceholder(group.id)}
-					<div class="h-12 rounded-lg border-2 border-dashed border-violet-400/80 bg-violet-500/10"></div>
-				{/if}
-				{#each group.todos.filter(t => !isHiddenByCollapse(t.id)) as todo (todo.id)}
-					{#if showPlaceholderBefore(todo.id)}
+				<div class="space-y-2">
+					{#if showHeaderTopPlaceholder(group.id)}
 						<div class="h-12 rounded-lg border-2 border-dashed border-violet-400/80 bg-violet-500/10"></div>
 					{/if}
-					<div
-						data-dnd-item-id={todo.id}
-						onpointerdown={(event) => handleTaskPointerDown(event, todo)}
-						class={`relative rounded-lg transition ${itemDragClass(todo.id)}`}
-					>
-						{#if showChildIndicator(todo.id)}
-							<div class="pointer-events-none absolute right-2 top-1/2 z-10 -translate-y-1/2">
-								<span class="rounded bg-violet-800/90 px-1.5 py-0.5 text-xs text-violet-200">nest inside</span>
+					{#if group.todos.filter(t => !isHiddenByCollapse(t.id) && matchesSearch(t)).length === 0}
+						<div class="todo-empty-section-card">
+							<p class="todo-empty-section-text">No todos in this section.</p>
+						</div>
+					{:else}
+						{#each group.todos.filter(t => !isHiddenByCollapse(t.id) && matchesSearch(t)) as todo (todo.id)}
+							{#if showPlaceholderBefore(todo.id)}
+								<div class="h-12 rounded-lg border-2 border-dashed border-violet-400/80 bg-violet-500/10"></div>
+							{/if}
+							<div
+								data-dnd-item-id={todo.id}
+								onpointerdown={(event) => handleTaskPointerDown(event, todo)}
+								class={`relative rounded-lg transition ${itemDragClass(todo.id)}`}
+							>
+								{#if showChildIndicator(todo.id)}
+									<div class="pointer-events-none absolute right-2 top-1/2 z-10 -translate-y-1/2">
+										<span class="rounded bg-violet-800/90 px-1.5 py-0.5 text-xs text-violet-200">nest inside</span>
+									</div>
+								{/if}
+								<TodoItem
+									{todo}
+									onUpdate={(patch) => onUpdate && onUpdate(todo.id, patch)}
+									onDelete={() => onDelete && onDelete(todo.id)}
+									onToggleStatus={() => onToggleStatus && onToggleStatus(todo.id)}
+									onCreateNext={() => onCreateNext && onCreateNext(todo.id, group)}
+									onDeletePrevious={() => onDeletePrevious && onDeletePrevious(todo.id, group)}
+									onMakeSubtask={() => onMakeSubtask && onMakeSubtask(todo.id, group)}
+									onOutdent={() => onOutdent && onOutdent(todo.id, group)}
+									onTitleFocus={(id) => onTitleFocus && onTitleFocus(id)}
+									indentLevel={getIndentLevel ? getIndentLevel(todo.id, group) : 0}
+									canIndent={canIndent ? canIndent(todo.id, group) : false}
+									canOutdent={canOutdent ? canOutdent(todo.id, group) : false}
+									{allGoals}
+									allTodos={group.todos}
+									{disableAutoFocus}
+									hasChildren={parentTodoIds.has(todo.id)}
+									isCollapsed={collapsedTodos.has(todo.id)}
+									onToggleCollapse={() => toggleCollapse(todo.id)}
+								/>
 							</div>
-						{/if}
-						<TodoItem
-							{todo}
-							onUpdate={(patch) => onUpdate && onUpdate(todo.id, patch)}
-							onDelete={() => onDelete && onDelete(todo.id)}
-							onToggleStatus={() => onToggleStatus && onToggleStatus(todo.id)}
-							onCreateNext={() => onCreateNext && onCreateNext(todo.id, group)}
-							onDeletePrevious={() => onDeletePrevious && onDeletePrevious(todo.id, group)}
-							onMakeSubtask={() => onMakeSubtask && onMakeSubtask(todo.id, group)}
-							onOutdent={() => onOutdent && onOutdent(todo.id, group)}
-							onTitleFocus={(id) => onTitleFocus && onTitleFocus(id)}
-							indentLevel={getIndentLevel ? getIndentLevel(todo.id, group) : 0}
-							canIndent={canIndent ? canIndent(todo.id, group) : false}
-							canOutdent={canOutdent ? canOutdent(todo.id, group) : false}
-							{allGoals}
-							allTodos={group.todos}
-							{disableAutoFocus}
-							hasChildren={parentTodoIds.has(todo.id)}
-							isCollapsed={collapsedTodos.has(todo.id)}
-							onToggleCollapse={() => toggleCollapse(todo.id)}
-						/>
-					</div>
-					{#if showPlaceholderAfter(todo.id)}
-						<div class="h-12 rounded-lg border-2 border-dashed border-violet-400/80 bg-violet-500/10"></div>
+							{#if showPlaceholderAfter(todo.id)}
+								<div class="h-12 rounded-lg border-2 border-dashed border-violet-400/80 bg-violet-500/10"></div>
+							{/if}
+						{/each}
 					{/if}
-				{/each}
-			</div>
+				</div>
 			{/if}
 		</div>
 	{/each}

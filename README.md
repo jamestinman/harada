@@ -135,19 +135,15 @@ Notes:
 
 
 ## TODO / Roadmap
-
-- [ ] Export / import as .md file ✅ (partially done)
-- [x] Supabase login + save to cloud on change ✅
-- [x] Real-time updates ✅
-- [ ] Todo lists behind each square (in progress)
-- [ ] Todo list view
-- [ ] Mobile compatible (zoomable?)
-- [ ] Zoom into one square
-- [ ] Expand sub-task into its own Harada chart
-- [ ] Sharing and collaboration features
-- [ ] Multiple charts per user
-
-## License
-
-MIT
-
+- Desktop Electron version(s)
+- Monetisation
+  - Ads?
+  - Pro - remove ads for £2.99
+  - Premium - $.99/mth (3 months free if upgrading from Pro)
+## Premium Accounts (competes with Monday.com etc but ENFORCES focus!)
+- Go Ad Free
+- Export / import as .md file
+- Sharing and collaboration features
+  - Multiple Harada charts per user
+  - Shared goal or whole chart (e.g. for a company)
+- Multimedia: upload images and videos to notes

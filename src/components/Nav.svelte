@@ -1,8 +1,9 @@
 <script>
-	import { onMount } from 'svelte';
-	import { tick } from 'svelte';
+import { onMount } from 'svelte';
+import { tick } from 'svelte';
 	import { cubicOut } from 'svelte/easing';
 	import { page } from '$app/state';
+	import { browser } from '$app/environment';
 	import { NEW_LIST_OPTION_VALUE, parseListSelection } from '$lib/todoUtils.js';
 	import { store } from '$stores/store.svelte.js';
 	import { authStore } from '$stores/auth.svelte.js';
@@ -92,6 +93,46 @@ let showAuthModal = $state(false);
 		showMobileMenu = false;
 		showSettingsModal = true;
 	}
+
+	onMount(() => {
+		if (!browser) return;
+		const anyWindow = window;
+		const api = anyWindow?.HaradatoElectron;
+		if (!api?.onMenuCommand) return;
+
+		const unsubscribe = api.onMenuCommand((command) => {
+			if (command === 'settings') {
+				if (authStore.user) {
+					openSettings();
+				} else {
+					showAuthModal = true;
+					showMobileMenu = false;
+				}
+			}
+			if (command === 'auth') {
+				if (authStore.user) {
+					handleLogout();
+				} else {
+					showAuthModal = true;
+					showMobileMenu = false;
+				}
+			}
+		});
+
+		return () => {
+			if (typeof unsubscribe === 'function') {
+				unsubscribe();
+			}
+		};
+	});
+
+	$effect(() => {
+		if (!browser) return;
+		const anyWindow = window;
+		const api = anyWindow?.HaradatoElectron;
+		if (!api?.setAuthMenuState) return;
+		api.setAuthMenuState(!!authStore.user);
+	});
 
 	// Get user display name
 	const userName = $derived.by(() => {

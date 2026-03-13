@@ -6,6 +6,7 @@
 	"scripts": {
 		"dev": "vite dev --open",
 		"build": "vite build",
+		"electron": "cd electron && npm run electron:start-live",
 		"ios": "./prepare.sh dev && BUILD_TARGET=static vite build && npx cap run ios --target=\"370C98FE-A014-483B-8DA2-96F896BBE035\"",
 		"android": "./prepare.sh dev && BUILD_TARGET=static vite build && npx cap run android",
 		"preview": "vite preview",
@@ -18,11 +19,13 @@
 		"@sveltejs/kit": "^2.49.1",
 		"@sveltejs/vite-plugin-svelte": "^6.2.1",
 		"@tailwindcss/vite": "^4.1.17",
+		"electron": "^41.0.0",
 		"svelte": "^5.45.6",
 		"tailwindcss": "^4.1.17",
 		"vite": "^7.2.6"
 	},
 	"dependencies": {
+		"@capacitor-community/electron": "^5.0.1",
 		"@capacitor/android": "^8.0.2",
 		"@capacitor/cli": "^8.0.2",
 		"@capacitor/core": "^8.0.2",
