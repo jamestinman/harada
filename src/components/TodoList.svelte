@@ -151,8 +151,34 @@
 		return title.includes(query);
 	}
 
+	function groupMatchesSearch(group) {
+		const query = (searchText ?? '').trim().toLowerCase();
+		if (!query) return false;
+		const label = (group?.label ?? '').toLowerCase();
+		return label.includes(query);
+	}
+
 	function hasVisibleTodosInGroup(group) {
 		if (!group) return false;
+		const query = (searchText ?? '').trim().toLowerCase();
+
+		// No active search: visible if it has any todos at all
+		if (!query) {
+			if (group.subGroups && group.subGroups.length > 0) {
+				return group.subGroups.some((subGroup) => (subGroup.todos || []).length > 0);
+			}
+			return (group.todos || []).length > 0;
+		}
+
+		// If the goal label matches the search, show the group as long as it has any todos
+		if (groupMatchesSearch(group)) {
+			if (group.subGroups && group.subGroups.length > 0) {
+				return group.subGroups.some((subGroup) => (subGroup.todos || []).length > 0);
+			}
+			return (group.todos || []).length > 0;
+		}
+
+		// Otherwise, visible only if any todo title matches
 		if (group.subGroups && group.subGroups.length > 0) {
 			return group.subGroups.some((subGroup) =>
 				(subGroup.todos || []).some((t) => !isHiddenByCollapse(t.id) && matchesSearch(t))
@@ -691,10 +717,10 @@
 				<!-- Render nested sub-groups -->
 				<div class="todo-subgroup-container">
 					{#each group.subGroups as subGroup}
-						{#if subGroup.todos.some((t) => !isHiddenByCollapse(t.id) && matchesSearch(t))}
+						{#if groupMatchesSearch(group) || subGroup.todos.some((t) => !isHiddenByCollapse(t.id) && matchesSearch(t))}
 							<div>
 								<div class="space-y-2">
-									{#each subGroup.todos.filter(t => !isHiddenByCollapse(t.id) && matchesSearch(t)) as todo (todo.id)}
+									{#each subGroup.todos.filter(t => !isHiddenByCollapse(t.id) && (groupMatchesSearch(group) || matchesSearch(t))) as todo (todo.id)}
 										{#if showPlaceholderBefore(todo.id)}
 											<div class="h-12 rounded-lg border-2 border-dashed border-violet-400/80 bg-violet-500/10"></div>
 										{/if}
@@ -747,7 +773,7 @@
 					{#if showHeaderTopPlaceholder(group.id)}
 						<div class="h-12 rounded-lg border-2 border-dashed border-violet-400/80 bg-violet-500/10"></div>
 					{/if}
-					{#each group.todos.filter(t => !isHiddenByCollapse(t.id) && matchesSearch(t)) as todo (todo.id)}
+					{#each group.todos.filter(t => !isHiddenByCollapse(t.id) && (groupMatchesSearch(group) || matchesSearch(t))) as todo (todo.id)}
 						{#if showPlaceholderBefore(todo.id)}
 							<div class="h-12 rounded-lg border-2 border-dashed border-violet-400/80 bg-violet-500/10"></div>
 						{/if}

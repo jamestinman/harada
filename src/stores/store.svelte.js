@@ -10,11 +10,59 @@ import {
 } from '$lib/todoUtils.js';
 import { authStore } from './auth.svelte.js';
 
-const defaultCell = () => ({ text: '', status: 'todo', readme: '', color: 'default', updated_at: null });
-	const GOAL_GROUP_ORDER_STEP = 1024;
+const defaultCells = [
+  /*
+  { text: 'Ultimate Goal', index: 4 * 9 + 4 },
+  { text: 'Goal 1', index: 10 },
+  { text: 'Goal 1', index: 3 * 9 + 3 },
+  { text: 'Goal 2', index: 13 },
+  { text: 'Goal 2', index: 3 * 9 + 4 },
+  { text: 'Goal 3', index: 16 },
+  { text: 'Goal 3', index: 3 * 9 + 5 },
+  { text: 'Goal 4', index: 37 },
+  { text: 'Goal 4', index: 4 * 9 + 3 },
+  { text: 'Goal 5', index: 43 },
+  { text: 'Goal 5', index: 4 * 9 + 5 },
+  { text: 'Goal 6', index: 64 },
+  { text: 'Goal 6', index: 5 * 9 + 3 },
+  { text: 'Goal 7', index: 67 },
+  { text: 'Goal 7', index: 5 * 9 + 4 },
+  { text: 'Goal 8', index: 70 },
+  { text: 'Goal 8', index: 5 * 9 + 5 }
+  */
+]
+
+const defaultCell = (i) => {
+  var text = "";
+  var updated_at = null;
+  if (defaultCells.find((cell) => cell.index === i)) {
+    text = defaultCells.find((cell) => cell.index === i).text;
+    updated_at = new Date().toISOString();
+  }
+  return { text, status: 'todo', readme: '', color: 'default', updated_at }
+}
+const GOAL_GROUP_ORDER_STEP = 1024;
+
+function isGridBlank(grid) {
+	if (!Array.isArray(grid) || grid.length !== 81) return false;
+	return grid.every(
+		(cell) =>
+			cell &&
+			cell.text === '' &&
+			(cell.status === 'todo' || cell.status === undefined) &&
+			(cell.readme === '' || cell.readme === undefined) &&
+			(cell.color === 'default' || cell.color === undefined) &&
+			(cell.updated_at === null || cell.updated_at === undefined)
+	);
+}
+
+function createSeededGrid() {
+	const grid = Array.from({ length: 81 }, () => defaultCell());
+	return grid;
+}
 
 class Store {
-	version = $state('0.0.7');
+	version = $state('0.0.8');
 	activeTab = $state('harada');
 	selectedGoalFilter = $state('all');
 	selectedGoalForNew = $state('');
@@ -85,8 +133,17 @@ class Store {
 				console.error('Failed to load local Harada chart:', err);
 			}
 
-			// 2) If not authenticated or Supabase is unavailable, stop here (offline/local-only mode)
+			// 2) If not authenticated or Supabase is unavailable, we stay in offline/local-only mode
+			// but still want to provide a helpful seeded board if the grid is blank.
 			if (!authStore.user || !supabase) {
+				if (isGridBlank(this.harada_chart.grid)) {
+					this.harada_chart = {
+						...this.harada_chart,
+						grid: createSeededGrid()
+					};
+					// Persist the seeded state for next launch
+					await this._saveLocally();
+				}
 				return;
 			}
 
@@ -99,8 +156,12 @@ class Store {
 					{ length: 81 },
 					(_, i) => (grid[i] ? { ...defaultCell(), ...grid[i] } : defaultCell())
 				);
+				let nextGrid = normalizedGrid;
+				if (isGridBlank(nextGrid)) {
+					nextGrid = createSeededGrid();
+				}
 				this.harada_chart = {
-					grid: normalizedGrid,
+					grid: nextGrid,
 					todos: data.todos || []
 				};
 				// Persist the fresh cloud state locally for future offline use
@@ -493,7 +554,53 @@ class Store {
 			}
 		}
 
-		const updatedTodos = previousTodos.map((t) => (t.id === id ? { ...t, ...nextPatch } : t));
+		// First apply the patch to the target todo itself
+		let updatedTodos = previousTodos.map((t) => (t.id === id ? { ...t, ...nextPatch } : t));
+
+		// If we changed this todo's list/goal, propagate that change to all of its descendants
+		const updatedTodoForMeta = updatedTodos.find((t) => t.id === id);
+		if (updatedTodoForMeta && previousTodo) {
+			const listChanged =
+				updatedTodoForMeta.listId !== previousTodo.listId ||
+				updatedTodoForMeta.listType !== previousTodo.listType ||
+				updatedTodoForMeta.goalIndex !== previousTodo.goalIndex;
+
+			if (listChanged) {
+				const ts = Date.now();
+				const byId = new Map();
+				for (const todo of updatedTodos) {
+					if (todo && typeof todo.id === 'string') {
+						byId.set(todo.id, todo);
+					}
+				}
+
+				function isDescendant(candidateId, ancestorId) {
+					let current = byId.get(candidateId);
+					const seen = new Set();
+					while (current && current.parentId) {
+						if (seen.has(current.id)) break;
+						seen.add(current.id);
+						if (current.parentId === ancestorId) return true;
+						current = byId.get(current.parentId);
+					}
+					return false;
+				}
+
+				const sharedMeta = {
+					listId: updatedTodoForMeta.listId,
+					listType: updatedTodoForMeta.listType,
+					listName: updatedTodoForMeta.listName ?? null,
+					goalIndex: updatedTodoForMeta.goalIndex ?? null
+				};
+
+				updatedTodos = updatedTodos.map((todo) => {
+					if (!todo || todo.id === id) return todo;
+					if (!isDescendant(todo.id, id)) return todo;
+					return { ...todo, ...sharedMeta, updatedAt: ts };
+				});
+			}
+		}
+
 		this.harada_chart = { ...this.harada_chart, todos: updatedTodos };
 
 		const updatedTodo = updatedTodos.find((t) => t.id === id);
@@ -621,9 +728,9 @@ class Store {
 		this._unsubscribeRealtime();
 
 		if (!authStore.user) {
-			// Logged out — clear to blank state
+			// Logged out — show a helpful seeded board for new/pre-login users
 			this.harada_chart = {
-				grid: Array.from({ length: 81 }, () => defaultCell()),
+				grid: createSeededGrid(),
 				todos: []
 			};
 			this.isLoading = false;
@@ -677,6 +784,16 @@ class Store {
 			reader.readAsText(file);
 		};
 		input.click();
+	}
+
+	clearAll() {
+    // console.log("Grid at first:",this.harada_chart.grid);
+		this.harada_chart = {
+			grid: Array.from({ length: 81 }, (_, i) => defaultCell(i)),
+			todos: []
+		};
+    console.log("Grid is now:",this.harada_chart.grid);
+		this.saveNow();
 	}
 }
 

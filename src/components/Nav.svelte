@@ -8,10 +8,12 @@ import { tick } from 'svelte';
 	import { store } from '$stores/store.svelte.js';
 	import { authStore } from '$stores/auth.svelte.js';
 	import { synthStore } from '$stores/synth.svelte.js';
+	import { localGet, localSet } from '$lib/PersistentStorage.mjs';
 	import GoalSelect from './GoalSelect.svelte';
 	import SquareMap from './SquareMap.svelte';
 	import UserSettingsModal from './UserSettingsModal.svelte';
 	import AuthModal from './AuthModal.svelte';
+	import HowItWorksModal from './HowItWorksModal.svelte';
 	
 	// Get save status for visual indicator
 	const saveStatus = $derived(store.saveStatus);
@@ -27,15 +29,20 @@ import { tick } from 'svelte';
 		onCreateTodo = null
 	} = $props();
 
-let showComposer = $state(false);
+  let showComposer = $state(false);
 	let composerTitle = $state('');
 	let composerMarkdown = $state('');
 	let composerGoalValue = $state('');
 	let composerNewListName = $state('');
 	let composerTitleInputElement = $state(null);
 	let showMobileMenu = $state(false);
-let showSettingsModal = $state(false);
-let showAuthModal = $state(false);
+  let showSettingsModal = $state(false);
+  let showAuthModal = $state(false);
+  let showHowItWorksModal = $state(false);
+
+const clearAll = () => {
+	store.clearAll();
+};
 
 	async function openComposer() {
 		composerTitle = '';
@@ -96,6 +103,12 @@ let showAuthModal = $state(false);
 
 	onMount(() => {
 		if (!browser) return;
+
+		if (!localGet('harada_onboarding_seen', false)) {
+			showHowItWorksModal = true;
+      localSet('harada_onboarding_seen', true);
+		}
+
 		const anyWindow = window;
 		const api = anyWindow?.HaradatoElectron;
 		if (!api?.onMenuCommand) return;
@@ -197,6 +210,13 @@ let showAuthModal = $state(false);
 						Sign In
 					</button>
 				{/if}
+				<button
+					type="button"
+					onclick={() => { showMobileMenu = false; showHowItWorksModal = true; }}
+					class="mobile-menu-item"
+				>
+					How it works
+				</button>
 				<a
 					href="/about"
 					onclick={() => (showMobileMenu = false)}
@@ -282,6 +302,14 @@ let showAuthModal = $state(false);
 	>
 		Todo
 	</a>
+	<button
+		type="button"
+		onclick={() => (showHowItWorksModal = true)}
+		class="nav-desktop-link"
+	>
+		How it works
+	</button>
+  <button onclick={clearAll}>Clear</button>
 </nav>
 
 {#if showComposer}
@@ -370,3 +398,5 @@ let showAuthModal = $state(false);
 {:else}
 	<AuthModal bind:isOpen={showAuthModal} />
 {/if}
+
+<HowItWorksModal bind:isOpen={showHowItWorksModal} />

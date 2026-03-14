@@ -143,6 +143,53 @@
 	}
 
 
+	// Inline edit for blank goal titles
+	let editingGoalIndex = $state(null);
+	let editingDraft = $state('');
+	let editInputEl = $state(null);
+
+	$effect(() => {
+		if (editingGoalIndex !== null && editInputEl) {
+			editInputEl.focus();
+		}
+	});
+
+	function isGoalCell(row, col) {
+		return isMainGoal(row, col) || isSubGoal(row, col) || isBlockCenter(row, col);
+	}
+
+	function isCellBlank(i) {
+		return !(grid[i]?.text ?? '').trim();
+	}
+
+	function startEditingGoal(i) {
+		const canonical = canonicalGoalIndex(i);
+		editingGoalIndex = i;
+		editingDraft = (grid[canonical]?.text ?? '').trim();
+	}
+
+	function saveGoalTitle() {
+		if (editingGoalIndex == null || !onUpdateGrid) return;
+		const canonical = canonicalGoalIndex(editingGoalIndex);
+		const linkedIndex = getLinkedGoalIndex(canonical);
+		const newGrid = [...grid];
+		const cell = newGrid[canonical] ? { ...newGrid[canonical] } : {};
+		cell.text = editingDraft.trim();
+		newGrid[canonical] = cell;
+		if (linkedIndex !== null) {
+			newGrid[linkedIndex] = { ...cell };
+		}
+		updateGoalTimestamp(newGrid, canonical);
+		onUpdateGrid(newGrid);
+		editingGoalIndex = null;
+		editingDraft = '';
+	}
+
+	function cancelGoalEdit() {
+		editingGoalIndex = null;
+		editingDraft = '';
+	}
+
 	const GOAL_DRAG_START_PX = 6;
 	const GOAL_LONG_PRESS_MS = 260;
 	let goalPressTimer = null;
@@ -159,8 +206,26 @@
 	}
 
 	function isDraggableGoalIndex(index) {
-		// Ultimate goal (E5, index 40) is not movable at all
-		return !isMainGoalIndex(index);
+		if (isMainGoalIndex(index)) return false;
+		const row = Math.floor(index / 9);
+		const col = index % 9;
+		// Only outer block centers and center-block sub-goals (linked to outer block centers)
+		return isBlockCenter(row, col) || isSubGoal(row, col);
+	}
+
+	// Returns all 9 cell indices of the 3×3 outer block whose center is blockCenterIndex
+	function getBlockCellIndices(blockCenterIndex) {
+		const row = Math.floor(blockCenterIndex / 9);
+		const col = blockCenterIndex % 9;
+		const startRow = Math.floor(row / 3) * 3;
+		const startCol = Math.floor(col / 3) * 3;
+		const cells = [];
+		for (let r = startRow; r < startRow + 3; r++) {
+			for (let c = startCol; c < startCol + 3; c++) {
+				cells.push(r * 9 + c);
+			}
+		}
+		return cells;
 	}
 
 	function clearGoalPressTimer() {
@@ -276,43 +341,31 @@
 		const sourceCanonical = canonicalGoalIndex(sourceIndex);
 		const targetCanonical = canonicalGoalIndex(targetIndex);
 
-		// Do not move or overwrite the ultimate goal (E5, index 40)
-		if (sourceCanonical === 40 || targetCanonical === 40) {
-			return;
-		}
-
+		if (sourceCanonical === 40 || targetCanonical === 40) return;
 		if (sourceCanonical === targetCanonical) return;
 
 		const newGrid = [...grid];
 
-		const sourceCell = newGrid[sourceCanonical]
-			? { ...newGrid[sourceCanonical] }
-			: undefined;
-		const targetCell = newGrid[targetCanonical]
-			? { ...newGrid[targetCanonical] }
-			: undefined;
-
-		newGrid[sourceCanonical] = targetCell;
-		newGrid[targetCanonical] = sourceCell;
-
-		function syncLinkedGoal(gridArray, canonicalIndex) {
-			const linkedIndex = getLinkedGoalIndex(canonicalIndex);
-			if (linkedIndex === null || linkedIndex === canonicalIndex) return;
-			const canonicalCell = gridArray[canonicalIndex]
-				? { ...gridArray[canonicalIndex] }
-				: undefined;
-			if (canonicalCell) {
-				gridArray[linkedIndex] = { ...canonicalCell };
-			} else {
-				gridArray[linkedIndex] = undefined;
-			}
+		// Swap all 9 cells of each outer block pairwise (preserves relative task positions)
+		const sourceCells = getBlockCellIndices(sourceCanonical);
+		const targetCells = getBlockCellIndices(targetCanonical);
+		for (let i = 0; i < sourceCells.length; i++) {
+			const s = newGrid[sourceCells[i]] ? { ...newGrid[sourceCells[i]] } : undefined;
+			const t = newGrid[targetCells[i]] ? { ...newGrid[targetCells[i]] } : undefined;
+			newGrid[sourceCells[i]] = t;
+			newGrid[targetCells[i]] = s;
 		}
 
-		// Keep linked goal pairs (outer block center <-> center sub-goal) in sync
-		syncLinkedGoal(newGrid, sourceCanonical);
-		syncLinkedGoal(newGrid, targetCanonical);
+		// Swap the linked center-block cells (the "shadow" sub-goal in the center 3×3)
+		const sourceLinked = getLinkedGoalIndex(sourceCanonical);
+		const targetLinked = getLinkedGoalIndex(targetCanonical);
+		if (sourceLinked !== null && targetLinked !== null) {
+			const sL = newGrid[sourceLinked] ? { ...newGrid[sourceLinked] } : undefined;
+			const tL = newGrid[targetLinked] ? { ...newGrid[targetLinked] } : undefined;
+			newGrid[sourceLinked] = tL;
+			newGrid[targetLinked] = sL;
+		}
 
-		// Update goal timestamps for both goals
 		updateGoalTimestamp(newGrid, sourceCanonical);
 		updateGoalTimestamp(newGrid, targetCanonical);
 
@@ -322,26 +375,15 @@
 			if (todo?.listType && todo.listType !== 'goal') return todo;
 			const goalIndex = typeof todo?.goalIndex === 'number' ? todo.goalIndex : null;
 			if (goalIndex === sourceCanonical) {
-				return {
-					...todo,
-					goalIndex: targetCanonical,
-					listType: 'goal',
-					listId: `goal:${targetCanonical}`
-				};
+				return { ...todo, goalIndex: targetCanonical, listType: 'goal', listId: `goal:${targetCanonical}` };
 			}
 			if (goalIndex === targetCanonical) {
-				return {
-					...todo,
-					goalIndex: sourceCanonical,
-					listType: 'goal',
-					listId: `goal:${sourceCanonical}`
-				};
+				return { ...todo, goalIndex: sourceCanonical, listType: 'goal', listId: `goal:${sourceCanonical}` };
 			}
 			return todo;
 		});
 
 		store.harada_chart.todos = nextTodos;
-
 		onUpdateGrid(newGrid);
 	}
 
@@ -368,8 +410,23 @@
 
 	function goalDragClass(index) {
 		if (!goalDrag.active) return '';
-		if (goalDrag.sourceIndex === index) return 'harada-goal-ring-source';
-		if (goalDrag.targetIndex === index) return 'harada-goal-ring-target';
+		const sourceCanon = canonicalGoalIndex(goalDrag.sourceIndex);
+		const targetCanon = canonicalGoalIndex(goalDrag.targetIndex);
+
+		const row = Math.floor(index / 9);
+		const col = index % 9;
+		const inCenterBlock = row >= 3 && row <= 5 && col >= 3 && col <= 5;
+
+		if (inCenterBlock) {
+			// Center block: highlight only the linked sub-goal cell
+			if (index === getLinkedGoalIndex(sourceCanon)) return 'harada-goal-ring-source';
+			if (index === getLinkedGoalIndex(targetCanon)) return 'harada-goal-ring-target';
+		} else {
+			// Outer blocks: highlight every cell in the block
+			const blockCenter = (Math.floor(row / 3) * 3 + 1) * 9 + (Math.floor(col / 3) * 3 + 1);
+			if (blockCenter === sourceCanon) return 'harada-goal-ring-source';
+			if (blockCenter === targetCanon) return 'harada-goal-ring-target';
+		}
 		return '';
 	}
 </script>
@@ -395,28 +452,62 @@
 				{@const cellClasses = getCellClasses(row, col, i)}
 				{@const hasTitle = hasCustomTitle(i)}
 
-				<button
-					type="button"
-					onpointerdown={(event) => handleCellPointerDown(event, i)}
-					onpointerenter={(event) => handleCellPointerEnter(event, i)}
-					onclick={() => goto(`/todo/${indexToNomenclature(i)}`)}
-					class={`group aspect-square min-h-0 min-w-0 transition-all duration-200 hover:scale-105 hover:z-20 ${cellClasses} rounded-md cursor-pointer touch-none ${goalDragClass(i)}`}
-					data-harada-cell-index={i}
-					aria-label={hasTitle ? grid[i]?.text : 'Add goal'}
-				>
-					<div class="relative flex h-full w-full flex-col items-center justify-center p-0.5 sm:p-1">
-						{#if hasTitle}
-							<div class="w-full text-center text-[8px] leading-tight sm:text-[10px] md:text-xs overflow-hidden line-clamp-3">
-								{grid[i]?.text || ''}
-							</div>
-							{#if grid[i]?.status === 'underway'}
-								<div class="absolute bottom-0.5 left-0.5 text-[8px] sm:text-[10px]" title="Underway">⏳</div>
-							{:else if grid[i]?.status === 'done'}
-								<div class="absolute bottom-0.5 left-0.5 text-[8px] sm:text-[10px]" title="Done">✓</div>
-							{/if}
-						{/if}
+				{#if editingGoalIndex === i}
+					<div
+						class={`group aspect-square min-h-0 min-w-0 ${cellClasses} rounded-md touch-none ${goalDragClass(i)}`}
+						data-harada-cell-index={i}
+					>
+						<div class="relative flex h-full w-full flex-col items-center justify-center p-0.5 sm:p-1">
+							<input
+								bind:this={editInputEl}
+								bind:value={editingDraft}
+								onkeydown={(e) => {
+									if (e.key === 'Enter') {
+										e.preventDefault();
+										saveGoalTitle();
+									} else if (e.key === 'Escape') {
+										e.preventDefault();
+										cancelGoalEdit();
+									}
+								}}
+								onblur={() => saveGoalTitle()}
+								placeholder="Add title…"
+								class="w-full min-w-0 rounded bg-white/20 px-0.5 py-0 text-center text-[8px] leading-tight text-white placeholder:text-white/70 sm:text-[10px] md:text-xs focus:outline-none focus:ring-1 focus:ring-white/50"
+							/>
+						</div>
 					</div>
-				</button>
+				{:else}
+					<button
+						type="button"
+						onpointerdown={(event) => handleCellPointerDown(event, i)}
+						onpointerenter={(event) => handleCellPointerEnter(event, i)}
+						onclick={() => {
+							if (isCellBlank(i)) {
+								startEditingGoal(i);
+							} else {
+								goto(`/todo/${indexToNomenclature(i)}`);
+							}
+						}}
+						class={`group aspect-square min-h-0 min-w-0 transition-all duration-200 hover:scale-105 hover:z-20 ${cellClasses} rounded-md cursor-pointer touch-none ${goalDragClass(i)}`}
+						data-harada-cell-index={i}
+						aria-label={hasTitle ? grid[i]?.text : ''}
+					>
+						<div class="relative flex h-full w-full flex-col items-center justify-center p-0.5 sm:p-1">
+							{#if hasTitle}
+								<div class="w-full text-center text-[8px] leading-tight sm:text-[10px] md:text-xs overflow-hidden line-clamp-3">
+									{grid[i]?.text || ''}
+								</div>
+								{#if grid[i]?.status === 'underway'}
+									<div class="absolute bottom-0.5 left-0.5 text-[8px] sm:text-[10px]" title="Underway">⏳</div>
+								{:else if grid[i]?.status === 'done'}
+									<div class="absolute bottom-0.5 left-0.5 text-[8px] sm:text-[10px]" title="Done">✓</div>
+								{/if}
+							{:else}
+								<span class="text-[8px] text-white/30 sm:text-[10px]">+</span>
+							{/if}
+						</div>
+					</button>
+				{/if}
 			{/each}
 		</div>
 	{/each}

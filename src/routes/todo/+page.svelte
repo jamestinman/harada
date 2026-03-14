@@ -561,17 +561,17 @@
 	<div class="mx-auto max-w-4xl">
 		<!-- Header -->
 		<div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-			<div>
-        <div class="flex flex-row gap-5 justify-between w-full">
-          <h1>Todo</h1>
-          <input
-            type="text"
-            placeholder="Search"
-            bind:value={searchText}
-            class="w-full rounded-md border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-100 placeholder:text-slate-500 shadow-sm focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/60"
-          />
-        </div>
-        <p class="page-subtitle">
+			<div class="flex-1">
+				<div class="flex flex-row gap-5 justify-between w-full">
+					<h1>Todo</h1>
+					<input
+						type="text"
+						placeholder="Search"
+						bind:value={searchText}
+						class="w-full rounded-md border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-100 placeholder:text-slate-500 shadow-sm focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/60"
+					/>
+				</div>
+				<p class="page-subtitle">
 					{allTodos.length} todo{allTodos.length !== 1 ? 's' : ''} across {todoGroups.filter((g) => g.id !== 'no-goal').length} goal{todoGroups.filter((g) => g.id !== 'no-goal').length !== 1 ? 's' : ''}
 				</p>
 			</div>
