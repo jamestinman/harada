@@ -309,7 +309,9 @@ const clearAll = () => {
 	>
 		How it works
 	</button>
+  <!--
   <button onclick={clearAll}>Clear</button>
+  -->
 </nav>
 
 {#if showComposer}
