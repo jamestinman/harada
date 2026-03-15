@@ -13,13 +13,16 @@
 		About Haradato
 	</h1>
 	<p class="text-slate-600 dark:text-slate-400 text-center text-sm sm:text-base mb-8">
-		Use a 64-square Harada Method to plan your life goals, then realise your dreams with concrete todo lists. The ultimate version of Shohei Ohtani's Japanese success system.
+		Use a 64-square Harada Method to plan your life goals, then realise your dreams with concrete todo lists. The ultimate version of Shohei Ohtani's Japanese success system with real-world practicality.
 	</p>
+	<p class="text-slate-600 dark:text-slate-400 text-center text-sm sm:text-base mb-8">
+    You can also just use it as a lovely, simple todo list.
+  </p>
 
 	<section class="w-full text-left space-y-6">
 		<div>
 			<h2 class="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">
-				Engineer your success with the Harada Method
+				Engineered success with the Harada Method
 			</h2>
 			<p class="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">
 				How did Shohei Ohtani realise his dreams of becoming a major league baseball player for the Los Angeles Dodgers? He had a <strong>system</strong>.

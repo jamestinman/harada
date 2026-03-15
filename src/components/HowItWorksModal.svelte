@@ -24,7 +24,7 @@
 		{
 			step: '3',
 			title: 'Add your todo lists',
-			body: 'Each goal has 8 further sub-goals — giving you 64 concrete steps to success.',
+			body: "A goal can have 8 sub-goals, giving you 64 concrete steps, each with a todo list of practical tasks behind it.",
 			image: '/onboarding/sub-goals.png',
 			imageAlt: 'Goals surrounding the central dream'
 		}

@@ -271,7 +271,7 @@ const clearAll = () => {
 <!-- Desktop top-right nav -->
 <nav class="fixed right-4 top-4 z-40 hidden lg:flex flex-col lg:items-center lg:gap-2" aria-label="Main navigation">
   <SquareMap />
-	{#if authStore.user}
+	{#if authStore?.user}
 		<button
 			type="button"
 			onclick={() => (showSettingsModal = true)}
@@ -290,7 +290,20 @@ const clearAll = () => {
 			Sign In
 		</button>
 	{/if}
-	<a
+	<button
+		type="button"
+		onclick={() => (showHowItWorksModal = true)}
+		class="nav-desktop-link"
+	>
+		How it works
+	</button>
+	{#if !(authStore?.user)}
+  <a href="/about" class="nav-desktop-link">
+    About
+  </a>
+
+  {/if}
+<a
 		href="/"
 		class="nav-desktop-link"
 	>
@@ -302,13 +315,6 @@ const clearAll = () => {
 	>
 		Todo
 	</a>
-	<button
-		type="button"
-		onclick={() => (showHowItWorksModal = true)}
-		class="nav-desktop-link"
-	>
-		How it works
-	</button>
   <!--
   <button onclick={clearAll}>Clear</button>
   -->
