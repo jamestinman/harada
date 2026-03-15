@@ -11,8 +11,7 @@ import {
 import { authStore } from './auth.svelte.js';
 
 const defaultCells = [
-  /*
-  { text: 'Ultimate Goal', index: 4 * 9 + 4 },
+  { text: 'Central Goal', index: 4 * 9 + 4 },
   { text: 'Goal 1', index: 10 },
   { text: 'Goal 1', index: 3 * 9 + 3 },
   { text: 'Goal 2', index: 13 },
@@ -29,13 +28,12 @@ const defaultCells = [
   { text: 'Goal 7', index: 5 * 9 + 4 },
   { text: 'Goal 8', index: 70 },
   { text: 'Goal 8', index: 5 * 9 + 5 }
-  */
 ]
 
-const defaultCell = (i) => {
+const defaultCell = (i = null) => {
   var text = "";
   var updated_at = null;
-  if (defaultCells.find((cell) => cell.index === i)) {
+  if (i !== null && defaultCells.find((cell) => cell.index === i)) {
     text = defaultCells.find((cell) => cell.index === i).text;
     updated_at = new Date().toISOString();
   }
@@ -62,13 +60,17 @@ function createSeededGrid() {
 }
 
 class Store {
-	version = $state('0.0.8');
+	version = $state('0.0.10');
 	activeTab = $state('harada');
 	selectedGoalFilter = $state('all');
 	selectedGoalForNew = $state('');
 	sidebarOpen = $state(false);
 	currentGoalIndex = $state(null);
 	theme = $state(localGet('theme', 'light'));
+	saveStatus = $state('idle');
+	isLoading = $state(true);
+	isOnline = $state(browser ? navigator.onLine : true);
+	syncError = $state(null);
 
   setTheme(value) {
     this.theme = value;
@@ -80,10 +82,9 @@ class Store {
 		todos: []
 	});
 
-	saveStatus = $state('idle');
-	isLoading = $state(true);
-	isOnline = $state(browser ? navigator.onLine : true);
-	syncError = $state(null);
+  getDefaultCell(i) {
+    return defaultCell(i);
+  }
 
 	_isInitialized = false;
 	_realtimeChannel = null;
@@ -789,9 +790,10 @@ class Store {
 	clearAll() {
     // console.log("Grid at first:",this.harada_chart.grid);
 		this.harada_chart = {
-			grid: Array.from({ length: 81 }, (_, i) => defaultCell(i)),
+			grid: Array.from({ length: 81 }, (_, i) => defaultCell()),
 			todos: []
 		};
+    localSet('harada_onboarding_seen', false);
     console.log("Grid is now:",this.harada_chart.grid);
 		this.saveNow();
 	}

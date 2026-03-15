@@ -503,7 +503,7 @@
 									<div class="absolute bottom-0.5 left-0.5 text-[8px] sm:text-[10px]" title="Done">✓</div>
 								{/if}
 							{:else}
-								<span class="text-[8px] text-white/30 sm:text-[10px]">+</span>
+								<span class="text-[8px] text-white/30 sm:text-[10px]">{i == 40 ? 'Central Goal' : store.getDefaultCell(i).text}</span>
 							{/if}
 						</div>
 					</button>

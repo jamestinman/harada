@@ -193,8 +193,13 @@ if [[ "$SELECTED_IOS" == true ]]; then
   echo "Building iOS archive..."
   cd ios/App
   set +e
+  if [[ -d "App.xcworkspace" ]]; then
+    IOS_BUILD_ARG=(-workspace App.xcworkspace)
+  else
+    IOS_BUILD_ARG=(-project App.xcodeproj)
+  fi
   xcodebuild archive \
-    -workspace App.xcworkspace \
+    "${IOS_BUILD_ARG[@]}" \
     -scheme App \
     -configuration Release \
     -archivePath build/App.xcarchive \

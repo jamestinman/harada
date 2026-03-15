@@ -315,9 +315,7 @@ const clearAll = () => {
 	>
 		Todo
 	</a>
-  <!--
   <button onclick={clearAll}>Clear</button>
-  -->
 </nav>
 
 {#if showComposer}
