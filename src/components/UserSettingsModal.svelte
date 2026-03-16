@@ -4,6 +4,11 @@
 
 	let { isOpen = $bindable(false) } = $props();
 
+let displayName = $state('');
+let saveError = $state(null);
+let isSaving = $state(false);
+let isEditingName = $state(false);
+
 	function closeModal() {
 		isOpen = false;
 	}
@@ -19,10 +24,12 @@
 	const userName = $derived.by(() => {
 		const user = authStore.user;
 		if (!user) return null;
-		return user.user_metadata?.full_name || 
-		       user.user_metadata?.name || 
-		       user.email?.split('@')[0] || 
-		       'User';
+		return (
+			user.user_metadata?.full_name ||
+			user.user_metadata?.name ||
+			user.email?.split('@')[0] ||
+			'User'
+		);
 	});
 
 	const userEmail = $derived(authStore.user?.email);
@@ -32,6 +39,40 @@
 		if (!name) return 'U';
 		return name.charAt(0).toUpperCase();
 	});
+
+	$effect(() => {
+	if (isOpen) {
+		displayName = userName || '';
+		saveError = null;
+		isEditingName = false;
+	}
+	});
+
+	async function handleSaveProfile() {
+		const trimmed = displayName.trim();
+		if (!trimmed) {
+			saveError = 'Name cannot be empty';
+			return;
+		}
+
+		isSaving = true;
+		saveError = null;
+
+		const result = await authStore.updateProfile({ fullName: trimmed });
+
+		if (!result?.success) {
+			saveError = result?.error || 'Failed to update name';
+		} else {
+		isEditingName = false;
+		}
+
+		isSaving = false;
+	}
+
+function startEditingName() {
+	isEditingName = true;
+	saveError = null;
+}
 </script>
 
 {#if isOpen}
@@ -70,12 +111,43 @@
 						{userInitial}
 					</div>
 				{/if}
-				<div class="text-center">
-					<div class="settings-name">{userName}</div>
-					{#if userEmail}
-						<div class="settings-email">{userEmail}</div>
+
+				{#if isEditingName}
+					<div class="flex w-full max-w-xs items-center gap-2">
+						<input
+							type="text"
+							class="flex-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+							placeholder="Your name"
+							bind:value={displayName}
+						/>
+						<button
+							type="button"
+							onclick={handleSaveProfile}
+							disabled={isSaving || !displayName.trim()}
+							class="inline-flex items-center rounded-md border border-violet-600/80 bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-500 dark:disabled:border-slate-700 dark:disabled:bg-slate-800 dark:disabled:text-slate-500"
+						>
+							{#if isSaving}
+								Saving…
+							{:else}
+								Save
+							{/if}
+						</button>
+					</div>
+					{#if saveError}
+						<p class="mt-1 text-xs text-red-500 text-center">{saveError}</p>
 					{/if}
-				</div>
+				{:else}
+					<button
+						type="button"
+						onclick={startEditingName}
+						class="text-center"
+					>
+						<div class="settings-name">{userName}</div>
+						{#if userEmail}
+							<div class="settings-email">{userEmail}</div>
+						{/if}
+					</button>
+				{/if}
 			</div>
 
 			<div class="settings-section-divider">

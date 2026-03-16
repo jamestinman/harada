@@ -198,19 +198,39 @@
 		active: false,
 		pointerId: null,
 		sourceIndex: null,
-		targetIndex: null
+		targetIndex: null,
+		dragType: null
 	});
 
 	function isMainGoalIndex(index) {
 		return index === 40;
 	}
 
-	function isDraggableGoalIndex(index) {
+	// True for outer block centers and center-block sub-goals (the 8 draggable goal positions)
+	function isGoalDragCell(index) {
 		if (isMainGoalIndex(index)) return false;
 		const row = Math.floor(index / 9);
 		const col = index % 9;
-		// Only outer block centers and center-block sub-goals (linked to outer block centers)
 		return isBlockCenter(row, col) || isSubGoal(row, col);
+	}
+
+	// True for the 64 task cells — non-goal, non-center-block cells in outer blocks
+	function isTaskCell(index) {
+		const row = Math.floor(index / 9);
+		const col = index % 9;
+		if (row >= 3 && row <= 5 && col >= 3 && col <= 5) return false; // center block
+		if (isBlockCenter(row, col)) return false; // outer block centers
+		return true;
+	}
+
+	function isDraggableSource(index) {
+		return isGoalDragCell(index) || isTaskCell(index);
+	}
+
+	function isDraggableTarget(index) {
+		if (!goalDrag.active) return false;
+		if (goalDrag.dragType === 'task') return isTaskCell(index);
+		return isGoalDragCell(index);
 	}
 
 	// Returns all 9 cell indices of the 3×3 outer block whose center is blockCenterIndex
@@ -245,12 +265,13 @@
 			active: false,
 			pointerId: null,
 			sourceIndex: null,
-			targetIndex: null
+			targetIndex: null,
+			dragType: null
 		};
 	}
 
 	function handleCellPointerDown(event, index) {
-		if (!isDraggableGoalIndex(index)) return;
+		if (!isDraggableSource(index)) return;
 		if (!event.isPrimary) return;
 		if (event.button !== 0) return;
 
@@ -281,18 +302,19 @@
 
 	function handleCellPointerEnter(_event, index) {
 		if (!goalDrag.active) return;
-		if (!isDraggableGoalIndex(index)) return;
+		if (!isDraggableTarget(index)) return;
 		if (goalDrag.targetIndex === index) return;
 		goalDrag = { ...goalDrag, targetIndex: index };
 	}
 
 	function startGoalDrag(pointerId, index, _clientX, _clientY) {
-		if (!isDraggableGoalIndex(index)) return;
+		if (!isDraggableSource(index)) return;
 		goalDrag = {
 			active: true,
 			pointerId,
 			sourceIndex: index,
-			targetIndex: index
+			targetIndex: index,
+			dragType: isGoalDragCell(index) ? 'goal' : 'task'
 		};
 	}
 
@@ -323,7 +345,7 @@
 			if (indexAttr == null) return;
 			const index = Number(indexAttr);
 			if (!Number.isInteger(index)) return;
-			if (!isDraggableGoalIndex(index)) return;
+			if (!isDraggableTarget(index)) return;
 			if (goalDrag.targetIndex === index) return;
 			goalDrag = { ...goalDrag, targetIndex: index };
 		}
@@ -335,16 +357,45 @@
 		window.removeEventListener('pointercancel', handleGlobalGoalPointerUp);
 	}
 
-	function swapGoalData(sourceIndex, targetIndex) {
+	function swapGoalData(sourceIndex, targetIndex, dragType) {
 		if (!onUpdateGrid) return;
+		if (sourceIndex === targetIndex) return;
 
+		const newGrid = [...grid];
+
+		if (dragType === 'task') {
+			// Swap the two grid cells
+			const s = newGrid[sourceIndex] ? { ...newGrid[sourceIndex] } : undefined;
+			const t = newGrid[targetIndex] ? { ...newGrid[targetIndex] } : undefined;
+			newGrid[sourceIndex] = t;
+			newGrid[targetIndex] = s;
+
+			// Swap todos keyed to these specific cell indices (each task cell is its own
+			// canonical goal, so todos created on its page travel with it)
+			const currentTodos = store.harada_chart.todos || [];
+			const nextTodos = currentTodos.map((todo) => {
+				if (todo?.listType && todo.listType !== 'goal') return todo;
+				const gIdx = typeof todo?.goalIndex === 'number' ? todo.goalIndex : null;
+				if (gIdx === sourceIndex) {
+					return { ...todo, goalIndex: targetIndex, listType: 'goal', listId: `goal:${targetIndex}` };
+				}
+				if (gIdx === targetIndex) {
+					return { ...todo, goalIndex: sourceIndex, listType: 'goal', listId: `goal:${sourceIndex}` };
+				}
+				return todo;
+			});
+			store.harada_chart.todos = nextTodos;
+
+			onUpdateGrid(newGrid);
+			return;
+		}
+
+		// Goal drag: swap entire outer blocks + linked center cells + todos
 		const sourceCanonical = canonicalGoalIndex(sourceIndex);
 		const targetCanonical = canonicalGoalIndex(targetIndex);
 
 		if (sourceCanonical === 40 || targetCanonical === 40) return;
 		if (sourceCanonical === targetCanonical) return;
-
-		const newGrid = [...grid];
 
 		// Swap all 9 cells of each outer block pairwise (preserves relative task positions)
 		const sourceCells = getBlockCellIndices(sourceCanonical);
@@ -387,6 +438,14 @@
 		onUpdateGrid(newGrid);
 	}
 
+	// Returns the outer block center index for any cell in that block, or null for center-block cells
+	function getOuterBlockCenter(index) {
+		const row = Math.floor(index / 9);
+		const col = index % 9;
+		if (row >= 3 && row <= 5 && col >= 3 && col <= 5) return null;
+		return (Math.floor(row / 3) * 3 + 1) * 9 + (Math.floor(col / 3) * 3 + 1);
+	}
+
 	function handleGlobalGoalPointerUp(event) {
 		if (pendingGoalDrag && pendingGoalDrag.pointerId === event.pointerId) {
 			clearPendingGoalDrag();
@@ -401,7 +460,7 @@
 				goalDrag.targetIndex != null &&
 				goalDrag.sourceIndex !== goalDrag.targetIndex
 			) {
-				swapGoalData(goalDrag.sourceIndex, goalDrag.targetIndex);
+				swapGoalData(goalDrag.sourceIndex, goalDrag.targetIndex, goalDrag.dragType);
 			}
 			resetGoalDrag();
 			clearGlobalGoalPointerListeners();
@@ -410,19 +469,25 @@
 
 	function goalDragClass(index) {
 		if (!goalDrag.active) return '';
+
+		if (goalDrag.dragType === 'task') {
+			// Highlight only the two individual cells being swapped
+			if (index === goalDrag.sourceIndex) return 'harada-goal-ring-source';
+			if (index === goalDrag.targetIndex) return 'harada-goal-ring-target';
+			return '';
+		}
+
+		// Goal drag: highlight the whole block + linked center-block cell
 		const sourceCanon = canonicalGoalIndex(goalDrag.sourceIndex);
 		const targetCanon = canonicalGoalIndex(goalDrag.targetIndex);
-
 		const row = Math.floor(index / 9);
 		const col = index % 9;
 		const inCenterBlock = row >= 3 && row <= 5 && col >= 3 && col <= 5;
 
 		if (inCenterBlock) {
-			// Center block: highlight only the linked sub-goal cell
 			if (index === getLinkedGoalIndex(sourceCanon)) return 'harada-goal-ring-source';
 			if (index === getLinkedGoalIndex(targetCanon)) return 'harada-goal-ring-target';
 		} else {
-			// Outer blocks: highlight every cell in the block
 			const blockCenter = (Math.floor(row / 3) * 3 + 1) * 9 + (Math.floor(col / 3) * 3 + 1);
 			if (blockCenter === sourceCanon) return 'harada-goal-ring-source';
 			if (blockCenter === targetCanon) return 'harada-goal-ring-target';

@@ -71,6 +71,7 @@ class Store {
 	isLoading = $state(true);
 	isOnline = $state(browser ? navigator.onLine : true);
 	syncError = $state(null);
+  showHowItWorksModal = $state(false);
 
   setTheme(value) {
     this.theme = value;

@@ -38,7 +38,6 @@ import { tick } from 'svelte';
 	let showMobileMenu = $state(false);
   let showSettingsModal = $state(false);
   let showAuthModal = $state(false);
-  let showHowItWorksModal = $state(false);
 
 const clearAll = () => {
 	store.clearAll();
@@ -105,7 +104,7 @@ const clearAll = () => {
 		if (!browser) return;
 
 		if (!localGet('harada_onboarding_seen', false)) {
-			showHowItWorksModal = true;
+			store.showHowItWorksModal = true;
       localSet('harada_onboarding_seen', true);
 		}
 
@@ -292,7 +291,7 @@ const clearAll = () => {
 	{/if}
 	<button
 		type="button"
-		onclick={() => (showHowItWorksModal = true)}
+		onclick={() => (store.showHowItWorksModal = true)}
 		class="nav-desktop-link"
 	>
 		How it works
@@ -315,7 +314,7 @@ const clearAll = () => {
 	>
 		Todo
 	</a>
-  <button onclick={clearAll}>Clear</button>
+  <!-- <button onclick={clearAll}>Clear</button> -->
 </nav>
 
 {#if showComposer}
@@ -405,4 +404,4 @@ const clearAll = () => {
 	<AuthModal bind:isOpen={showAuthModal} />
 {/if}
 
-<HowItWorksModal bind:isOpen={showHowItWorksModal} />
+<HowItWorksModal bind:isOpen={store.showHowItWorksModal} />

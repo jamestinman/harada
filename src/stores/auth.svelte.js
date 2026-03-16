@@ -70,7 +70,7 @@ class AuthStore {
 				return {
 					success: true,
 					requiresConfirmation: true,
-					message: 'Please check your email to confirm your account'
+					message: 'Please check your email (will be from Supabase) to confirm your account'
 				};
 			}
 
@@ -203,6 +203,39 @@ class AuthStore {
 			return { success: true, message: 'Password updated successfully' };
 		} catch (err) {
 			console.error('Password update error:', err);
+			this.error = err.message;
+			return { success: false, error: err.message };
+		} finally {
+			this.loading = false;
+		}
+	}
+
+	async updateProfile({ fullName }) {
+		try {
+			this.error = null;
+			this.loading = true;
+
+			if (!supabase) {
+				throw new Error('Supabase is not configured. Please set up your .env file.');
+			}
+
+			const trimmedName = typeof fullName === 'string' ? fullName.trim() : '';
+
+			const { data, error } = await supabase.auth.updateUser({
+				data: {
+					full_name: trimmedName
+				}
+			});
+
+			if (error) throw error;
+
+			if (data?.user) {
+				this.user = { ...data.user };
+			}
+
+			return { success: true, message: 'Profile updated successfully' };
+		} catch (err) {
+			console.error('Profile update error:', err);
 			this.error = err.message;
 			return { success: false, error: err.message };
 		} finally {

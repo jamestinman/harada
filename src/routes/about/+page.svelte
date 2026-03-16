@@ -13,10 +13,10 @@
 		About Haradato
 	</h1>
 	<p class="text-slate-600 dark:text-slate-400 text-center text-sm sm:text-base mb-8">
-		Use a 64-square Harada Method to plan your life goals, then realise your dreams with concrete todo lists. The ultimate version of Shohei Ohtani's Japanese success system with real-world practicality.
+		Use a 64-square Harada Method to plan your life goals, then realise your dreams with concrete todo lists. The ultimate version of the Japanese success system with real-world practicality.
 	</p>
 	<p class="text-slate-600 dark:text-slate-400 text-center text-sm sm:text-base mb-8">
-    You can also just use it as a lovely, simple todo list.
+    You can also just use it as a lovely, simple todo list. <button onclick={() => store.showHowItWorksModal = true} class="text-emerald-600 dark:text-emerald-400 hover:underline font-medium">See how it works</button>.
   </p>
 
 	<section class="w-full text-left space-y-6">
