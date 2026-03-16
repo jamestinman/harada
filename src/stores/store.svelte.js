@@ -60,7 +60,7 @@ function createSeededGrid() {
 }
 
 class Store {
-	version = $state('0.0.10');
+	version = $state('0.0.11');
 	activeTab = $state('harada');
 	selectedGoalFilter = $state('all');
 	selectedGoalForNew = $state('');
