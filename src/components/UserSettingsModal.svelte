@@ -195,6 +195,12 @@ function startEditingName() {
 
 			<div class="settings-footer">
 				<div class="settings-footer-text">Version {store.version}</div>
+				<a
+					href="/privacy"
+					class="mt-1 text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 underline-offset-2 hover:underline"
+				>
+					Privacy Policy
+				</a>
 			</div>
 		</div>
 	</div>

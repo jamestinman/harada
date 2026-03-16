@@ -130,8 +130,16 @@
 				haradato.com
 			</a>
 		</p>
-		<p class="text-xs text-slate-400 dark:text-slate-500">
+		<p class="text-xs text-slate-400 dark:text-slate-500 mb-1">
 			Version {store.version}
+		</p>
+		<p class="text-xs text-slate-400 dark:text-slate-500">
+			<a
+				href="/privacy"
+				class="text-emerald-600 dark:text-emerald-400 hover:underline font-medium"
+			>
+				Privacy Policy
+			</a>
 		</p>
 	</footer>
 </div>
