@@ -1,6 +1,6 @@
 <script>
-import { onMount } from 'svelte';
-import { tick } from 'svelte';
+  import { onMount } from 'svelte';
+  import { tick } from 'svelte';
 	import { cubicOut } from 'svelte/easing';
 	import { page } from '$app/state';
 	import { browser } from '$app/environment';
@@ -146,13 +146,15 @@ const clearAll = () => {
 		api.setAuthMenuState(!!authStore.user);
 	});
 
-	// Get user display name
+	const isOnline = $derived(store.isOnline);
+
+	// Resolve display name from live user, or fall back to cached last-known user when offline
 	const userName = $derived.by(() => {
-		const user = authStore.user;
+		const user = authStore.user ?? authStore.lastKnownUser;
 		if (!user) return null;
-		return user.user_metadata?.full_name || 
-		       user.user_metadata?.name || 
-		       user.email?.split('@')[0] || 
+		return user.user_metadata?.full_name ||
+		       user.user_metadata?.name ||
+		       user.email?.split('@')[0] ||
 		       'User';
 	});
 
@@ -200,9 +202,16 @@ const clearAll = () => {
 					>
 						Settings
 					</button>
+				{:else if !isOnline}
+					<div class="mobile-menu-header">
+						<div class="mobile-menu-header-name text-amber-500 dark:text-amber-400">OFFLINE</div>
+						{#if userName}
+							<div class="mobile-menu-header-email">{userName}</div>
+						{/if}
+					</div>
 				{:else}
 					<button
-						type="button"
+						type="button !text-red-600 !font-bold"
 						onclick={() => { showMobileMenu = false; showAuthModal = true; }}
 						class="mobile-menu-item"
 					>
@@ -216,13 +225,11 @@ const clearAll = () => {
 				>
 					How it works
 				</button>
-				<a
-					href="/about"
-					onclick={() => (showMobileMenu = false)}
-					class="mobile-menu-item"
-				>
-					About
-				</a>
+
+        {#if !store.isNative()}
+          <a href="/app" class="mobile-menu-item block !w-full">Get the app</a>
+        {/if}
+
 				{#if authStore.user}
 					<button
 						type="button"
@@ -279,11 +286,18 @@ const clearAll = () => {
 		>
 			{userName}
 		</button>
+	{:else if !isOnline}
+		<div class="nav-desktop-link flex flex-col items-center gap-0.5 cursor-default" title={userName ? `Offline — signed in as ${userName}` : 'Offline'}>
+			<span class="text-amber-500 dark:text-amber-400 font-bold text-xs tracking-wide">OFFLINE</span>
+			{#if userName}
+				<span class="text-slate-500 dark:text-slate-400 text-xs">{userName}</span>
+			{/if}
+		</div>
 	{:else}
 		<button
 			type="button"
 			onclick={() => (showAuthModal = true)}
-			class="nav-desktop-link"
+			class="nav-desktop-link !text-red-600 !font-bold"
 			title="Sign In"
 		>
 			Sign In
@@ -296,13 +310,12 @@ const clearAll = () => {
 	>
 		How it works
 	</button>
-	{#if !(authStore?.user)}
-  <a href="/about" class="nav-desktop-link">
-    About
-  </a>
 
+  {#if !store.isNative()}
+    <a href="/app" class="nav-desktop-link">Get the app</a>
   {/if}
-<a
+
+  <a
 		href="/"
 		class="nav-desktop-link"
 	>

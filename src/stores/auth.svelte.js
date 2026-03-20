@@ -1,35 +1,59 @@
 import { supabase } from '$lib/supabaseClient.js';
 import { browser } from '$app/environment';
 
+const LAST_USER_KEY = 'harada_last_user';
+
 class AuthStore {
 	user = $state(null);
 	session = $state(null);
 	loading = $state(true);
 	error = $state(null);
+	// Persisted across offline periods — used for display only, not for API auth
+	lastKnownUser = $state(null);
 
 	constructor() {
 		if (browser) {
+			// Restore cached display user immediately so UI doesn't flicker
+			try {
+				const cached = localStorage.getItem(LAST_USER_KEY);
+				if (cached) this.lastKnownUser = JSON.parse(cached);
+			} catch {}
+
 			this.initialize();
+
+			// When coming back online, try to silently refresh an expired session
+			window.addEventListener('online', () => this._tryRefreshSession());
 		}
 	}
 
 	async initialize() {
 		try {
-			// If Supabase is not configured, skip auth initialization
 			if (!supabase) {
 				this.loading = false;
 				return;
 			}
 
-			// Get initial session
 			const {
 				data: { session }
 			} = await supabase.auth.getSession();
 			this._applySession(session);
 
-			// Listen for auth changes
-			supabase.auth.onAuthStateChange((_event, session) => {
-				this._applySession(session);
+			supabase.auth.onAuthStateChange((event, session) => {
+				if (event === 'SIGNED_OUT') {
+					// Only treat it as a real sign-out when we're actually online.
+					// When offline the token can't be refreshed so Supabase fires SIGNED_OUT
+					// even though the user hasn't intentionally logged out.
+					const isOnline = navigator.onLine;
+					if (isOnline) {
+						this._clearLastKnownUser();
+					}
+					// Always clear live session/user — saves won't try to push to Supabase
+					this.session = null;
+					this.user = null;
+				} else {
+					this._applySession(session);
+					if (session?.user) this._persistLastKnownUser(session.user);
+				}
 			});
 		} catch (err) {
 			console.error('Auth initialization error:', err);
@@ -39,14 +63,44 @@ class AuthStore {
 		}
 	}
 
+	async _tryRefreshSession() {
+		if (!supabase || this.user) return;
+		// If we have a cached user but no live session, try refreshing with Supabase.
+		// This succeeds when the refresh token is still valid (up to 60 days by default).
+		try {
+			const { data } = await supabase.auth.getSession();
+			if (data.session) {
+				this._applySession(data.session);
+				this._persistLastKnownUser(data.session.user);
+			}
+		} catch (err) {
+			console.warn('Session refresh on reconnect failed:', err.message);
+		}
+	}
+
 	_applySession(session) {
 		this.session = session;
 		const user = session?.user ?? null;
-		if (user) {
-			this.user = { ...user };
-		} else {
-			this.user = null;
-		}
+		this.user = user ? { ...user } : null;
+	}
+
+	_persistLastKnownUser(user) {
+		const minimal = {
+			id: user.id,
+			email: user.email,
+			user_metadata: user.user_metadata
+		};
+		this.lastKnownUser = minimal;
+		try {
+			localStorage.setItem(LAST_USER_KEY, JSON.stringify(minimal));
+		} catch {}
+	}
+
+	_clearLastKnownUser() {
+		this.lastKnownUser = null;
+		try {
+			localStorage.removeItem(LAST_USER_KEY);
+		} catch {}
 	}
 
 	async signUp(email, password) {
@@ -58,14 +112,9 @@ class AuthStore {
 				throw new Error('Supabase is not configured. Please set up your .env file.');
 			}
 
-			const { data, error } = await supabase.auth.signUp({
-				email,
-				password
-			});
-
+			const { data, error } = await supabase.auth.signUp({ email, password });
 			if (error) throw error;
 
-			// Check if email confirmation is required
 			if (data.user && !data.session) {
 				return {
 					success: true,
@@ -93,15 +142,12 @@ class AuthStore {
 				throw new Error('Supabase is not configured. Please set up your .env file.');
 			}
 
-			const { data, error } = await supabase.auth.signInWithPassword({
-				email,
-				password
-			});
-
+			const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 			if (error) throw error;
 
 			if (data?.session) {
 				this._applySession(data.session);
+				this._persistLastKnownUser(data.session.user);
 			}
 
 			return { success: true };
@@ -117,7 +163,7 @@ class AuthStore {
 	async signInWithOAuth(provider) {
 		try {
 			this.error = null;
-			
+
 			if (!supabase) {
 				throw new Error('Supabase is not configured. Please set up your .env file.');
 			}
@@ -143,8 +189,10 @@ class AuthStore {
 			this.error = null;
 			this.loading = true;
 
+			// Always clear cached user on an explicit sign-out
+			this._clearLastKnownUser();
+
 			if (!supabase) {
-				// If Supabase not configured, just clear local state
 				this.user = null;
 				this.session = null;
 				return { success: true };
@@ -176,10 +224,7 @@ class AuthStore {
 
 			if (error) throw error;
 
-			return {
-				success: true,
-				message: 'Password reset email sent. Please check your inbox.'
-			};
+			return { success: true, message: 'Password reset email sent. Please check your inbox.' };
 		} catch (err) {
 			console.error('Password reset error:', err);
 			this.error = err.message;
@@ -194,10 +239,7 @@ class AuthStore {
 			this.error = null;
 			this.loading = true;
 
-			const { error } = await supabase.auth.updateUser({
-				password: newPassword
-			});
-
+			const { error } = await supabase.auth.updateUser({ password: newPassword });
 			if (error) throw error;
 
 			return { success: true, message: 'Password updated successfully' };
@@ -222,15 +264,14 @@ class AuthStore {
 			const trimmedName = typeof fullName === 'string' ? fullName.trim() : '';
 
 			const { data, error } = await supabase.auth.updateUser({
-				data: {
-					full_name: trimmedName
-				}
+				data: { full_name: trimmedName }
 			});
 
 			if (error) throw error;
 
 			if (data?.user) {
 				this.user = { ...data.user };
+				this._persistLastKnownUser(data.user);
 			}
 
 			return { success: true, message: 'Profile updated successfully' };

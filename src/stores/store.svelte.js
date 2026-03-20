@@ -183,6 +183,11 @@ class Store {
 		}
 	}
 
+  isNative() {
+    if (!(browser || false)) return false;
+    return ['ios', 'android'].includes(Capacitor.getPlatform());
+  }
+
 	// --- Realtime ---
 
 	_subscribeToRealtime() {
@@ -730,7 +735,14 @@ class Store {
 		this._unsubscribeRealtime();
 
 		if (!authStore.user) {
-			// Logged out — show a helpful seeded board for new/pre-login users
+			// If we're offline, the session may have expired and Supabase fired SIGNED_OUT
+			// even though the user hasn't intentionally logged out. Keep local data intact
+			// so nothing is lost — it will sync when connectivity and session are restored.
+			if (!this.isOnline) {
+				this.isLoading = false;
+				return;
+			}
+			// Logged out online — show a helpful seeded board for new/pre-login users
 			this.harada_chart = {
 				grid: createSeededGrid(),
 				todos: []
