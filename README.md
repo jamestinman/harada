@@ -18,6 +18,12 @@ Rows:
 [8]
 [9]
 
+The central goal is at E5. Each of the goals that surrounds it (D4,E4,F4,D5,F5,D6,E6,F6) has it's own set of 8 sub-goals surrounding it twin square.
+Twinned squares:
+  D4=>B2 E4=>E2 F4=>H2
+  D5=>B5        F5=>H5
+  D6=>B8 E6=>E8 F6=>H8
+
 To-do list entries hang off grid coordinates, e.g.:
 ## E5 My goal is play the piano
 ### B3 My sub-goal is to learn scales

@@ -94,7 +94,7 @@
 						'bg-gradient-to-br from-violet-600 to-fuchsia-600 border-2 border-violet-400 text-white font-bold shadow-lg shadow-violet-500/30 z-10';
 				}
 			} else if (isSubGoal(row, col)) {
-				// Sub-goals: strong green when done, otherwise original styling
+				// Sub-goals: strong green when done, otherwise same grey as their twinned outer block centers
 				if (status === 'done') {
 					classes +=
 						'bg-gradient-to-br from-emerald-600 to-green-600 border border-emerald-400 text-white font-semibold shadow-lg shadow-emerald-500/40';
@@ -102,8 +102,7 @@
 					classes +=
 						'bg-gradient-to-br from-yellow-600 to-amber-600 border border-yellow-400 text-white font-semibold shadow-lg shadow-yellow-500/40';
 				} else {
-					classes +=
-						'bg-gradient-to-br from-violet-800/80 to-fuchsia-800/80 border border-violet-500/50 text-violet-100 font-semibold';
+					classes += 'harada-chart-center-default';
 				}
 			} else if (isBlockCenter(row, col)) {
 				// Linked sub-goals: strong green when done, otherwise original styling
