@@ -75,7 +75,12 @@
 		setTimeout(() => {
 			if (titleInputElement) {
 				titleInputElement.focus();
-				titleInputElement.select();
+				if (titleInputElement.value === '') {
+					titleInputElement.select();
+				} else {
+					const len = titleInputElement.value.length;
+					titleInputElement.setSelectionRange(len, len);
+				}
 			}
 		}, 0);
 	}
@@ -97,16 +102,28 @@
 			if (onCreateNext) {
 				const newTodo = onCreateNext();
 				if (newTodo) {
-					// The new todo will auto-start editing via the effect
-					// Just ensure focus happens after a brief delay for DOM update
-					setTimeout(() => {
-						const nextInput = document.querySelector(`[data-todo-id="${newTodo.id}"]`);
-						if (nextInput) {
-							nextInput.focus();
-							nextInput.select();
+					// Click the edit button to enter edit mode (works even when disableAutoFocus=true),
+					// then focus the input once it renders.
+					requestAnimationFrame(() => {
+						const nextTodoElement = document.querySelector(`[data-todo-item-id="${newTodo.id}"]`);
+						const editButton = nextTodoElement?.querySelector('button.flex-1');
+						if (editButton) {
+							editButton.click();
 						}
-						isCreatingNext = false;
-					}, 100);
+						const tryFocus = (attempts = 0) => {
+							const nextInput = document.querySelector(`[data-todo-id="${newTodo.id}"]`);
+							if (nextInput) {
+								nextInput.focus();
+								nextInput.select();
+								isCreatingNext = false;
+							} else if (attempts < 10) {
+								setTimeout(() => tryFocus(attempts + 1), 20);
+							} else {
+								isCreatingNext = false;
+							}
+						};
+						setTimeout(() => tryFocus(), 50);
+					});
 				} else {
 					isCreatingNext = false;
 				}

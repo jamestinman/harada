@@ -529,12 +529,10 @@
 								const prevInput = document.querySelector(`[data-todo-id="${previousTodo.id}"]`);
 								if (prevInput) {
 									prevInput.focus();
-									prevInput.select();
 									// Double-check focus is active
 									if (document.activeElement !== prevInput) {
 										setTimeout(() => {
 											prevInput.focus();
-											prevInput.select();
 										}, 10);
 									}
 								} else if (attempts < 10) {
