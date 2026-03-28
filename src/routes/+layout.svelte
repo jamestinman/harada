@@ -1,5 +1,6 @@
 <script>
 	import { browser } from '$app/environment';
+	import { page } from '$app/state';
 	import { onNavigate } from '$app/navigation';
 	import { store } from '$stores/store.svelte.js';
 	import { authStore } from '$stores/auth.svelte.js';
@@ -14,6 +15,9 @@
 	import './layout.css';
 
 	let { children } = $props();
+
+	const ogImageUrl = $derived(`${page.url.origin}/favicon.png`);
+	const ogPageUrl = $derived(`${page.url.origin}${page.url.pathname}`);
 
 	// Grid is reactive via the store — no local copy needed
 	const grid = $derived(store.harada_chart.grid);
@@ -119,6 +123,17 @@
 		});
 	});
 </script>
+
+<svelte:head>
+	<!-- WhatsApp / Facebook / iMessage use Open Graph; rel=icon is not used for link previews -->
+	<meta property="og:type" content="website" />
+	<meta property="og:site_name" content="Haradato" />
+	<meta property="og:url" content={ogPageUrl} />
+	<meta property="og:image" content={ogImageUrl} />
+	<meta property="og:image:type" content="image/png" />
+	<meta name="twitter:card" content="summary" />
+	<meta name="twitter:image" content={ogImageUrl} />
+</svelte:head>
 
 <div
   id="root-container"

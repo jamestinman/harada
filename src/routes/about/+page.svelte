@@ -1,5 +1,6 @@
 <script>
 	import { store } from '$stores/store.svelte.js';
+	import AppleStoreBtn from '$components/AppleStoreBtn.svelte';
 </script>
 
 <div class="flex flex-col items-center max-w-2xl mx-auto mt-8 sm:mt-12 px-4 pb-12">
@@ -19,7 +20,9 @@
     You can also just use it as a lovely, simple todo list. <button onclick={() => store.showHowItWorksModal = true} class="text-emerald-600 dark:text-emerald-400 hover:underline font-medium">See how it works</button>.
   </p>
 
-	<section class="w-full text-left space-y-6">
+  <AppleStoreBtn />
+
+  <section class="w-full text-left space-y-6 mt-10">
 		<div>
 			<h2 class="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">
 				Engineered success with the Harada Method
@@ -117,7 +120,7 @@
 		</div>
 
 		<p class="text-slate-700 dark:text-slate-300 font-medium text-center pt-4">
-			Don't just dream. Engineer your achievement.
+			Don't just dream. Engineer your own achievement.
 		</p>
 	</section>
 

@@ -1,6 +1,7 @@
 <script>
 	import { cubicOut } from 'svelte/easing';
 	import { fade } from 'svelte/transition';
+	import { store } from '$stores/store.svelte.js';
 
 	let { isOpen = $bindable(false) } = $props();
 
@@ -149,7 +150,7 @@
 					{/if}
 				</div>
 			</div>
-      <div class="px-6 py-4">
+      <div class="px-6 py-4 flex flex-row justify-between">
         <a
         href="/about"
         onclick={close}
@@ -157,6 +158,16 @@
       >
         About the Harada Method →
       </a>
+      {#if !store.isNative()}
+      <a
+      href="/app"
+      onclick={close}
+      class="text-xs text-violet-500 hover:text-violet-700 dark:hover:text-violet-300 hover:underline self-start"
+    >
+    Get the app →
+    </a>
+    {/if}
+
     </div>
     </div>
 	</div>

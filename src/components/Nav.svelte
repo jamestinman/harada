@@ -226,10 +226,6 @@ const clearAll = () => {
 					How it works
 				</button>
 
-        {#if !store.isNative()}
-          <a href="/app" class="mobile-menu-item block !w-full">Get the app</a>
-        {/if}
-
 				{#if authStore.user}
 					<button
 						type="button"
@@ -303,17 +299,7 @@ const clearAll = () => {
 			Sign In
 		</button>
 	{/if}
-	<button
-		type="button"
-		onclick={() => (store.showHowItWorksModal = true)}
-		class="nav-desktop-link"
-	>
-		How it works
-	</button>
-
-  {#if !store.isNative()}
-    <a href="/app" class="nav-desktop-link">Get the app</a>
-  {/if}
+  <a href="/about" class="nav-desktop-link">About</a>
 
   <a
 		href="/"
