@@ -3,7 +3,7 @@
 	import AppleStoreBtn from '$components/AppleStoreBtn.svelte';
 </script>
 
-<div class="flex flex-col items-center max-w-2xl mx-auto mt-8 sm:mt-12 px-4 pb-12">
+<div class="content flex flex-col items-center max-w-2xl mx-auto mt-8 sm:mt-12 px-4 pb-12">
 	<img
 		src="/icon.png"
 		alt="Haradato app icon"
@@ -14,11 +14,9 @@
 		About Haradato
 	</h1>
 	<p class="text-slate-600 dark:text-slate-400 text-center text-sm sm:text-base mb-8">
-		Use a 64-square Harada Method to plan your life goals, then realise your dreams with concrete todo lists. The ultimate version of the Japanese success system with real-world practicality.
-	</p>
-	<p class="text-slate-600 dark:text-slate-400 text-center text-sm sm:text-base mb-8">
-    You can also just use it as a lovely, simple todo list. <button onclick={() => store.showHowItWorksModal = true} class="text-emerald-600 dark:text-emerald-400 hover:underline font-medium">See how it works</button>.
+    <strong>Haradato</strong> is a productivity app (currently iPhone, with web) built around the Harada Method - a <strong>Japanese goal-achievement system</strong> famously used by Shohei Ohtani. You define one central life goal, break it into 8 pillars, each pillar into 8 sub-goals, giving you 64 concrete steps. Behind each of those 64 cells sits a full todo list. It's essentially a <strong>life blueprint</strong> that doubles as a <strong>daily task manager</strong>.
   </p>
+  <button onclick={() => store.showHowItWorksModal = true} class="rounded-xl border py-2 px-4 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900 font-medium">See how it works</button>.
 
   <AppleStoreBtn />
 

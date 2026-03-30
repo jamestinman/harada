@@ -16,7 +16,8 @@
 
 	let { children } = $props();
 
-	const ogImageUrl = $derived(`${page.url.origin}/favicon.png`);
+	// Use icon.png for OG: favicon.png is 192×192 (below Meta/WhatsApp minimum 200×200 for link images)
+	const ogImageUrl = $derived(`${page.url.origin}/icon.png`);
 	const ogPageUrl = $derived(`${page.url.origin}${page.url.pathname}`);
 
 	// Grid is reactive via the store — no local copy needed
@@ -131,6 +132,8 @@
 	<meta property="og:url" content={ogPageUrl} />
 	<meta property="og:image" content={ogImageUrl} />
 	<meta property="og:image:type" content="image/png" />
+	<meta property="og:image:width" content="560" />
+	<meta property="og:image:height" content="560" />
 	<meta name="twitter:card" content="summary" />
 	<meta name="twitter:image" content={ogImageUrl} />
 </svelte:head>

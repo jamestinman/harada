@@ -48,6 +48,10 @@ h4 {
   } 
 }
 
+.content strong {
+  @apply text-purple-600 dark:text-purple-400;
+}
+
 .task {
   @apply relative flex items-center gap-2 rounded-lg border px-3 py-2 transition select-none;
   &.dark {
