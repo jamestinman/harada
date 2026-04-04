@@ -22,7 +22,11 @@
 		allowCrossListMove = false,
 		enableGroupDrag = false,
 		onMoveGroup = null,
-		searchText = ''
+		searchText = '',
+		/** When true, pinned tasks show pink chrome; top duplicate strip uses feedPinnedTodos + resolveGroupForTodo */
+		isMainTodoFeed = false,
+		feedPinnedTodos = null,
+		resolveGroupForTodo = null
 	} = $props();
 
 	const LONG_PRESS_MS = 260;
@@ -157,6 +161,13 @@
 		const label = (group?.label ?? '').toLowerCase();
 		return label.includes(query);
 	}
+
+	const visibleFeedPinned = $derived.by(() => {
+		if (!isMainTodoFeed || !feedPinnedTodos?.length) return [];
+		const query = (searchText ?? '').trim().toLowerCase();
+		if (!query) return feedPinnedTodos;
+		return feedPinnedTodos.filter((t) => matchesSearch(t));
+	});
 
 	function hasVisibleTodosInGroup(group) {
 		if (!group) return false;
@@ -685,6 +696,52 @@
 			</button>
 		</div>
 	{/if}
+
+	{#if isMainTodoFeed && visibleFeedPinned.length > 0 && resolveGroupForTodo}
+		<div class="mb-6 space-y-2">
+			<h2 class="text-sm font-semibold uppercase tracking-wide text-pink-300/90">Pinned</h2>
+			<div class="space-y-2">
+				{#each visibleFeedPinned as todo (todo.id)}
+					{@const pinGroup = resolveGroupForTodo(todo)}
+					{#if pinGroup}
+						<div
+							data-dnd-item-id={todo.id}
+							onpointerdown={(event) => handleTaskPointerDown(event, todo)}
+							class={`relative rounded-lg transition ${itemDragClass(todo.id)}`}
+						>
+							{#if showChildIndicator(todo.id)}
+								<div class="pointer-events-none absolute right-2 top-1/2 z-10 -translate-y-1/2">
+									<span class="rounded bg-violet-800/90 px-1.5 py-0.5 text-xs text-violet-200">nest inside</span>
+								</div>
+							{/if}
+							<TodoItem
+								{todo}
+								onUpdate={(patch) => onUpdate && onUpdate(todo.id, patch)}
+								onDelete={() => onDelete && onDelete(todo.id)}
+								onToggleStatus={() => onToggleStatus && onToggleStatus(todo.id)}
+								onCreateNext={() => onCreateNext && onCreateNext(todo.id, pinGroup)}
+								onDeletePrevious={() => onDeletePrevious && onDeletePrevious(todo.id, pinGroup)}
+								onMakeSubtask={() => onMakeSubtask && onMakeSubtask(todo.id, pinGroup)}
+								onOutdent={() => onOutdent && onOutdent(todo.id, pinGroup)}
+								onTitleFocus={(id) => onTitleFocus && onTitleFocus(id)}
+								indentLevel={getIndentLevel ? getIndentLevel(todo.id, pinGroup) : 0}
+								canIndent={canIndent ? canIndent(todo.id, pinGroup) : false}
+								canOutdent={canOutdent ? canOutdent(todo.id, pinGroup) : false}
+								{allGoals}
+								allTodos={pinGroup.todos}
+								{disableAutoFocus}
+								hasChildren={parentTodoIds.has(todo.id)}
+								isCollapsed={collapsedTodos.has(todo.id)}
+								onToggleCollapse={() => toggleCollapse(todo.id)}
+								isFeedPinnedDuplicate={true}
+								mainFeedPinStyle="top"
+							/>
+						</div>
+					{/if}
+				{/each}
+			</div>
+		</div>
+	{/if}
 	
 	{#each groups as group}
 		{#if !searchText || hasVisibleTodosInGroup(group)}
@@ -753,6 +810,7 @@
 												hasChildren={parentTodoIds.has(todo.id)}
 												isCollapsed={collapsedTodos.has(todo.id)}
 												onToggleCollapse={() => toggleCollapse(todo.id)}
+												mainFeedPinStyle={isMainTodoFeed && todo.pinned ? 'inline' : null}
 											/>
 										</div>
 										{#if showPlaceholderAfter(todo.id)}
@@ -806,6 +864,7 @@
 								hasChildren={parentTodoIds.has(todo.id)}
 								isCollapsed={collapsedTodos.has(todo.id)}
 								onToggleCollapse={() => toggleCollapse(todo.id)}
+								mainFeedPinStyle={isMainTodoFeed && todo.pinned ? 'inline' : null}
 							/>
 						</div>
 						{#if showPlaceholderAfter(todo.id)}

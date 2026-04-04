@@ -7,7 +7,7 @@
 	} from '$lib/todoUtils.js';
 	import SquareMap from './SquareMap.svelte';
 	import GoalSelect from './GoalSelect.svelte';
-	import { ArrowRightToLine, ArrowLeftFromLine, ChevronDown, Check } from 'lucide-svelte';
+	import { ArrowRightToLine, ArrowLeftFromLine, ChevronDown, Check, Pin } from 'lucide-svelte';
 
 	let { 
 		todo,
@@ -27,7 +27,11 @@
 		disableAutoFocus = false,
 		hasChildren = false,
 		isCollapsed = false,
-		onToggleCollapse = null
+		onToggleCollapse = null,
+		/** Omit DOM id so duplicate pinned rows on /todo don’t steal querySelector from the canonical row */
+		isFeedPinnedDuplicate = false,
+		/** 'top' = pinned strip under + New task; 'inline' = same task under its goal on /todo */
+		mainFeedPinStyle = null
 	} = $props();
 
 	let isEditing = $state(false);
@@ -41,6 +45,7 @@
 	let isCreatingNext = $state(false);
 
 	const hasNotes = $derived((todo.markdown || '').trim().length > 0);
+	const isPinned = $derived(todo.pinned === true);
 	const showOutdentAction = $derived(!canIndent && canOutdent);
 	const isNewEmptyTodo = $derived(
 		(!todo.title || todo.title.trim() === '') && 
@@ -65,6 +70,11 @@
 
 	function handleCheckbox() {
 		onToggleStatus();
+	}
+
+	function togglePinned(e) {
+		e?.stopPropagation?.();
+		onUpdate({ pinned: !isPinned });
 	}
 
 	function startEditingTitle() {
@@ -231,8 +241,14 @@
 <!-- Compact single-line view -->
 {#if !isEditing}
 	<div
-		data-todo-item-id={todo.id}
-		class="group task"
+		data-todo-item-id={isFeedPinnedDuplicate ? undefined : todo.id}
+		class={`group task relative rounded-md transition-colors ${
+			mainFeedPinStyle === 'top'
+				? '!border-2 border-pink-400/50'
+				: mainFeedPinStyle === 'inline'
+					? ''
+					: ''
+		}`}
 		style="margin-left: {indentLevel * 1.5}rem;"
 	>
 		<!-- Collapse toggle: absolutely positioned in the left padding so checkboxes always line up -->
@@ -341,6 +357,23 @@
 		{/if}
 		<button
 			type="button"
+			onpointerdown={(e) => e.stopPropagation()}
+			onclick={togglePinned}
+			class={`flex-shrink-0 rounded p-1 transition ${
+				isPinned
+					? 'text-pink-400 hover:bg-pink-500/20 hover:text-pink-300'
+					: 'text-slate-500 hover:bg-slate-700/50 hover:text-slate-300'
+			}`}
+			title={isPinned ? 'Unpin' : 'Pin to top of Todo feed'}
+			aria-pressed={isPinned}
+		>
+			<Pin
+				class={`h-4 w-4 ${isPinned ? 'fill-current' : 'fill-none opacity-60'}`}
+				strokeWidth={2}
+			/>
+		</button>
+		<button
+			type="button"
 			onclick={startEditingNotes}
 			class={`flex-shrink-0 transition ${
 				hasNotes
@@ -382,7 +415,7 @@
 		<div class="mb-3">
 			<textarea
 				bind:value={editMarkdown}
-				placeholder="Add notes, checklists, etc..."
+				placeholder=""
 			></textarea>
 		</div>
 
@@ -477,7 +510,7 @@
 			<div class="mb-4">
 				<textarea
 					bind:value={editMarkdown}
-					placeholder="Add notes, checklists, etc..."
+					placeholder=""
 					class="composer-textarea"
 				></textarea>
 			</div>

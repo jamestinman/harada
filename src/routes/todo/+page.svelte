@@ -366,6 +366,37 @@
 			.sort((a, b) => getTodoOrdering(a) - getTodoOrdering(b))
 	);
 
+	const feedPinnedTodos = $derived.by(() =>
+		todos
+			.filter((t) => t.pinned === true && t.status !== 'done')
+			.sort((a, b) => getTodoOrdering(a) - getTodoOrdering(b))
+	);
+
+	function resolveGroupForTodo(todo) {
+		const t = normalizeTodoListMeta(todo);
+		for (const g of todoGroups) {
+			if (g.groupType === 'custom' && t.listType === 'custom' && g.listId === t.listId) {
+				return g;
+			}
+			if (
+				g.groupType === 'no-goal' &&
+				(t.listType === 'goal' || !t.listType) &&
+				t.goalIndex == null
+			) {
+				return g;
+			}
+			if (
+				g.groupType === 'goal' &&
+				(t.listType === 'goal' || !t.listType) &&
+				typeof t.goalIndex === 'number' &&
+				g.goalIndex === t.goalIndex
+			) {
+				return g;
+			}
+		}
+		return null;
+	}
+
 	// Todo management
 	function updateTodo(id, patch) {
 		store.updateTodo(id, patch);
@@ -577,6 +608,9 @@
 
 		<TodoList
 			groups={todoGroups}
+			isMainTodoFeed={true}
+			feedPinnedTodos={feedPinnedTodos}
+			{resolveGroupForTodo}
 			{allGoals}
 			onUpdate={updateTodo}
 			onDelete={deleteTodo}

@@ -17,6 +17,7 @@ export function defaultTodo() {
 		markdown: '',
 		status: 'todo',
 		parentId: null,
+		pinned: false,
 		createdAt: now,
 		updatedAt: now,
 		ordering: now
@@ -98,14 +99,16 @@ export function normalizeTodoListMeta(todo) {
 			listType: 'custom',
 			listId: safeId,
 			listName: safeName,
-			ordering: normalizedOrdering
+			ordering: normalizedOrdering,
+			pinned: todo?.pinned === true
 		};
 	}
 
 	return {
 		...todo,
 		...buildGoalListMeta(todo?.goalIndex),
-		ordering: normalizedOrdering
+		ordering: normalizedOrdering,
+		pinned: todo?.pinned === true
 	};
 }
 

@@ -495,6 +495,7 @@ class Store {
 			listName: typeof row.list_name === 'string' ? row.list_name : null,
 			goalIndex: typeof row.goal_index === 'number' ? row.goal_index : null,
 			parentId: typeof row.parent_id === 'string' ? row.parent_id : null,
+			pinned: row.pinned === true,
 			ordering:
 				typeof row.ordering === 'number' && Number.isFinite(row.ordering)
 					? row.ordering
@@ -527,6 +528,7 @@ class Store {
 			list_name: typeof normalized.listName === 'string' ? normalized.listName : null,
 			goal_index: typeof normalized.goalIndex === 'number' ? normalized.goalIndex : null,
 			parent_id: typeof normalized.parentId === 'string' ? normalized.parentId : null,
+			pinned: normalized.pinned === true,
 			ordering:
 				typeof normalized.ordering === 'number' && Number.isFinite(normalized.ordering)
 					? normalized.ordering

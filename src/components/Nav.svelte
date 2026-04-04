@@ -356,7 +356,7 @@ const clearAll = () => {
 			<div class="mb-4">
 				<textarea
 					bind:value={composerMarkdown}
-					placeholder="Add notes, checklists, etc..."
+					placeholder=""
 					class="composer-textarea"
 				></textarea>
 			</div>
