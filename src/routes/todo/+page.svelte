@@ -13,6 +13,7 @@
 	} from '$lib/todoUtils.js';
 	import TodoList from '$components/TodoList.svelte';
 	import Nav from '$components/Nav.svelte';
+	import { ChevronLeft } from 'lucide-svelte';
 
 	let searchText = $state('');
 
@@ -372,6 +373,17 @@
 			.sort((a, b) => getTodoOrdering(a) - getTodoOrdering(b))
 	);
 
+	let mobileMenuOpen = $state(false);
+
+	const goalMenuItems = $derived.by(() =>
+		getVisibleGoalGroupsByOrdering().map((group) => ({
+			id: group.id,
+			label: group.label,
+			href: group.href,
+			count: group.todos.length
+		}))
+	);
+
 	function resolveGroupForTodo(todo) {
 		const t = normalizeTodoListMeta(todo);
 		for (const g of todoGroups) {
@@ -587,49 +599,157 @@
 </svelte:head>
 
 <div class="p-4 pb-24 md:p-8 md:pb-8">
-	<div class="mx-auto max-w-4xl">
-		<!-- Header -->
-		<div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-			<div class="flex-1">
-				<div class="flex flex-row gap-5 justify-between w-full">
-					<h1>Todo</h1>
-					<input
-						type="text"
-						placeholder="Search"
-						bind:value={searchText}
-						class="w-full rounded-md border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-100 placeholder:text-slate-500 shadow-sm focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/60"
-					/>
+	<div class="mx-auto max-w-7xl">
+		<div class="hidden gap-8 md:grid md:grid-cols-[18rem_minmax(0,1fr)]">
+			<aside class="todo-panel h-[calc(100vh-5.5rem)] overflow-y-auto p-3">
+				<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">Goals</h2>
+				<div class="space-y-1.5">
+					<a
+						href="/todo"
+						class="flex items-center justify-between rounded-md border border-violet-500/40 bg-violet-500/15 px-3 py-2 text-sm font-medium text-violet-100"
+						aria-current="page"
+					>
+						<span>All Todos</span>
+						<span class="text-xs text-violet-200/80">{allTodos.length}</span>
+					</a>
+					{#each goalMenuItems as item (item.id)}
+						<a
+							href={item.href}
+							class="flex items-center justify-between rounded-md border border-slate-700/70 px-3 py-2 text-sm transition hover:border-violet-500/50 hover:bg-violet-500/10"
+						>
+							<span class="truncate pr-3">{item.label}</span>
+							<span class="text-xs text-slate-400">{item.count}</span>
+						</a>
+					{/each}
 				</div>
-				<p class="page-subtitle">
-					{allTodos.length} todo{allTodos.length !== 1 ? 's' : ''} across {todoGroups.filter((g) => g.id !== 'no-goal').length} goal{todoGroups.filter((g) => g.id !== 'no-goal').length !== 1 ? 's' : ''}
-				</p>
+			</aside>
+
+			<div class="min-w-0">
+				<div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+					<div class="flex-1">
+						<div class="flex flex-row gap-5 justify-between w-full">
+							<h1>Todo</h1>
+							<input
+								type="text"
+								placeholder="Search"
+								bind:value={searchText}
+								class="w-full rounded-md border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-100 placeholder:text-slate-500 shadow-sm focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/60"
+							/>
+						</div>
+						<p class="page-subtitle">
+							{allTodos.length} todo{allTodos.length !== 1 ? 's' : ''} across {todoGroups.filter((g) => g.id !== 'no-goal').length} goal{todoGroups.filter((g) => g.id !== 'no-goal').length !== 1 ? 's' : ''}
+						</p>
+					</div>
+				</div>
+				<TodoList
+					groups={todoGroups}
+					isMainTodoFeed={true}
+					feedPinnedTodos={feedPinnedTodos}
+					{resolveGroupForTodo}
+					{allGoals}
+					onUpdate={updateTodo}
+					onDelete={deleteTodo}
+					onToggleStatus={cycleTodoStatus}
+					onCreateNext={createNextTodo}
+					onDeletePrevious={deleteAndFocusPrevious}
+					onMakeSubtask={makeSubtask}
+					onOutdent={(todoId) => outdentTodo(todoId)}
+					onTitleFocus={(id) => (activeTodoId = id)}
+					getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
+					canIndent={canIndentTodo}
+					canOutdent={(todoId) => canOutdentTodo(todoId)}
+					onCreateTodo={createTodoFromComposer}
+					onMoveTodo={moveTodo}
+					allowCrossListMove={true}
+					enableGroupDrag={true}
+					onMoveGroup={moveGoalGroup}
+					searchText={searchText}
+				/>
 			</div>
 		</div>
 
-		<TodoList
-			groups={todoGroups}
-			isMainTodoFeed={true}
-			feedPinnedTodos={feedPinnedTodos}
-			{resolveGroupForTodo}
-			{allGoals}
-			onUpdate={updateTodo}
-			onDelete={deleteTodo}
-			onToggleStatus={cycleTodoStatus}
-			onCreateNext={createNextTodo}
-			onDeletePrevious={deleteAndFocusPrevious}
-			onMakeSubtask={makeSubtask}
-			onOutdent={(todoId) => outdentTodo(todoId)}
-			onTitleFocus={(id) => (activeTodoId = id)}
-			getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
-			canIndent={canIndentTodo}
-			canOutdent={(todoId) => canOutdentTodo(todoId)}
-			onCreateTodo={createTodoFromComposer}
-			onMoveTodo={moveTodo}
-			allowCrossListMove={true}
-			enableGroupDrag={true}
-			onMoveGroup={moveGoalGroup}
-			searchText={searchText}
-		/>
+		<div class="md:hidden overflow-hidden">
+			<div
+				class="flex w-[200%] transition-transform duration-300 ease-out"
+				style={`transform: translateX(${mobileMenuOpen ? '0%' : '-50%'});`}
+			>
+				<div class="w-1/2 pr-4">
+					<div class="todo-panel h-[calc(100vh-8rem)] overflow-y-auto p-3">
+						<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">Goals</h2>
+						<div class="space-y-1.5">
+							<button
+								type="button"
+								onclick={() => (mobileMenuOpen = false)}
+								class="flex w-full items-center justify-between rounded-md border border-violet-500/40 bg-violet-500/15 px-3 py-2 text-left text-sm font-medium text-violet-100"
+							>
+								<span>All Todos</span>
+								<span class="text-xs text-violet-200/80">{allTodos.length}</span>
+							</button>
+							{#each goalMenuItems as item (item.id)}
+								<a
+									href={item.href}
+									onclick={() => (mobileMenuOpen = false)}
+									class="flex items-center justify-between rounded-md border border-slate-700/70 px-3 py-2 text-sm transition hover:border-violet-500/50 hover:bg-violet-500/10"
+								>
+									<span class="truncate pr-3">{item.label}</span>
+									<span class="text-xs text-slate-400">{item.count}</span>
+								</a>
+							{/each}
+						</div>
+					</div>
+				</div>
+
+				<div class="w-1/2 pl-2">
+					<div class="mb-3">
+						<button
+							type="button"
+							onclick={() => (mobileMenuOpen = true)}
+							class="inline-flex items-center gap-1 rounded-md border border-slate-700 px-2.5 py-1 text-sm transition hover:border-violet-500/60 hover:bg-violet-500/10"
+						>
+							<ChevronLeft class="h-4 w-4" />
+						</button>
+					</div>
+					<div class="mb-6 flex flex-col gap-3">
+						<div class="flex flex-row gap-3 justify-between w-full items-center">
+							<h1>Todo</h1>
+							<input
+								type="text"
+								placeholder="Search"
+								bind:value={searchText}
+								class="w-full rounded-md border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-100 placeholder:text-slate-500 shadow-sm focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/60"
+							/>
+						</div>
+						<p class="page-subtitle">
+							{allTodos.length} todo{allTodos.length !== 1 ? 's' : ''} across {todoGroups.filter((g) => g.id !== 'no-goal').length} goal{todoGroups.filter((g) => g.id !== 'no-goal').length !== 1 ? 's' : ''}
+						</p>
+					</div>
+					<TodoList
+						groups={todoGroups}
+						isMainTodoFeed={true}
+						feedPinnedTodos={feedPinnedTodos}
+						{resolveGroupForTodo}
+						{allGoals}
+						onUpdate={updateTodo}
+						onDelete={deleteTodo}
+						onToggleStatus={cycleTodoStatus}
+						onCreateNext={createNextTodo}
+						onDeletePrevious={deleteAndFocusPrevious}
+						onMakeSubtask={makeSubtask}
+						onOutdent={(todoId) => outdentTodo(todoId)}
+						onTitleFocus={(id) => (activeTodoId = id)}
+						getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
+						canIndent={canIndentTodo}
+						canOutdent={(todoId) => canOutdentTodo(todoId)}
+						onCreateTodo={createTodoFromComposer}
+						onMoveTodo={moveTodo}
+						allowCrossListMove={true}
+						enableGroupDrag={true}
+						onMoveGroup={moveGoalGroup}
+						searchText={searchText}
+					/>
+				</div>
+			</div>
+		</div>
 	</div>
 	<Nav
 		{allGoals}

@@ -21,7 +21,7 @@
 	import SquareMap from '$components/SquareMap.svelte';
 	import TodoList from '$components/TodoList.svelte';
 	import Nav from '$components/Nav.svelte';
-	import { Trash2 } from 'lucide-svelte';
+	import { Trash2, ChevronLeft } from 'lucide-svelte';
 
 	// Use store.harada_chart directly - it's reactive
 	const grid = $derived(store.harada_chart.grid);
@@ -99,11 +99,20 @@
 	}
 
 	const ORDER_STEP = 1024;
+	const GOAL_GROUP_ORDER_STEP = 1024;
 
 	function getTodoOrdering(todo) {
 		if (typeof todo?.ordering === 'number' && Number.isFinite(todo.ordering)) return todo.ordering;
 		if (typeof todo?.createdAt === 'number' && Number.isFinite(todo.createdAt)) return todo.createdAt;
 		return 0;
+	}
+
+	function getGoalGroupOrdering(goalIdx) {
+		const cell = grid[goalIdx];
+		if (typeof cell?.todo_group_ordering === 'number' && Number.isFinite(cell.todo_group_ordering)) {
+			return cell.todo_group_ordering;
+		}
+		return (goalIdx + 1) * GOAL_GROUP_ORDER_STEP;
 	}
 
 	function getSiblingTodos(listId, parentId, excludeId = null) {
@@ -344,6 +353,38 @@
 			}))
 			.filter((group) => group.todos.length > 0);
 	});
+
+	function getVisibleGoalGroupsByOrdering() {
+		const uniqueCanonical = [...new Set(goalIndices.map((idx) => canonicalGoalIndex(idx)))];
+		return uniqueCanonical
+			.map((idx) => ({
+				id: `goal-${idx}`,
+				goalIndex: idx,
+				label: getGoalLabelFromIndex(idx),
+				href: `/todo/${indexToNomenclature(idx)}`,
+				todos: getVisibleGoalTodos(idx),
+				goalOrdering: getGoalGroupOrdering(idx)
+			}))
+			.filter((group) => group.todos.length > 0)
+			.sort((a, b) => {
+				if (a.goalOrdering !== b.goalOrdering) {
+					return a.goalOrdering - b.goalOrdering;
+				}
+				return a.goalIndex - b.goalIndex;
+			});
+	}
+
+	const goalMenuItems = $derived.by(() =>
+		getVisibleGoalGroupsByOrdering().map((group) => ({
+			id: group.id,
+			goalIndex: group.goalIndex,
+			label: group.label,
+			href: group.href,
+			count: group.todos.length
+		}))
+	);
+
+	let mobileMenuOpen = $state(false);
 
 	// When this goal has no todos, ensure one blank todo exists so the user can type immediately
 	$effect(() => {
@@ -755,174 +796,390 @@
 </svelte:head>
 
 <div class="p-4 pb-24 md:p-8 md:pb-8">
-	<div class="mx-auto max-w-4xl">
-		{#if !dataLoaded}
-			<div class="flex items-center justify-center py-12">
-				<div class="goal-loading-message">Loading...</div>
-			</div>
-		{:else if goalIndex === null}
-			<div class="flex items-center justify-center py-12">
-				<div class="goal-loading-message">Invalid goal. Redirecting...</div>
-			</div>
-		{:else}
-			<!-- Header -->
-			<div class="mb-6">
-				<div class="mb-4 flex items-center justify-between">
-					<div class="flex-1">
-            <!--
-						<button
-							onclick={moveUpALevel}
-							class="mb-2 text-sm transition-colors"
+	<div class="mx-auto max-w-7xl">
+		<div class="hidden gap-8 md:grid md:grid-cols-[18rem_minmax(0,1fr)]">
+			<aside class="todo-panel h-[calc(100vh-5.5rem)] overflow-y-auto p-3">
+				<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">Goals</h2>
+				<div class="space-y-1.5">
+					<a
+						href="/todo"
+						class="flex items-center justify-between rounded-md border border-slate-700/70 px-3 py-2 text-sm transition hover:border-violet-500/50 hover:bg-violet-500/10"
+					>
+						<span>All Todos</span>
+						<span class="text-xs text-slate-400">{todos.filter((t) => t.status !== 'done').length}</span>
+					</a>
+					{#each goalMenuItems as item (item.id)}
+						<a
+							href={item.href}
+							class={`flex items-center justify-between rounded-md border px-3 py-2 text-sm transition ${
+								item.goalIndex === goalIndex
+									? 'border-violet-500/40 bg-violet-500/15 text-violet-100'
+									: 'border-slate-700/70 hover:border-violet-500/50 hover:bg-violet-500/10'
+							}`}
+							aria-current={item.goalIndex === goalIndex ? 'page' : undefined}
 						>
-							← {parentGoalLabel ? `Back to ${parentGoalLabel}` : 'Back to all'}
-						</button>
-          -->
-						{#if isEditingGoal}
-							<div class="space-y-3">
-								<input
-									type="text"
-									bind:this={goalTitleInputElement}
-									bind:value={editedGoalTitle}
-									class="!text-2xl font-bold"
-									placeholder="Goal title"
-									onkeydown={(e) => {
-										if (e.key === 'Enter') {
-											e.preventDefault();
-											saveGoalEdit();
-										} else if (e.key === 'Escape') {
-											e.preventDefault();
-											cancelGoalEdit();
-										} else if (e.key === 'Tab' && !e.shiftKey && !editedGoalDescription) {
-											// Tab to description if empty, otherwise default behavior
-											e.preventDefault();
-											setTimeout(() => {
-												if (goalDescriptionTextareaElement) goalDescriptionTextareaElement.focus();
-											}, 0);
-										}  
-									}}
-								/>
-								<textarea
-									bind:this={goalDescriptionTextareaElement}
-									bind:value={editedGoalDescription}
-									class="!min-h-[6rem] resize-none"
-									placeholder="Add description (supports markdown)..."
-									onkeydown={(e) => {
-										if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-											e.preventDefault();
-											saveGoalEdit();
-										} else if (e.key === 'Escape') {
-											e.preventDefault();
-											cancelGoalEdit();
-										}
-									}}
-								></textarea>
-							</div>
-						{:else}
-							<button
-								type="button"
-								onclick={startEditingGoal}
-								class="text-left w-full cursor-pointer group"
-							>
-								<h1
-									class="goal-header-title"
-								>
-									{goalLabel || indexToNomenclature(goalIndex)}
-								</h1>
-								{#if goalMarkdown}
-									<div class="markdown mt-2 text-sm leading-relaxed transition-colors">
-										{@html renderMarkdown(goalMarkdown)}
+							<span class="truncate pr-3">{item.label}</span>
+							<span class={item.goalIndex === goalIndex ? 'text-xs text-violet-200/80' : 'text-xs text-slate-400'}>{item.count}</span>
+						</a>
+					{/each}
+				</div>
+			</aside>
+
+			<div class="min-w-0">
+				{#if !dataLoaded}
+					<div class="flex items-center justify-center py-12">
+						<div class="goal-loading-message">Loading...</div>
+					</div>
+				{:else if goalIndex === null}
+					<div class="flex items-center justify-center py-12">
+						<div class="goal-loading-message">Invalid goal. Redirecting...</div>
+					</div>
+				{:else}
+					<!-- Header -->
+					<div class="mb-6">
+						<div class="mb-4 flex items-center justify-between">
+							<div class="flex-1">
+								{#if isEditingGoal}
+									<div class="space-y-3">
+										<input
+											type="text"
+											bind:this={goalTitleInputElement}
+											bind:value={editedGoalTitle}
+											class="!text-2xl font-bold"
+											placeholder="Goal title"
+											onkeydown={(e) => {
+												if (e.key === 'Enter') {
+													e.preventDefault();
+													saveGoalEdit();
+												} else if (e.key === 'Escape') {
+													e.preventDefault();
+													cancelGoalEdit();
+												} else if (e.key === 'Tab' && !e.shiftKey && !editedGoalDescription) {
+													e.preventDefault();
+													setTimeout(() => {
+														if (goalDescriptionTextareaElement) goalDescriptionTextareaElement.focus();
+													}, 0);
+												}
+											}}
+										/>
+										<textarea
+											bind:this={goalDescriptionTextareaElement}
+											bind:value={editedGoalDescription}
+											class="!min-h-[6rem] resize-none"
+											placeholder="Add description (supports markdown)..."
+											onkeydown={(e) => {
+												if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+													e.preventDefault();
+													saveGoalEdit();
+												} else if (e.key === 'Escape') {
+													e.preventDefault();
+													cancelGoalEdit();
+												}
+											}}
+										></textarea>
 									</div>
 								{:else}
-									<div class="goal-header-placeholder">
-										Click to add description...
-									</div>
+									<button
+										type="button"
+										onclick={startEditingGoal}
+										class="text-left w-full cursor-pointer group"
+									>
+										<h1 class="goal-header-title">
+											{goalLabel || indexToNomenclature(goalIndex)}
+										</h1>
+										{#if goalMarkdown}
+											<div class="markdown mt-2 text-sm leading-relaxed transition-colors">
+												{@html renderMarkdown(goalMarkdown)}
+											</div>
+										{:else}
+											<div class="goal-header-placeholder">
+												Click to add description...
+											</div>
+										{/if}
+									</button>
 								{/if}
-							</button>
-						{/if}
+							</div>
+							<div class="md:hidden ml-4">
+								<SquareMap goal={indexToNomenclature(goalIndex)} {grid} />
+							</div>
+						</div>
+
+						<div class="mb-4 flex items-center justify-between gap-2">
+							<div class="flex gap-1">
+								{#each goalColors as color}
+									<button
+										type="button"
+										class="goal-color-button {selectedColor === color.value
+											? 'goal-color-selected'
+											: 'goal-color-unselected'} {color.preview || 'goal-color-default-bg'}"
+										title={color.label}
+										onclick={() => updateGoalColor(color.value)}
+									></button>
+								{/each}
+							</div>
+							{#if isEditingGoal}
+								<div class="flex items-center gap-2">
+									<button
+										type="button"
+										onclick={clearGoal}
+										class="rounded-md border px-2 py-2 text-sm font-semibold shadow-sm transition hover:border-rose-500 hover:bg-rose-900/40 hover:text-rose-200"
+										title="Clear goal name and description"
+									>
+										<Trash2 class="w-4 h-4" />
+									</button>
+									<button
+										type="button"
+										onclick={saveGoalEdit}
+										class="rounded-md border border-violet-600/70 bg-violet-600/90 px-4 py-2 text-sm font-semibold text-black shadow-sm transition hover:bg-violet-500"
+									>
+										Save
+									</button>
+									<button
+										type="button"
+										onclick={cancelGoalEdit}
+										class="todo-desktop-cancel"
+									>
+										Cancel
+									</button>
+								</div>
+							{/if}
+						</div>
 					</div>
-					<div class="md:hidden ml-4">
-						<SquareMap goal={indexToNomenclature(goalIndex)} {grid} />
+
+					<div class="mb-4 flex items-center justify-between">
+						<p class="flex items-center gap-2 cursor-pointer">
+							<input
+								type="checkbox"
+								bind:checked={showCompleted}
+								class="h-4 w-4 rounded border text-violet-600 focus:ring-2 focus:ring-violet-500/50"
+							/>
+							<span class="text-sm">Show completed tasks</span>
+						</p>
+					</div>
+
+					<TodoList
+						groups={goalGroups}
+						{allGoals}
+						onAddToGroup={(group) => addTodo(group.goalIndex)}
+						onUpdate={updateTodo}
+						onDelete={deleteTodo}
+						onToggleStatus={cycleTodoStatus}
+						onCreateNext={(todoId, group) => createNextTodo(todoId, group.goalIndex)}
+						onDeletePrevious={(todoId, group) => deleteAndFocusPrevious(todoId, group.goalIndex)}
+						onMakeSubtask={(todoId, group) => makeSubtask(todoId, group.goalIndex)}
+						onOutdent={(todoId) => outdentTodo(todoId)}
+						onTitleFocus={(id) => (activeTodoId = id)}
+						getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
+						canIndent={(todoId, group) => canIndentTodo(todoId, group.goalIndex)}
+						canOutdent={(todoId) => canOutdentTodo(todoId)}
+						disableAutoFocus={hasNoCustomTitle || isEditingGoal}
+						onCreateTodo={createTodoFromComposer}
+						onMoveTodo={moveTodo}
+						allowCrossListMove={false}
+						enableGroupDrag={false}
+					/>
+				{/if}
+			</div>
+		</div>
+
+		<div class="md:hidden overflow-hidden">
+			<div
+				class="flex w-[200%] transition-transform duration-300 ease-out"
+				style={`transform: translateX(${mobileMenuOpen ? '0%' : '-50%'});`}
+			>
+				<div class="w-1/2 pr-4">
+					<div class="todo-panel h-[calc(100vh-8rem)] overflow-y-auto p-3">
+						<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">Goals</h2>
+						<div class="space-y-1.5">
+							<a
+								href="/todo"
+								onclick={() => (mobileMenuOpen = false)}
+								class="flex items-center justify-between rounded-md border border-slate-700/70 px-3 py-2 text-sm transition hover:border-violet-500/50 hover:bg-violet-500/10"
+							>
+								<span>All Todos</span>
+								<span class="text-xs text-slate-400">{todos.filter((t) => t.status !== 'done').length}</span>
+							</a>
+							{#each goalMenuItems as item (item.id)}
+								<a
+									href={item.href}
+									onclick={() => (mobileMenuOpen = false)}
+									class={`flex items-center justify-between rounded-md border px-3 py-2 text-sm transition ${
+										item.goalIndex === goalIndex
+											? 'border-violet-500/40 bg-violet-500/15 text-violet-100'
+											: 'border-slate-700/70 hover:border-violet-500/50 hover:bg-violet-500/10'
+									}`}
+									aria-current={item.goalIndex === goalIndex ? 'page' : undefined}
+								>
+									<span class="truncate pr-3">{item.label}</span>
+									<span class={item.goalIndex === goalIndex ? 'text-xs text-violet-200/80' : 'text-xs text-slate-400'}>{item.count}</span>
+								</a>
+							{/each}
+						</div>
 					</div>
 				</div>
 
-				<!-- Color picker -->
-				<div class="mb-4 flex items-center justify-between gap-2">
-					<div class="flex gap-1">
-						{#each goalColors as color}
-							<button
-								type="button"
-								class="goal-color-button {selectedColor === color.value
-									? 'goal-color-selected'
-									: 'goal-color-unselected'} {color.preview || 'goal-color-default-bg'}"
-								title={color.label}
-								onclick={() => updateGoalColor(color.value)}
-							></button>
-						{/each}
+				<div class="w-1/2 pl-2">
+					<div class="mb-3">
+						<button
+							type="button"
+							onclick={() => (mobileMenuOpen = true)}
+							class="inline-flex items-center gap-1 rounded-md border border-slate-700 px-2.5 py-1 text-sm transition hover:border-violet-500/60 hover:bg-violet-500/10"
+						>
+							<ChevronLeft class="h-4 w-4" />
+						</button>
 					</div>
-					{#if isEditingGoal}
-						<div class="flex items-center gap-2">
-							<button
-								type="button"
-								onclick={clearGoal}
-								class="rounded-md border px-2 py-2 text-sm font-semibold shadow-sm transition hover:border-rose-500 hover:bg-rose-900/40 hover:text-rose-200"
-								title="Clear goal name and description"
-							>
-								<Trash2 class="w-4 h-4" />
-							</button>
-							<button
-								type="button"
-								onclick={saveGoalEdit}
-								class="rounded-md border border-violet-600/70 bg-violet-600/90 px-4 py-2 text-sm font-semibold text-black shadow-sm transition hover:bg-violet-500"
-							>
-								Save
-							</button>
-							<button
-								type="button"
-								onclick={cancelGoalEdit}
-								class="todo-desktop-cancel"
-							>
-								Cancel
-							</button>
+					{#if !dataLoaded}
+						<div class="flex items-center justify-center py-12">
+							<div class="goal-loading-message">Loading...</div>
 						</div>
+					{:else if goalIndex === null}
+						<div class="flex items-center justify-center py-12">
+							<div class="goal-loading-message">Invalid goal. Redirecting...</div>
+						</div>
+					{:else}
+						<div class="mb-6">
+							<div class="mb-4 flex items-center justify-between">
+								<div class="flex-1">
+									{#if isEditingGoal}
+										<div class="space-y-3">
+											<input
+												type="text"
+												bind:this={goalTitleInputElement}
+												bind:value={editedGoalTitle}
+												class="!text-2xl font-bold"
+												placeholder="Goal title"
+												onkeydown={(e) => {
+													if (e.key === 'Enter') {
+														e.preventDefault();
+														saveGoalEdit();
+													} else if (e.key === 'Escape') {
+														e.preventDefault();
+														cancelGoalEdit();
+													} else if (e.key === 'Tab' && !e.shiftKey && !editedGoalDescription) {
+														e.preventDefault();
+														setTimeout(() => {
+															if (goalDescriptionTextareaElement) goalDescriptionTextareaElement.focus();
+														}, 0);
+													}
+												}}
+											/>
+											<textarea
+												bind:this={goalDescriptionTextareaElement}
+												bind:value={editedGoalDescription}
+												class="!min-h-[6rem] resize-none"
+												placeholder="Add description (supports markdown)..."
+												onkeydown={(e) => {
+													if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+														e.preventDefault();
+														saveGoalEdit();
+													} else if (e.key === 'Escape') {
+														e.preventDefault();
+														cancelGoalEdit();
+													}
+												}}
+											></textarea>
+										</div>
+									{:else}
+										<button
+											type="button"
+											onclick={startEditingGoal}
+											class="text-left w-full cursor-pointer group"
+										>
+											<h1 class="goal-header-title">
+												{goalLabel || indexToNomenclature(goalIndex)}
+											</h1>
+											{#if goalMarkdown}
+												<div class="markdown mt-2 text-sm leading-relaxed transition-colors">
+													{@html renderMarkdown(goalMarkdown)}
+												</div>
+											{:else}
+												<div class="goal-header-placeholder">
+													Click to add description...
+												</div>
+											{/if}
+										</button>
+									{/if}
+								</div>
+								<div class="ml-4">
+									<SquareMap goal={indexToNomenclature(goalIndex)} {grid} />
+								</div>
+							</div>
+							<div class="mb-4 flex items-center justify-between gap-2">
+								<div class="flex gap-1">
+									{#each goalColors as color}
+										<button
+											type="button"
+											class="goal-color-button {selectedColor === color.value
+												? 'goal-color-selected'
+												: 'goal-color-unselected'} {color.preview || 'goal-color-default-bg'}"
+											title={color.label}
+											onclick={() => updateGoalColor(color.value)}
+										></button>
+									{/each}
+								</div>
+								{#if isEditingGoal}
+									<div class="flex items-center gap-2">
+										<button
+											type="button"
+											onclick={clearGoal}
+											class="rounded-md border px-2 py-2 text-sm font-semibold shadow-sm transition hover:border-rose-500 hover:bg-rose-900/40 hover:text-rose-200"
+											title="Clear goal name and description"
+										>
+											<Trash2 class="w-4 h-4" />
+										</button>
+										<button
+											type="button"
+											onclick={saveGoalEdit}
+											class="rounded-md border border-violet-600/70 bg-violet-600/90 px-4 py-2 text-sm font-semibold text-black shadow-sm transition hover:bg-violet-500"
+										>
+											Save
+										</button>
+										<button
+											type="button"
+											onclick={cancelGoalEdit}
+											class="todo-desktop-cancel"
+										>
+											Cancel
+										</button>
+									</div>
+								{/if}
+							</div>
+						</div>
+						<div class="mb-4 flex items-center justify-between">
+							<p class="flex items-center gap-2 cursor-pointer">
+								<input
+									type="checkbox"
+									bind:checked={showCompleted}
+									class="h-4 w-4 rounded border text-violet-600 focus:ring-2 focus:ring-violet-500/50"
+								/>
+								<span class="text-sm">Show completed tasks</span>
+							</p>
+						</div>
+						<TodoList
+							groups={goalGroups}
+							{allGoals}
+							onAddToGroup={(group) => addTodo(group.goalIndex)}
+							onUpdate={updateTodo}
+							onDelete={deleteTodo}
+							onToggleStatus={cycleTodoStatus}
+							onCreateNext={(todoId, group) => createNextTodo(todoId, group.goalIndex)}
+							onDeletePrevious={(todoId, group) => deleteAndFocusPrevious(todoId, group.goalIndex)}
+							onMakeSubtask={(todoId, group) => makeSubtask(todoId, group.goalIndex)}
+							onOutdent={(todoId) => outdentTodo(todoId)}
+							onTitleFocus={(id) => (activeTodoId = id)}
+							getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
+							canIndent={(todoId, group) => canIndentTodo(todoId, group.goalIndex)}
+							canOutdent={(todoId) => canOutdentTodo(todoId)}
+							disableAutoFocus={hasNoCustomTitle || isEditingGoal}
+							onCreateTodo={createTodoFromComposer}
+							onMoveTodo={moveTodo}
+							allowCrossListMove={false}
+							enableGroupDrag={false}
+						/>
 					{/if}
 				</div>
 			</div>
-
-			<!-- Show completed toggle -->
-			<div class="mb-4 flex items-center justify-between">
-				<p class="flex items-center gap-2 cursor-pointer">
-					<input
-						type="checkbox"
-						bind:checked={showCompleted}
-						class="h-4 w-4 rounded border text-violet-600 focus:ring-2 focus:ring-violet-500/50"
-					/>
-					<span class="text-sm">Show completed tasks</span>
-        </p>
-			</div>
-
-			<!-- Todo list -->
-			<TodoList
-				groups={goalGroups}
-				{allGoals}
-				onAddToGroup={(group) => addTodo(group.goalIndex)}
-				onUpdate={updateTodo}
-				onDelete={deleteTodo}
-				onToggleStatus={cycleTodoStatus}
-				onCreateNext={(todoId, group) => createNextTodo(todoId, group.goalIndex)}
-				onDeletePrevious={(todoId, group) => deleteAndFocusPrevious(todoId, group.goalIndex)}
-				onMakeSubtask={(todoId, group) => makeSubtask(todoId, group.goalIndex)}
-				onOutdent={(todoId) => outdentTodo(todoId)}
-				onTitleFocus={(id) => (activeTodoId = id)}
-				getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
-				canIndent={(todoId, group) => canIndentTodo(todoId, group.goalIndex)}
-				canOutdent={(todoId) => canOutdentTodo(todoId)}
-				disableAutoFocus={hasNoCustomTitle || isEditingGoal}
-				onCreateTodo={createTodoFromComposer}
-				onMoveTodo={moveTodo}
-				allowCrossListMove={false}
-				enableGroupDrag={false}
-			/>
-		{/if}
+		</div>
 	</div>
 	<Nav
 		{allGoals}

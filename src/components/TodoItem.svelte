@@ -368,8 +368,9 @@
 			aria-pressed={isPinned}
 		>
 			<Pin
-				class={`h-4 w-4 ${isPinned ? 'fill-current' : 'fill-none opacity-60'}`}
+				class={`h-4 w-4 ${isPinned ? '' : 'opacity-60'}`}
 				strokeWidth={2}
+				fill={isPinned ? 'currentColor' : 'none'}
 			/>
 		</button>
 		<button

@@ -128,7 +128,7 @@
 							onclick={prev}
 							class="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
 						>
-							Back
+							Goals
 						</button>
 					{/if}
 					{#if page < pages.length - 1}
