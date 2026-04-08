@@ -26,7 +26,7 @@
 	// Use store.harada_chart directly - it's reactive
 	const grid = $derived(store.harada_chart.grid);
 	const todos = $derived(store.harada_chart.todos.map((todo) => normalizeTodoListMeta(todo)));
-	const dataLoaded = $derived(!store.isLoading);
+	const dataLoaded = $derived(!store.isBootstrapping);
 	let activeTodoId = $state(null);
 	
 	// Goal editing state (declared early so it can be used in derived values)

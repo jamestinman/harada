@@ -15,6 +15,7 @@
 	import './layout.css';
 
 	let { children } = $props();
+	let lastAuthUserId = $state(undefined);
 
 	// Use icon.png for OG: favicon.png is 192×192 (below Meta/WhatsApp minimum 200×200 for link images)
 	const ogImageUrl = $derived(`${page.url.origin}/icon.png`);
@@ -26,7 +27,9 @@
 	// Watch for auth changes and (re)initialize Supabase sync when needed
 	$effect(() => {
 		if (!browser) return;
-		const user = authStore.user;
+		const userId = authStore.user?.id ?? null;
+		if (userId === lastAuthUserId) return;
+		lastAuthUserId = userId;
 		store.handleAuthChange();
 	});
 

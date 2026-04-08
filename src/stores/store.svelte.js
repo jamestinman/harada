@@ -6,7 +6,8 @@ import {
 	buildGoalListMeta,
 	buildCustomListMeta,
 	updateGoalTimestamp,
-	normalizeTodoListMeta
+	normalizeTodoListMeta,
+	mergeTodoLists
 } from '$lib/todoUtils.js';
 import { authStore } from './auth.svelte.js';
 
@@ -68,7 +69,9 @@ class Store {
 	currentGoalIndex = $state(null);
 	theme = $state(localGet('theme', 'light'));
 	saveStatus = $state('idle');
+	isBootstrapping = $state(true);
 	isLoading = $state(true);
+	isRefreshing = $state(false);
 	isOnline = $state(browser ? navigator.onLine : true);
 	syncError = $state(null);
   showHowItWorksModal = $state(false);
@@ -92,6 +95,7 @@ class Store {
 	_savingPromise = null;
 	_pendingSave = false;
 	_pendingCloudSync = false;
+	_refreshPromise = null;
 
 	constructor() {
 		if (!browser) return;
@@ -103,9 +107,20 @@ class Store {
 				this.saveNow();
 			}
 			if (!this._isInitialized) this.initialize();
+			if (this._isInitialized) this.refreshFromSupabase();
 		});
 		window.addEventListener('offline', () => {
 			this.isOnline = false;
+		});
+		document.addEventListener('visibilitychange', () => {
+			if (document.visibilityState === 'visible' && this._isInitialized) {
+				this.refreshFromSupabase();
+			}
+		});
+		window.addEventListener('focus', () => {
+			if (this._isInitialized) {
+				this.refreshFromSupabase();
+			}
 		});
 
 		this.initialize();
@@ -114,7 +129,7 @@ class Store {
 	async initialize() {
 		if (!browser || this._isInitialized) return;
 
-		this.isLoading = true;
+		this._setBootstrapping(true);
 
 		try {
 			// 1) Bootstrap from local persistent storage so the app works offline
@@ -128,7 +143,9 @@ class Store {
 					);
 					this.harada_chart = {
 						grid: normalizedLocalGrid,
-						todos: Array.isArray(local.todos) ? local.todos : []
+						todos: Array.isArray(local.todos)
+							? local.todos.map((todo) => normalizeTodoListMeta(todo))
+							: []
 					};
 				}
 			} catch (err) {
@@ -151,29 +168,12 @@ class Store {
 
 			// 3) If online and authenticated, hydrate from Supabase and overwrite local snapshot
 			const data = await this.loadFromSupabase();
-			if (data) {
-				const grid = Array.isArray(data.grid) ? data.grid : [];
-				// Ensure we always have exactly 81 cells
-				const normalizedGrid = Array.from(
-					{ length: 81 },
-					(_, i) => (grid[i] ? { ...defaultCell(), ...grid[i] } : defaultCell())
-				);
-				let nextGrid = normalizedGrid;
-				if (isGridBlank(nextGrid)) {
-					nextGrid = createSeededGrid();
-				}
-				this.harada_chart = {
-					grid: nextGrid,
-					todos: data.todos || []
-				};
-				// Persist the fresh cloud state locally for future offline use
-				await this._saveLocally();
-			}
+			if (data) await this._mergeAndApplyRemoteSnapshot(data, { persistLocal: true });
 		} catch (err) {
 			console.error('Failed to initialize from Supabase:', err);
 			this.syncError = err.message;
 		} finally {
-			this.isLoading = false;
+			this._setBootstrapping(false);
 			this._isInitialized = true;
 		}
 
@@ -181,6 +181,104 @@ class Store {
 		if (authStore.user && supabase) {
 			this._subscribeToRealtime();
 		}
+	}
+
+	_setBootstrapping(value) {
+		this.isBootstrapping = value;
+		this.isLoading = value;
+	}
+
+	async refreshFromSupabase() {
+		if (!browser || !this._isInitialized || !authStore.user || !supabase) return false;
+		if (this._refreshPromise) return this._refreshPromise;
+
+		this.isRefreshing = true;
+		this._refreshPromise = (async () => {
+			try {
+				const data = await this.loadFromSupabase();
+				if (!data) return false;
+				return await this._mergeAndApplyRemoteSnapshot(data, { persistLocal: true });
+			} catch (err) {
+				console.error('Background refresh failed:', err);
+				this.syncError = err.message;
+				return false;
+			} finally {
+				this.isRefreshing = false;
+				this._refreshPromise = null;
+			}
+		})();
+
+		return this._refreshPromise;
+	}
+
+	_normalizeGridSnapshot(gridSnapshot) {
+		const grid = Array.isArray(gridSnapshot) ? gridSnapshot : [];
+		let normalized = Array.from(
+			{ length: 81 },
+			(_, i) => (grid[i] ? { ...defaultCell(), ...grid[i] } : defaultCell())
+		);
+		if (isGridBlank(normalized)) normalized = createSeededGrid();
+		return normalized;
+	}
+
+	mergeGridByUpdatedAt(localGridSnapshot, remoteGridSnapshot) {
+		const localGrid = this._normalizeGridSnapshot(localGridSnapshot);
+		const remoteGrid = this._normalizeGridSnapshot(remoteGridSnapshot);
+		let changed = false;
+		const merged = localGrid.map((localCell, i) => {
+			const remoteCell = remoteGrid[i];
+			const localTime = localCell?.updated_at ? new Date(localCell.updated_at).getTime() : 0;
+			const remoteTime = remoteCell?.updated_at ? new Date(remoteCell.updated_at).getTime() : 0;
+			if (remoteTime > localTime) {
+				changed = true;
+				return remoteCell;
+			}
+			if (remoteTime === localTime && JSON.stringify(remoteCell) !== JSON.stringify(localCell)) {
+				changed = true;
+				return remoteCell;
+			}
+			return localCell;
+		});
+		return { merged, changed };
+	}
+
+	mergeTodosByUpdatedAt(localTodosSnapshot, remoteTodosSnapshot) {
+		const localTodos = Array.isArray(localTodosSnapshot)
+			? localTodosSnapshot.map((todo) => normalizeTodoListMeta(todo))
+			: [];
+		const remoteTodos = Array.isArray(remoteTodosSnapshot)
+			? remoteTodosSnapshot.map((todo) => normalizeTodoListMeta(todo))
+			: [];
+		const merged = mergeTodoLists(localTodos, remoteTodos).map((todo) => normalizeTodoListMeta(todo));
+		const changed =
+			merged.length !== localTodos.length ||
+			merged.some((todo, idx) => {
+				const local = localTodos[idx];
+				return !local || JSON.stringify(todo) !== JSON.stringify(local);
+			});
+		return { merged, changed };
+	}
+
+	async _mergeAndApplyRemoteSnapshot(data, { persistLocal = false } = {}) {
+		const nextRemoteGrid = this._normalizeGridSnapshot(data?.grid || []);
+		const nextRemoteTodos = Array.isArray(data?.todos) ? data.todos : [];
+		const gridMerge = this.mergeGridByUpdatedAt(this.harada_chart.grid, nextRemoteGrid);
+		const todoMerge = this.mergeTodosByUpdatedAt(this.harada_chart.todos, nextRemoteTodos);
+
+		if (!gridMerge.changed && !todoMerge.changed) return false;
+
+		if (gridMerge.changed) {
+			this.harada_chart = { ...this.harada_chart, grid: gridMerge.merged };
+		}
+		if (todoMerge.changed) {
+			await Promise.resolve();
+			this.harada_chart = { ...this.harada_chart, todos: todoMerge.merged };
+		}
+
+		if (persistLocal) {
+			await this._saveLocally();
+		}
+		return true;
 	}
 
   isNative() {
@@ -741,15 +839,17 @@ class Store {
 			// even though the user hasn't intentionally logged out. Keep local data intact
 			// so nothing is lost — it will sync when connectivity and session are restored.
 			if (!this.isOnline) {
-				this.isLoading = false;
+				this._setBootstrapping(false);
 				return;
 			}
 			// Logged out online — show a helpful seeded board for new/pre-login users
-			this.harada_chart = {
-				grid: createSeededGrid(),
-				todos: []
-			};
-			this.isLoading = false;
+			if ((this.harada_chart.todos || []).length === 0 && isGridBlank(this.harada_chart.grid)) {
+				this.harada_chart = {
+					grid: createSeededGrid(),
+					todos: []
+				};
+			}
+			this._setBootstrapping(false);
 			return;
 		}
 

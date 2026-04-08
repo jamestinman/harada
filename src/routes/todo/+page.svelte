@@ -20,7 +20,7 @@
   // Use store.harada_chart directly - it's reactive
 	const grid = $derived(store.harada_chart.grid);
 	const todos = $derived(store.harada_chart.todos.map((todo) => normalizeTodoListMeta(todo)));
-	const dataLoaded = $derived(!store.isLoading);
+	const dataLoaded = $derived(!store.isBootstrapping);
 	let activeTodoId = $state(null);
 
 	// Clear currentGoalIndex when on the all todos page

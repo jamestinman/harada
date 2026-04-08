@@ -3,7 +3,7 @@
 	import { nomenclatureToIndex, indexToNomenclature, canonicalGoalIndex, getLinkedGoalIndex } from '$lib/todoUtils.js';
 	import { store } from '$stores/store.svelte.js';
 
-	let { goal, grid = null } = $props();
+	let { goal, grid = null, interactive = true, className = '' } = $props();
 	
 	// Use store.harada_chart.grid if grid prop is not provided
 	const chartGrid = $derived(grid ?? store.harada_chart.grid);
@@ -39,33 +39,24 @@
 
 	// Get cell color for the mini-map dots
 	function getCellColor(index, cellType, isCurrentGoal) {
-
-		const customColor = chartGrid?.[index]?.color;
-
-    if (isCurrentGoal) {
-      return 'bg-orange-400';
-      if (customColor && customColor !== 'default') {
-        const bgMatch = customColor.match(/bg-(\w+)-(\d+)/);
-        if (bgMatch) {
-          const [, colorName, shade] = bgMatch;
-          return `bg-${colorName}-${shade}`;
-        }
-      }
-      return customColor;
-    }
+		if (isCurrentGoal) return 'bg-orange-400';
 
 		if (cellType === 'main') return 'squaremap-main-dot';
 		if (cellType === 'sub') return 'squaremap-sub-dot';
 		if (cellType === 'outer') return 'squaremap-outer-dot';
 		return 'squaremap-inner-dot';
 	}
+
 </script>
 
 <button
 	type="button"
-	class="squaremap-button {store.isLoading ? 'border-purple-500' : store.saveStatus == 'dirty' ? 'border-amber-500' : store.saveStatus == 'saving' ? 'border-red-500' : 'border-transparent'}"
-	onclick={() => goto('/')}
+	class={`squaremap-button ${store.isLoading ? 'border-purple-500' : store.saveStatus == 'dirty' ? 'border-amber-500' : store.saveStatus == 'saving' ? 'border-red-500' : 'border-transparent'} ${interactive ? '' : 'cursor-default active:scale-100'} ${className}`}
+	onclick={() => {
+		if (interactive) goto('/');
+	}}
 	title="View full Harada Chart"
+	aria-label="View full Harada Chart"
 >
 	{#each Array(9) as _, row}
 		<div class="flex gap-[1px]">
