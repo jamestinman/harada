@@ -1,5 +1,5 @@
 <script>
-	import { browser } from '$app/environment';
+	import { goto } from '$app/navigation';
 	import { store } from '$stores/store.svelte.js';
 	import { authStore } from '$stores/auth.svelte.js';
 	import {
@@ -486,6 +486,11 @@
 		}
 	}
 
+	function createNoteFromComposer() {
+		store.createNote({ goalIndex: null, content: '' });
+		goto('/notes');
+	}
+
 	function createNextTodo(currentTodoId, group) {
 		const currentTodo = store.harada_chart.todos.find((t) => t.id === currentTodoId);
 		if (!currentTodo) return null;
@@ -602,7 +607,7 @@
 	<div class="mx-auto max-w-7xl">
 		<div class="hidden gap-8 md:grid md:grid-cols-[18rem_minmax(0,1fr)]">
 			<aside class="todo-panel h-[calc(100vh-5.5rem)] overflow-y-auto p-3">
-				<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">Goals</h2>
+				<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">TO-DO</h2>
 				<div class="space-y-1.5">
 					<a
 						href="/todo"
@@ -675,7 +680,7 @@
 			>
 				<div class="w-1/2 pr-4">
 					<div class="todo-panel h-[calc(100vh-8rem)] overflow-y-auto p-3">
-						<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">Goals</h2>
+						<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">TO-DO</h2>
 						<div class="space-y-1.5">
 							<button
 								type="button"
@@ -755,5 +760,6 @@
 		{allGoals}
 		defaultGoalIndex={null}
 		onCreateTodo={createTodoFromComposer}
+		onCreateNote={createNoteFromComposer}
 	/>
 </div>

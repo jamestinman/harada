@@ -827,7 +827,7 @@ h4 {
 }
 
 .mobile-bottom-nav-links {
-  @apply grid grid-cols-2 py-3 text-center text-sm font-semibold;
+  @apply grid grid-cols-3 py-3 text-center text-sm font-semibold;
   .dark & {
     @apply text-slate-300;
   }
@@ -847,13 +847,25 @@ h4 {
 }
 
 .mobile-bottom-nav-fab {
-  @apply absolute left-1/2 top-0 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 bg-violet-600 p-0 text-3xl font-bold shadow-lg transition;
+  @apply relative mx-auto flex h-12 w-12 -translate-y-[70%] items-center justify-center rounded-full border-2 bg-violet-600 p-0 text-3xl font-bold shadow-lg transition pointer-events-auto;
   .dark & {
     @apply border-violet-300 text-slate-950 hover:bg-violet-500;
   }
   .light & {
     @apply border-violet-200 text-white hover:bg-violet-500;
   }
+}
+
+.mobile-bottom-nav-actions {
+  @apply absolute inset-x-0 top-0 grid grid-cols-3 pointer-events-none;
+}
+
+.mobile-bottom-nav-fab-task {
+  @apply col-start-2;
+}
+
+.mobile-bottom-nav-fab-note {
+  @apply col-start-3;
 }
 
 .mobile-menu-panel {
@@ -978,5 +990,70 @@ select {
 .markdown ul + p,
 .markdown ol + p {
   @apply mt-2;
+}
+
+.notes-markdown-display {
+  @apply cursor-text text-left rounded-md border p-4 outline-none;
+  .dark & {
+    @apply border-slate-700/50 bg-slate-950/40 text-slate-100;
+  }
+  .light & {
+    @apply border-slate-300 bg-white text-slate-900;
+  }
+}
+
+.notes-markdown-display:focus-visible {
+  @apply ring-2 ring-violet-500/50 ring-offset-1;
+  .dark & {
+    @apply ring-offset-slate-900;
+  }
+  .light & {
+    @apply ring-offset-white;
+  }
+}
+
+.notes-markdown-display li {
+  .dark & {
+    @apply text-slate-300;
+  }
+  .light & {
+    @apply !text-slate-800;
+  }
+}
+.notes-markdown-display li::marker {
+  .dark & {
+    @apply text-slate-500;
+  }
+  .light & {
+    @apply !text-slate-600;
+  }
+}
+.notes-markdown-display p {
+  .dark & {
+    @apply text-slate-200;
+  }
+  .light & {
+    @apply !text-slate-800;
+  }
+}
+.notes-markdown-display code {
+  .dark & {
+    @apply text-slate-100;
+  }
+  .light & {
+    @apply !text-slate-700;
+  }
+}
+
+.notes-markdown-display h1,
+.notes-markdown-display h2,
+.notes-markdown-display h3,
+.notes-markdown-display h4 {
+  .dark & {
+    @apply text-slate-100;
+  }
+  .light & {
+    @apply text-slate-900;
+  }
 }
 

@@ -1,7 +1,7 @@
 <script>
 	import { browser } from '$app/environment';
 	import { page } from '$app/state';
-	import { onNavigate } from '$app/navigation';
+import { goto, onNavigate } from '$app/navigation';
 	import { store } from '$stores/store.svelte.js';
 	import { authStore } from '$stores/auth.svelte.js';
 	import {
@@ -110,6 +110,20 @@
 		store.saveNow();
 	}
 
+	function createNoteFromComposer() {
+		const normalizedGoalIndex =
+			typeof store.currentGoalIndex === 'number'
+				? canonicalGoalIndex(store.currentGoalIndex)
+				: null;
+		store.createNote({ goalIndex: normalizedGoalIndex, content: '' });
+		store.currentGoalIndex = normalizedGoalIndex;
+		if (typeof normalizedGoalIndex === 'number') {
+			goto(`/notes/${indexToNomenclature(normalizedGoalIndex)}`);
+			return;
+		}
+		goto('/notes');
+	}
+
 	// Enable view transitions for all navigation
 	onNavigate((navigation) => {
 		if (!document.startViewTransition) return;
@@ -155,6 +169,7 @@
     {allGoals}
     defaultGoalIndex={null}
     onCreateTodo={createTodoFromComposer}
+    onCreateNote={createNoteFromComposer}
   />
 
 </div>

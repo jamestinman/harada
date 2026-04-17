@@ -26,7 +26,8 @@
 	let {
 		allGoals = [],
 		defaultGoalIndex = null,
-		onCreateTodo = null
+		onCreateTodo = null,
+		onCreateNote = null
 	} = $props();
 
   let showComposer = $state(false);
@@ -77,6 +78,11 @@ const clearAll = () => {
 			...listMeta
 		});
 		closeComposer();
+	}
+
+	function createNoteFromNav() {
+		if (!onCreateNote) return;
+		onCreateNote();
 	}
 
 	function sheet3d(_node, { duration = 240, distance = 24, angle = 4 } = {}) {
@@ -257,16 +263,27 @@ const clearAll = () => {
 	<div class="mobile-bottom-nav-inner {borderColorClass}">
 		<div class="mobile-bottom-nav-links">
 			<a href="/" class="mobile-bottom-nav-link">Harada</a>
-			<a href="/todo" class="mobile-bottom-nav-link">Todo</a>
+			<a href="/todo" class="mobile-bottom-nav-link">To-Do</a>
+			<a href="/notes" class="mobile-bottom-nav-link">Notes</a>
 		</div>
-		<button
-			type="button"
-			onclick={openComposer}
-			class="mobile-bottom-nav-fab"
-			aria-label="Add todo"
-		>
-			+
-		</button>
+		<div class="mobile-bottom-nav-actions">
+			<button
+				type="button"
+				onclick={openComposer}
+				class="mobile-bottom-nav-fab mobile-bottom-nav-fab-task"
+				aria-label="Add todo"
+			>
+				<span class="relative -translate-y-[1px] leading-none">+</span>
+			</button>
+			<button
+				type="button"
+				onclick={createNoteFromNav}
+				class="mobile-bottom-nav-fab mobile-bottom-nav-fab-note"
+				aria-label="Add note"
+			>
+				<span class="relative -translate-y-[1px] leading-none">+</span>
+			</button>
+		</div>
 	</div>
 </div>
 
@@ -311,7 +328,13 @@ const clearAll = () => {
 		href="/todo"
 		class="nav-desktop-link"
 	>
-		Todo
+		To-Do
+	</a>
+	<a
+		href="/notes"
+		class="nav-desktop-link"
+	>
+		Notes
 	</a>
   <!-- <button onclick={clearAll}>Clear</button> -->
 </nav>

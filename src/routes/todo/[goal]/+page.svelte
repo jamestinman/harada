@@ -8,6 +8,7 @@
 		nomenclatureToIndex,
 		indexToNomenclature,
 		renderMarkdown,
+		getNoteTitle,
 		defaultTodo,
 		canonicalGoalIndex,
 		getLinkedGoalIndex,
@@ -26,6 +27,7 @@
 	// Use store.harada_chart directly - it's reactive
 	const grid = $derived(store.harada_chart.grid);
 	const todos = $derived(store.harada_chart.todos.map((todo) => normalizeTodoListMeta(todo)));
+	const notes = $derived(store.notes);
 	const dataLoaded = $derived(!store.isBootstrapping);
 	let activeTodoId = $state(null);
 	
@@ -384,6 +386,19 @@
 		}))
 	);
 
+	const goalNotesSummary = $derived.by(() => {
+		if (typeof goalIndex !== 'number') return null;
+		const goalNotes = notes
+			.filter((note) => note.goalIndex === goalIndex)
+			.sort((a, b) => b.updatedAt - a.updatedAt);
+		if (goalNotes.length === 0) return null;
+		return {
+			count: goalNotes.length,
+			latestTitle: getNoteTitle(goalNotes[0].content),
+			href: `/notes/${indexToNomenclature(goalIndex)}`
+		};
+	});
+
 	let mobileMenuOpen = $state(false);
 
 	// When this goal has no todos, ensure one blank todo exists so the user can type immediately
@@ -479,6 +494,15 @@
 			activeTodoId = todo.id;
 		}
 		store.saveNow();
+	}
+
+	function createNoteFromComposer() {
+		if (goalIndex === null) {
+			goto('/notes');
+			return;
+		}
+		store.createNote({ goalIndex, content: '' });
+		goto(`/notes/${indexToNomenclature(goalIndex)}`);
 	}
 
 	function updateTodo(id, patch) {
@@ -799,7 +823,7 @@
 	<div class="mx-auto max-w-7xl">
 		<div class="hidden gap-8 md:grid md:grid-cols-[18rem_minmax(0,1fr)]">
 			<aside class="todo-panel h-[calc(100vh-5.5rem)] overflow-y-auto p-3">
-				<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">Goals</h2>
+				<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">TO-DO</h2>
 				<div class="space-y-1.5">
 					<a
 						href="/todo"
@@ -904,58 +928,70 @@
 							</div>
 						</div>
 
-						<div class="mb-4 flex items-center justify-between gap-2">
-							<div class="flex gap-1">
-								{#each goalColors as color}
-									<button
-										type="button"
-										class="goal-color-button {selectedColor === color.value
-											? 'goal-color-selected'
-											: 'goal-color-unselected'} {color.preview || 'goal-color-default-bg'}"
-										title={color.label}
-										onclick={() => updateGoalColor(color.value)}
-									></button>
-								{/each}
-							</div>
-							{#if isEditingGoal}
-								<div class="flex items-center gap-2">
-									<button
-										type="button"
-										onclick={clearGoal}
-										class="rounded-md border px-2 py-2 text-sm font-semibold shadow-sm transition hover:border-rose-500 hover:bg-rose-900/40 hover:text-rose-200"
-										title="Clear goal name and description"
-									>
-										<Trash2 class="w-4 h-4" />
-									</button>
-									<button
-										type="button"
-										onclick={saveGoalEdit}
-										class="rounded-md border border-violet-600/70 bg-violet-600/90 px-4 py-2 text-sm font-semibold text-black shadow-sm transition hover:bg-violet-500"
-									>
-										Save
-									</button>
-									<button
-										type="button"
-										onclick={cancelGoalEdit}
-										class="todo-desktop-cancel"
-									>
-										Cancel
-									</button>
-								</div>
-							{/if}
+					<div class="mb-4 flex flex-wrap items-center gap-2">
+						<div class="flex gap-1">
+							{#each goalColors as color}
+								<button
+									type="button"
+									class="goal-color-button {selectedColor === color.value
+										? 'goal-color-selected'
+										: 'goal-color-unselected'} {color.preview || 'goal-color-default-bg'}"
+									title={color.label}
+									onclick={() => updateGoalColor(color.value)}
+								></button>
+							{/each}
 						</div>
-					</div>
-
-					<div class="mb-4 flex items-center justify-between">
-						<p class="flex items-center gap-2 cursor-pointer">
+						<label class="flex cursor-pointer select-none items-center gap-1.5 text-sm text-slate-800 dark:text-slate-200">
 							<input
 								type="checkbox"
 								bind:checked={showCompleted}
-								class="h-4 w-4 rounded border text-violet-600 focus:ring-2 focus:ring-violet-500/50"
+								class="h-3.5 w-3.5 rounded border text-violet-600 focus:ring-2 focus:ring-violet-500/50"
 							/>
-							<span class="text-sm">Show completed tasks</span>
-						</p>
+							<span>Show completed</span>
+						</label>
+						<div class="ml-auto flex items-center gap-2">
+							{#if isEditingGoal}
+								<button
+									type="button"
+									onclick={clearGoal}
+									class="rounded-md border px-2 py-1.5 text-sm font-semibold shadow-sm transition hover:border-rose-500 hover:bg-rose-900/40 hover:text-rose-200"
+									title="Clear goal name and description"
+								>
+									<Trash2 class="w-4 h-4" />
+								</button>
+								<button
+									type="button"
+									onclick={saveGoalEdit}
+									class="rounded-md border border-violet-600/70 bg-violet-600/90 px-4 py-1.5 text-sm font-semibold text-black shadow-sm transition hover:bg-violet-500"
+								>
+									Save
+								</button>
+								<button
+									type="button"
+									onclick={cancelGoalEdit}
+									class="todo-desktop-cancel"
+								>
+									Cancel
+								</button>
+							{:else if goalNotesSummary}
+								<a
+									href={goalNotesSummary.href}
+									class="flex items-center gap-1.5 rounded border border-violet-400/40 bg-violet-500/5 px-2.5 py-1 text-xs transition hover:bg-violet-500/15"
+								>
+									<span class="font-semibold text-violet-400">{goalNotesSummary.count} note{goalNotesSummary.count === 1 ? '' : 's'}</span>
+									<span class="hidden max-w-[16rem] truncate text-slate-400 sm:inline">&middot; {goalNotesSummary.latestTitle}</span>
+								</a>
+							{:else}
+								<a
+									href={`/notes/${indexToNomenclature(goalIndex)}`}
+									class="rounded border border-dashed border-slate-700 px-2.5 py-1 text-xs text-slate-500 transition hover:border-violet-500/50 hover:text-violet-400"
+								>
+									+ Add note
+								</a>
+							{/if}
+						</div>
 					</div>
+				</div>
 
 					<TodoList
 						groups={goalGroups}
@@ -989,7 +1025,7 @@
 			>
 				<div class="w-1/2 pr-4">
 					<div class="todo-panel h-[calc(100vh-8rem)] overflow-y-auto p-3">
-						<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">Goals</h2>
+						<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">TO-DO</h2>
 						<div class="space-y-1.5">
 							<a
 								href="/todo"
@@ -1104,57 +1140,70 @@
 									<SquareMap goal={indexToNomenclature(goalIndex)} {grid} />
 								</div>
 							</div>
-							<div class="mb-4 flex items-center justify-between gap-2">
-								<div class="flex gap-1">
-									{#each goalColors as color}
-										<button
-											type="button"
-											class="goal-color-button {selectedColor === color.value
-												? 'goal-color-selected'
-												: 'goal-color-unselected'} {color.preview || 'goal-color-default-bg'}"
-											title={color.label}
-											onclick={() => updateGoalColor(color.value)}
-										></button>
-									{/each}
-								</div>
-								{#if isEditingGoal}
-									<div class="flex items-center gap-2">
-										<button
-											type="button"
-											onclick={clearGoal}
-											class="rounded-md border px-2 py-2 text-sm font-semibold shadow-sm transition hover:border-rose-500 hover:bg-rose-900/40 hover:text-rose-200"
-											title="Clear goal name and description"
-										>
-											<Trash2 class="w-4 h-4" />
-										</button>
-										<button
-											type="button"
-											onclick={saveGoalEdit}
-											class="rounded-md border border-violet-600/70 bg-violet-600/90 px-4 py-2 text-sm font-semibold text-black shadow-sm transition hover:bg-violet-500"
-										>
-											Save
-										</button>
-										<button
-											type="button"
-											onclick={cancelGoalEdit}
-											class="todo-desktop-cancel"
-										>
-											Cancel
-										</button>
-									</div>
-								{/if}
+						<div class="mb-4 flex flex-wrap items-center gap-2">
+							<div class="flex gap-1">
+								{#each goalColors as color}
+									<button
+										type="button"
+										class="goal-color-button {selectedColor === color.value
+											? 'goal-color-selected'
+											: 'goal-color-unselected'} {color.preview || 'goal-color-default-bg'}"
+										title={color.label}
+										onclick={() => updateGoalColor(color.value)}
+									></button>
+								{/each}
 							</div>
-						</div>
-						<div class="mb-4 flex items-center justify-between">
-							<p class="flex items-center gap-2 cursor-pointer">
+							<label class="flex cursor-pointer select-none items-center gap-1.5 text-sm text-slate-300">
 								<input
 									type="checkbox"
 									bind:checked={showCompleted}
-									class="h-4 w-4 rounded border text-violet-600 focus:ring-2 focus:ring-violet-500/50"
+									class="h-3.5 w-3.5 rounded border text-violet-600 focus:ring-2 focus:ring-violet-500/50"
 								/>
-								<span class="text-sm">Show completed tasks</span>
-							</p>
+								<span>Show completed</span>
+							</label>
+							<div class="ml-auto flex items-center gap-2">
+								{#if isEditingGoal}
+									<button
+										type="button"
+										onclick={clearGoal}
+										class="rounded-md border px-2 py-1.5 text-sm font-semibold shadow-sm transition hover:border-rose-500 hover:bg-rose-900/40 hover:text-rose-200"
+										title="Clear goal name and description"
+									>
+										<Trash2 class="w-4 h-4" />
+									</button>
+									<button
+										type="button"
+										onclick={saveGoalEdit}
+										class="rounded-md border border-violet-600/70 bg-violet-600/90 px-4 py-1.5 text-sm font-semibold text-black shadow-sm transition hover:bg-violet-500"
+									>
+										Save
+									</button>
+									<button
+										type="button"
+										onclick={cancelGoalEdit}
+										class="todo-desktop-cancel"
+									>
+										Cancel
+									</button>
+								{:else if goalNotesSummary}
+									<a
+										href={goalNotesSummary.href}
+										class="flex items-center gap-1.5 rounded border border-violet-400/40 bg-violet-500/5 px-2.5 py-1 text-xs transition hover:bg-violet-500/15"
+									>
+										<span class="font-semibold text-violet-400">{goalNotesSummary.count} note{goalNotesSummary.count === 1 ? '' : 's'}</span>
+										<span class="max-w-[10rem] truncate text-slate-400">&middot; {goalNotesSummary.latestTitle}</span>
+									</a>
+								{:else}
+									<a
+										href={`/notes/${indexToNomenclature(goalIndex)}`}
+										class="rounded border border-dashed border-slate-700 px-2.5 py-1 text-xs text-slate-500 transition hover:border-violet-500/50 hover:text-violet-400"
+									>
+										+ Add note
+									</a>
+								{/if}
+							</div>
 						</div>
+					</div>
 						<TodoList
 							groups={goalGroups}
 							{allGoals}
@@ -1185,5 +1234,6 @@
 		{allGoals}
 		defaultGoalIndex={goalIndex}
 		onCreateTodo={createTodoFromComposer}
+		onCreateNote={createNoteFromComposer}
 	/>
 </div>

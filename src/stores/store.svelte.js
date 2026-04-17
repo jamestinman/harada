@@ -7,7 +7,10 @@ import {
 	buildCustomListMeta,
 	updateGoalTimestamp,
 	normalizeTodoListMeta,
-	mergeTodoLists
+	mergeTodoLists,
+	defaultNote,
+	normalizeNote,
+	mergeNoteLists
 } from '$lib/todoUtils.js';
 import { authStore } from './auth.svelte.js';
 
@@ -85,6 +88,7 @@ class Store {
 		grid: Array.from({ length: 81 }, () => defaultCell()),
 		todos: []
 	});
+	notes = $state([]);
 
   getDefaultCell(i) {
     return defaultCell(i);
@@ -147,6 +151,9 @@ class Store {
 							? local.todos.map((todo) => normalizeTodoListMeta(todo))
 							: []
 					};
+					this.notes = Array.isArray(local.notes)
+						? local.notes.map((note) => normalizeNote(note))
+						: [];
 				}
 			} catch (err) {
 				console.error('Failed to load local Harada chart:', err);
@@ -259,13 +266,32 @@ class Store {
 		return { merged, changed };
 	}
 
+	mergeNotesByUpdatedAt(localNotesSnapshot, remoteNotesSnapshot) {
+		const localNotes = Array.isArray(localNotesSnapshot)
+			? localNotesSnapshot.map((note) => normalizeNote(note))
+			: [];
+		const remoteNotes = Array.isArray(remoteNotesSnapshot)
+			? remoteNotesSnapshot.map((note) => normalizeNote(note))
+			: [];
+		const merged = mergeNoteLists(localNotes, remoteNotes);
+		const changed =
+			merged.length !== localNotes.length ||
+			merged.some((note, idx) => {
+				const local = localNotes[idx];
+				return !local || JSON.stringify(note) !== JSON.stringify(local);
+			});
+		return { merged, changed };
+	}
+
 	async _mergeAndApplyRemoteSnapshot(data, { persistLocal = false } = {}) {
 		const nextRemoteGrid = this._normalizeGridSnapshot(data?.grid || []);
 		const nextRemoteTodos = Array.isArray(data?.todos) ? data.todos : [];
+		const nextRemoteNotes = Array.isArray(data?.notes) ? data.notes : [];
 		const gridMerge = this.mergeGridByUpdatedAt(this.harada_chart.grid, nextRemoteGrid);
 		const todoMerge = this.mergeTodosByUpdatedAt(this.harada_chart.todos, nextRemoteTodos);
+		const noteMerge = this.mergeNotesByUpdatedAt(this.notes, nextRemoteNotes);
 
-		if (!gridMerge.changed && !todoMerge.changed) return false;
+		if (!gridMerge.changed && !todoMerge.changed && !noteMerge.changed) return false;
 
 		if (gridMerge.changed) {
 			this.harada_chart = { ...this.harada_chart, grid: gridMerge.merged };
@@ -273,6 +299,10 @@ class Store {
 		if (todoMerge.changed) {
 			await Promise.resolve();
 			this.harada_chart = { ...this.harada_chart, todos: todoMerge.merged };
+		}
+		if (noteMerge.changed) {
+			await Promise.resolve();
+			this.notes = noteMerge.merged;
 		}
 
 		if (persistLocal) {
@@ -321,6 +351,18 @@ class Store {
 				},
 				(payload) => {
 					this._applyRealtimeTaskChange(payload);
+				}
+			)
+			.on(
+				'postgres_changes',
+				{
+					event: '*',
+					schema: 'public',
+					table: 'notes',
+					filter: `user_id=eq.${userId}`
+				},
+				(payload) => {
+					this._applyRealtimeNoteChange(payload);
 				}
 			)
 			.subscribe((status) => {
@@ -405,6 +447,38 @@ class Store {
 		}
 	}
 
+	_applyRealtimeNoteChange(payload) {
+		const { eventType, new: newRow, old: oldRow } = payload;
+		const id = newRow?.id || oldRow?.id;
+		if (!id) return;
+
+		if (eventType === 'DELETE' || newRow?.deleted_at) {
+			this.notes = this.notes.filter((note) => note.id !== id);
+			return;
+		}
+
+		const remoteNote = this._noteRowToNote(newRow);
+		if (!remoteNote) return;
+
+		if (eventType === 'INSERT') {
+			if (!this.notes.find((note) => note.id === remoteNote.id)) {
+				this.notes = [remoteNote, ...this.notes];
+			}
+			return;
+		}
+
+		if (eventType === 'UPDATE') {
+			const localNote = this.notes.find((note) => note.id === remoteNote.id);
+			const remoteUpdatedAt = remoteNote.updatedAt;
+			const localUpdatedAt = localNote?.updatedAt ?? 0;
+			if (remoteUpdatedAt > localUpdatedAt) {
+				this.notes = this.notes
+					.map((note) => (note.id === remoteNote.id ? remoteNote : note))
+					.sort((a, b) => b.updatedAt - a.updatedAt);
+			}
+		}
+	}
+
 	// --- Save ---
 
 	saveNow() {
@@ -465,6 +539,7 @@ class Store {
 			await this.saveToSupabase(
 				this.harada_chart.grid,
 				this.harada_chart.todos,
+				this.notes,
 				'My Harada Chart'
 			);
 		} catch (err) {
@@ -480,9 +555,13 @@ class Store {
 			const plainTodos = Array.isArray(this.harada_chart.todos)
 				? this.harada_chart.todos.map((t) => (t && typeof t === 'object' ? { ...t } : t))
 				: [];
+			const plainNotes = Array.isArray(this.notes)
+				? this.notes.map((note) => (note && typeof note === 'object' ? { ...note } : note))
+				: [];
 			await prefSet('harada_chart_local', {
 				grid: plainGrid,
 				todos: plainTodos,
+				notes: plainNotes,
 				savedAt: new Date().toISOString()
 			});
 		} catch (err) {
@@ -498,27 +577,36 @@ class Store {
 		try {
 			this.syncError = null;
 
-			const [chartResult, tasksResult] = await Promise.all([
+			const [chartResult, tasksResult, notesResult] = await Promise.all([
 				supabase.from('harada_charts').select('*').eq('user_id', authStore.user.id).single(),
-				supabase.from('tasks').select('*').eq('user_id', authStore.user.id)
+				supabase.from('tasks').select('*').eq('user_id', authStore.user.id),
+				supabase.from('notes').select('*').eq('user_id', authStore.user.id)
 			]);
 
 			const { data: chartData, error: chartError } = chartResult;
 			const { data: taskRows, error: tasksError } = tasksResult;
+			const { data: noteRows, error: notesError } = notesResult;
 
 			if (tasksError) throw tasksError;
+			if (notesError) throw notesError;
 			if (chartError && chartError.code !== 'PGRST116') throw chartError;
 
 			const todos = (taskRows || [])
 				.filter((row) => !row.deleted_at)
 				.map((row) => this._taskRowToTodo(row))
 				.filter(Boolean);
+			const notes = (noteRows || [])
+				.filter((row) => !row.deleted_at)
+				.map((row) => this._noteRowToNote(row))
+				.filter(Boolean)
+				.sort((a, b) => b.updatedAt - a.updatedAt);
 
-			if (!chartData && todos.length === 0) return null;
+			if (!chartData && todos.length === 0 && notes.length === 0) return null;
 
 			return {
 				grid: chartData?.grid || [],
 				todos,
+				notes,
 				title: chartData?.title || 'My Harada Chart'
 			};
 		} catch (err) {
@@ -528,7 +616,7 @@ class Store {
 		}
 	}
 
-	async saveToSupabase(gridSnapshot, todosSnapshot, title = 'My Harada Chart') {
+	async saveToSupabase(gridSnapshot, todosSnapshot, notesSnapshot, title = 'My Harada Chart') {
 		if (!browser || !authStore.user || !supabase) return false;
 
 		// If we're offline, remember that we have local changes that still need
@@ -553,12 +641,21 @@ class Store {
 			const taskRows = (todosSnapshot || [])
 				.map((todo) => this._todoToTaskRow(todo, authStore.user.id))
 				.filter(Boolean);
+			const noteRows = (notesSnapshot || [])
+				.map((note) => this._noteToRow(note, authStore.user.id))
+				.filter(Boolean);
 
 			if (taskRows.length > 0) {
 				const { error: tasksError } = await supabase.rpc('upsert_tasks_if_newer', {
 					in_rows: taskRows
 				});
 				if (tasksError) throw tasksError;
+			}
+			if (noteRows.length > 0) {
+				const { error: notesError } = await supabase.rpc('upsert_notes_if_newer', {
+					in_rows: noteRows
+				});
+				if (notesError) throw notesError;
 			}
 
 			this._pendingCloudSync = false;
@@ -631,6 +728,41 @@ class Store {
 				typeof normalized.ordering === 'number' && Number.isFinite(normalized.ordering)
 					? normalized.ordering
 					: createdAtMs,
+			created_at: new Date(createdAtMs).toISOString(),
+			updated_at: new Date(updatedAtMs).toISOString(),
+			deleted_at: null
+		};
+	}
+
+	_noteRowToNote(row) {
+		if (!row || typeof row !== 'object' || typeof row.id !== 'string') return null;
+		const updatedAt = row.updated_at ? new Date(row.updated_at).getTime() : Date.now();
+		const createdAt = row.created_at ? new Date(row.created_at).getTime() : updatedAt;
+		return normalizeNote({
+			id: row.id,
+			goalIndex: typeof row.goal_index === 'number' ? row.goal_index : null,
+			content: typeof row.content === 'string' ? row.content : '',
+			createdAt,
+			updatedAt
+		});
+	}
+
+	_noteToRow(note, userId) {
+		if (!note || typeof note.id !== 'string') return null;
+		const normalized = normalizeNote(note);
+		const updatedAtMs =
+			typeof normalized.updatedAt === 'number' && Number.isFinite(normalized.updatedAt)
+				? normalized.updatedAt
+				: Date.now();
+		const createdAtMs =
+			typeof normalized.createdAt === 'number' && Number.isFinite(normalized.createdAt)
+				? normalized.createdAt
+				: updatedAtMs;
+		return {
+			id: normalized.id,
+			user_id: userId,
+			goal_index: typeof normalized.goalIndex === 'number' ? normalized.goalIndex : null,
+			content: typeof normalized.content === 'string' ? normalized.content : '',
 			created_at: new Date(createdAtMs).toISOString(),
 			updated_at: new Date(updatedAtMs).toISOString(),
 			deleted_at: null
@@ -826,6 +958,54 @@ class Store {
 		this.saveNow();
 	}
 
+	createNote({ goalIndex = null, content = '' } = {}) {
+		const note = defaultNote({ goalIndex, content });
+		this.notes = [note, ...this.notes];
+		this.saveNow();
+		return note;
+	}
+
+	updateNote(id, patch = {}) {
+		if (!id || !patch) return;
+		const ts = Date.now();
+		this.notes = this.notes
+			.map((note) => {
+				if (note.id !== id) return note;
+				return normalizeNote({
+					...note,
+					...patch,
+					goalIndex:
+						typeof patch.goalIndex === 'number'
+							? patch.goalIndex
+							: patch.goalIndex === null
+								? null
+								: note.goalIndex,
+					updatedAt: ts
+				});
+			})
+			.sort((a, b) => b.updatedAt - a.updatedAt);
+		this.saveNow();
+	}
+
+	deleteNote(id) {
+		if (!id) return;
+		this.notes = this.notes.filter((note) => note.id !== id);
+
+		if (browser && authStore.user && supabase) {
+			const now = new Date().toISOString();
+			supabase
+				.from('notes')
+				.update({ deleted_at: now, updated_at: now })
+				.eq('id', id)
+				.eq('user_id', authStore.user.id)
+				.then(({ error }) => {
+					if (error) console.error('Failed to soft-delete note:', error);
+				});
+		}
+
+		this.saveNow();
+	}
+
 	// --- Auth ---
 
 	handleAuthChange() {
@@ -848,6 +1028,7 @@ class Store {
 					grid: createSeededGrid(),
 					todos: []
 				};
+				this.notes = [];
 			}
 			this._setBootstrapping(false);
 			return;
@@ -908,6 +1089,7 @@ class Store {
 			grid: Array.from({ length: 81 }, (_, i) => defaultCell()),
 			todos: []
 		};
+		this.notes = [];
     localSet('harada_onboarding_seen', false);
     console.log("Grid is now:",this.harada_chart.grid);
 		this.saveNow();

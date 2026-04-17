@@ -24,6 +24,24 @@ export function defaultTodo() {
 	};
 }
 
+export function createNoteId() {
+	return `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
+export function defaultNote({ goalIndex = null, content = '' } = {}) {
+	const now = Date.now();
+	return {
+		id: createNoteId(),
+		goalIndex:
+			typeof goalIndex === 'number' && !Number.isNaN(goalIndex)
+				? canonicalGoalIndex(goalIndex)
+				: null,
+		content: typeof content === 'string' ? content : '',
+		createdAt: now,
+		updatedAt: now
+	};
+}
+
 function slugifyListName(name) {
 	return String(name || '')
 		.trim()
@@ -110,6 +128,43 @@ export function normalizeTodoListMeta(todo) {
 		ordering: normalizedOrdering,
 		pinned: todo?.pinned === true
 	};
+}
+
+export function normalizeNote(note) {
+	if (!note || typeof note !== 'object') return defaultNote();
+	const createdAt =
+		typeof note.createdAt === 'number' && Number.isFinite(note.createdAt)
+			? note.createdAt
+			: Date.now();
+	const updatedAt =
+		typeof note.updatedAt === 'number' && Number.isFinite(note.updatedAt)
+			? note.updatedAt
+			: createdAt;
+	return {
+		id: typeof note.id === 'string' && note.id ? note.id : createNoteId(),
+		goalIndex:
+			typeof note.goalIndex === 'number' && !Number.isNaN(note.goalIndex)
+				? canonicalGoalIndex(note.goalIndex)
+				: null,
+		content: typeof note.content === 'string' ? note.content : '',
+		createdAt,
+		updatedAt
+	};
+}
+
+export function mergeNoteLists(localNotes, remoteNotes) {
+	const safeLocal = Array.isArray(localNotes) ? localNotes.map((note) => normalizeNote(note)) : [];
+	const safeRemote = Array.isArray(remoteNotes) ? remoteNotes.map((note) => normalizeNote(note)) : [];
+	const byId = new Map();
+
+	for (const note of [...safeLocal, ...safeRemote]) {
+		const existing = byId.get(note.id);
+		if (!existing || note.updatedAt > existing.updatedAt) {
+			byId.set(note.id, note);
+		}
+	}
+
+	return [...byId.values()].sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 // Merge two todo arrays by id, preferring the todo with the newer updatedAt timestamp
@@ -233,6 +288,26 @@ marked.use({
 export function renderMarkdown(md) {
 	if (!md) return '';
 	return marked.parse(md);
+}
+
+export function getNoteTitle(markdown, fallback = 'Untitled') {
+	if (typeof markdown !== 'string') return fallback;
+	const firstLine = markdown.split(/\r?\n/, 1)[0]?.trim() || '';
+	if (!firstLine) return fallback;
+	const withoutHashes = firstLine.replace(/^#+\s*/, '').trim();
+	return withoutHashes || fallback;
+}
+
+export function renderNoteMarkdown(markdown) {
+	if (typeof markdown !== 'string' || markdown.trim() === '') return '';
+	const lines = markdown.split(/\r?\n/);
+	const firstLine = (lines[0] || '').trim();
+	if (!firstLine || firstLine.startsWith('#')) {
+		return renderMarkdown(markdown);
+	}
+	const rest = lines.slice(1).join('\n').trim();
+	const withHeading = rest ? `# ${firstLine}\n\n${rest}` : `# ${firstLine}`;
+	return renderMarkdown(withHeading);
 }
 
 // Convert grid index to chess-like nomenclature (e.g., 40 -> "E5")

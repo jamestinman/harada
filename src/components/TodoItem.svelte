@@ -3,7 +3,8 @@
 	import {
 		indexToNomenclature,
 		NEW_LIST_OPTION_VALUE,
-		parseListSelection
+		parseListSelection,
+		renderMarkdown
 	} from '$lib/todoUtils.js';
 	import SquareMap from './SquareMap.svelte';
 	import GoalSelect from './GoalSelect.svelte';
@@ -36,15 +37,31 @@
 
 	let isEditing = $state(false);
 	let isEditingTitle = $state(false);
+	let isEditingMarkdown = $state(false);
 	let showMobileEditor = $state(false);
 	let editTitle = $state('');
 	let editMarkdown = $state('');
 	let editListValue = $state('');
 	let editNewListName = $state('');
 	let titleInputElement = $state(null);
+	let markdownTextareaElement = $state(null);
+	let markdownPreviewElement = $state(null);
 	let isCreatingNext = $state(false);
 
 	const hasNotes = $derived((todo.markdown || '').trim().length > 0);
+	const inlineNotePreview = $derived.by(() => {
+		const raw = (todo.markdown || '').trim();
+		if (!raw) return '';
+		const firstNonEmptyLine = raw
+			.split(/\r?\n/)
+			.map((line) => line.trim())
+			.find((line) => line.length > 0);
+		if (!firstNonEmptyLine) return '';
+		return firstNonEmptyLine
+			.replace(/^#+\s*/, '')
+			.replace(/[*_`~[\]]/g, '')
+			.trim();
+	});
 	const isPinned = $derived(todo.pinned === true);
 	const showOutdentAction = $derived(!canIndent && canOutdent);
 	const isNewEmptyTodo = $derived(
@@ -190,13 +207,28 @@
 			editListValue = typeof todo.goalIndex === 'number' ? String(todo.goalIndex) : '';
 			editNewListName = '';
 		}
-		
+
 		// Check if mobile (window width < 768px)
 		if (typeof window !== 'undefined' && window.innerWidth < 768) {
 			showMobileEditor = true;
 		} else {
 			isEditing = true;
+			isEditingMarkdown = false;
 		}
+	}
+
+	function enterMarkdownEdit() {
+		if (isEditingMarkdown) return;
+		const previewHeight = markdownPreviewElement?.offsetHeight ?? null;
+		isEditingMarkdown = true;
+		setTimeout(() => {
+			if (markdownTextareaElement) {
+				if (previewHeight) markdownTextareaElement.style.height = `${previewHeight}px`;
+				markdownTextareaElement.focus();
+				const len = markdownTextareaElement.value.length;
+				markdownTextareaElement.setSelectionRange(len, len);
+			}
+		}, 0);
 	}
 
 	function saveChanges() {
@@ -208,6 +240,7 @@
 			...listMeta
 		});
 		isEditing = false;
+		isEditingMarkdown = false;
 		showMobileEditor = false;
 	}
 
@@ -219,6 +252,7 @@
 
 	function cancelEdit() {
 		isEditing = false;
+		isEditingMarkdown = false;
 		showMobileEditor = false;
 	}
 
@@ -306,16 +340,23 @@
 		{:else}
 			<button
 				type="button"
-				onclick={startEditingTitle}
+				onclick={hasNotes ? startEditingNotes : startEditingTitle}
 				class={`flex-1 text-left text-sm min-h-[1.5rem] py-1 transition ${
 					todo.status === 'done'
 						? 'line-through'
 						: ''
 				}`}
 			>
-				<span class={!todo.title || todo.title.trim() === '' ? 'opacity-0' : ''}>
-					{todo.title || '\u00A0'}
-				</span>
+				<div class="flex flex-col">
+					<span class={!todo.title || todo.title.trim() === '' ? 'opacity-0' : ''}>
+						{todo.title || '\u00A0'}
+					</span>
+					{#if hasNotes}
+						<div class="max-h-16 overflow-hidden text-xs leading-relaxed opacity-70">
+							{inlineNotePreview}
+						</div>
+					{/if}
+				</div>
 			</button>
 		{/if}
 
@@ -414,10 +455,24 @@
 
 		<!-- Notes -->
 		<div class="mb-3">
-			<textarea
-				bind:value={editMarkdown}
-				placeholder=""
-			></textarea>
+			{#if isEditingMarkdown || !editMarkdown.trim()}
+				<textarea
+					bind:this={markdownTextareaElement}
+					bind:value={editMarkdown}
+					placeholder="Add notes in markdown..."
+				></textarea>
+			{:else}
+				<div
+					bind:this={markdownPreviewElement}
+					role="button"
+					tabindex="0"
+					class="notes-markdown-display markdown"
+					onclick={enterMarkdownEdit}
+					onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && enterMarkdownEdit()}
+				>
+					{@html renderMarkdown(editMarkdown)}
+				</div>
+			{/if}
 		</div>
 
 
