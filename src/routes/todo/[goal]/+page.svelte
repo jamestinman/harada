@@ -1,4 +1,5 @@
 <script>
+	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
@@ -21,8 +22,14 @@
 	} from '$lib/todoUtils.js';
 	import SquareMap from '$components/SquareMap.svelte';
 	import TodoList from '$components/TodoList.svelte';
-	import Nav from '$components/Nav.svelte';
-	import { Trash2, ChevronLeft } from 'lucide-svelte';
+	import WorkspaceToolbar from '$components/WorkspaceToolbar.svelte';
+	import { navComposerHandlers } from '$stores/navComposerHandlers.svelte.js';
+	import {
+		persistTodoMobileSidebar,
+		readTodoMobileSidebarOpen,
+		isWorkspaceNarrowLayout
+	} from '$lib/workspaceNavResume.js';
+	import { Trash2 } from 'lucide-svelte';
 
 	// Use store.harada_chart directly - it's reactive
 	const grid = $derived(store.harada_chart.grid);
@@ -30,6 +37,7 @@
 	const notes = $derived(store.notes);
 	const dataLoaded = $derived(!store.isBootstrapping);
 	let activeTodoId = $state(null);
+	let searchText = $state('');
 	
 	// Goal editing state (declared early so it can be used in derived values)
 	let isEditingGoal = $state(false);
@@ -199,6 +207,17 @@
 		}
 		const cell = grid[goalIndex];
 		return (cell?.readme ?? '').trim();
+	});
+
+	// Keep editor draft state aligned with the currently viewed goal whenever
+	// we're not actively editing. This prevents stale/blank drafts from carrying
+	// over during route changes or initial page hydration.
+	$effect(() => {
+		if (goalIndex === null || isEditingGoal) return;
+		const cell = grid[goalIndex];
+		editedGoalTitle = (cell?.text ?? '').trim();
+		editedGoalDescription = (cell?.readme ?? '').trim();
+		selectedColor = cell?.color || 'default';
 	});
 
 	// Update selectedColor when goal changes (but not while editing to prevent reactivity issues)
@@ -400,6 +419,21 @@
 	});
 
 	let mobileMenuOpen = $state(false);
+	let mobileSidebarHydrated = $state(false);
+
+	onMount(() => {
+		if (isWorkspaceNarrowLayout() && readTodoMobileSidebarOpen()) {
+			mobileMenuOpen = true;
+		}
+		mobileSidebarHydrated = true;
+	});
+
+	$effect(() => {
+		if (!browser || !mobileSidebarHydrated) return;
+		if (!page.url.pathname.startsWith('/todo')) return;
+		if (!isWorkspaceNarrowLayout()) return;
+		persistTodoMobileSidebar(mobileMenuOpen);
+	});
 
 	// When this goal has no todos, ensure one blank todo exists so the user can type immediately
 	$effect(() => {
@@ -504,6 +538,12 @@
 		store.createNote({ goalIndex, content: '' });
 		goto(`/notes/${indexToNomenclature(goalIndex)}`);
 	}
+
+	$effect(() => {
+		navComposerHandlers.onCreateTodo = createTodoFromComposer;
+		navComposerHandlers.onCreateNote = createNoteFromComposer;
+		return () => navComposerHandlers.clear();
+	});
 
 	function updateTodo(id, patch) {
 		store.updateTodo(id, patch);
@@ -719,12 +759,16 @@
 		
 		const title = editedGoalTitle.trim();
 		const description = editedGoalDescription.trim();
+		const existingTitle = (store.harada_chart.grid[goalIndex]?.text ?? '').trim();
+		// Prevent accidental blank saves from wiping an existing custom title.
+		// Use the explicit clear action when users want to remove title + description.
+		const finalTitle = title === '' && existingTitle ? existingTitle : title;
 		
 		// Update grid
 		if (!store.harada_chart.grid[goalIndex]) {
 			store.harada_chart.grid[goalIndex] = { text: '', status: 'todo', readme: '', color: 'default', updated_at: null };
 		}
-		store.harada_chart.grid[goalIndex].text = title;
+		store.harada_chart.grid[goalIndex].text = finalTitle;
 		store.harada_chart.grid[goalIndex].readme = description;
 		store.harada_chart.grid[goalIndex].color = selectedColor;
 		updateGoalTimestamp(store.harada_chart.grid, goalIndex);
@@ -734,7 +778,7 @@
 			if (!store.harada_chart.grid[linkedGoalIndex]) {
 				store.harada_chart.grid[linkedGoalIndex] = { text: '', status: 'todo', readme: '', color: 'default', updated_at: null };
 			}
-			store.harada_chart.grid[linkedGoalIndex].text = title;
+			store.harada_chart.grid[linkedGoalIndex].text = finalTitle;
 			store.harada_chart.grid[linkedGoalIndex].readme = description;
 			store.harada_chart.grid[linkedGoalIndex].status = store.harada_chart.grid[goalIndex].status;
 			store.harada_chart.grid[linkedGoalIndex].color = selectedColor;
@@ -821,6 +865,17 @@
 
 <div class="p-4 pb-24 md:p-8 md:pb-8">
 	<div class="mx-auto max-w-7xl">
+		<div class="mb-3 md:hidden">
+			<WorkspaceToolbar
+				mode="mobile"
+				bind:searchText
+				showSidebarToggle={!mobileMenuOpen}
+				onSidebarToggle={() => (mobileMenuOpen = true)}
+				showHamburger={false}
+				composeTabDefault="task"
+			/>
+		</div>
+
 		<div class="hidden gap-8 md:grid md:grid-cols-[18rem_minmax(0,1fr)]">
 			<aside class="todo-panel h-[calc(100vh-5.5rem)] overflow-y-auto p-3">
 				<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">TO-DO</h2>
@@ -859,6 +914,9 @@
 						<div class="goal-loading-message">Invalid goal. Redirecting...</div>
 					</div>
 				{:else}
+					<div class="mb-6 hidden md:block">
+						<WorkspaceToolbar mode="desktop" bind:searchText composeTabDefault="task" />
+					</div>
 					<!-- Header -->
 					<div class="mb-6">
 						<div class="mb-4 flex items-center justify-between">
@@ -1013,6 +1071,7 @@
 						onMoveTodo={moveTodo}
 						allowCrossListMove={false}
 						enableGroupDrag={false}
+						searchText={searchText}
 					/>
 				{/if}
 			</div>
@@ -1055,15 +1114,6 @@
 				</div>
 
 				<div class="w-1/2 pl-2">
-					<div class="mb-3">
-						<button
-							type="button"
-							onclick={() => (mobileMenuOpen = true)}
-							class="inline-flex items-center gap-1 rounded-md border border-slate-700 px-2.5 py-1 text-sm transition hover:border-violet-500/60 hover:bg-violet-500/10"
-						>
-							<ChevronLeft class="h-4 w-4" />
-						</button>
-					</div>
 					{#if !dataLoaded}
 						<div class="flex items-center justify-center py-12">
 							<div class="goal-loading-message">Loading...</div>
@@ -1224,16 +1274,11 @@
 							onMoveTodo={moveTodo}
 							allowCrossListMove={false}
 							enableGroupDrag={false}
+							searchText={searchText}
 						/>
 					{/if}
 				</div>
 			</div>
 		</div>
 	</div>
-	<Nav
-		{allGoals}
-		defaultGoalIndex={goalIndex}
-		onCreateTodo={createTodoFromComposer}
-		onCreateNote={createNoteFromComposer}
-	/>
 </div>

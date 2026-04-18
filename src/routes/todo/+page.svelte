@@ -1,5 +1,8 @@
 <script>
+	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
+	import { browser } from '$app/environment';
 	import { store } from '$stores/store.svelte.js';
 	import { authStore } from '$stores/auth.svelte.js';
 	import {
@@ -12,8 +15,13 @@
 		updateGoalTimestamp
 	} from '$lib/todoUtils.js';
 	import TodoList from '$components/TodoList.svelte';
-	import Nav from '$components/Nav.svelte';
-	import { ChevronLeft } from 'lucide-svelte';
+	import WorkspaceToolbar from '$components/WorkspaceToolbar.svelte';
+	import { navComposerHandlers } from '$stores/navComposerHandlers.svelte.js';
+	import {
+		persistTodoMobileSidebar,
+		readTodoMobileSidebarOpen,
+		isWorkspaceNarrowLayout
+	} from '$lib/workspaceNavResume.js';
 
 	let searchText = $state('');
 
@@ -374,6 +382,40 @@
 	);
 
 	let mobileMenuOpen = $state(false);
+	let mobileSidebarHydrated = $state(false);
+
+	onMount(() => {
+		if (isWorkspaceNarrowLayout() && readTodoMobileSidebarOpen()) {
+			mobileMenuOpen = true;
+		}
+		mobileSidebarHydrated = true;
+	});
+
+	$effect(() => {
+		if (!browser || !mobileSidebarHydrated) return;
+		if (!page.url.pathname.startsWith('/todo')) return;
+		if (!isWorkspaceNarrowLayout()) return;
+		persistTodoMobileSidebar(mobileMenuOpen);
+	});
+
+	let lastTodoSidebarPulseSynced = $state(-1);
+
+	$effect(() => {
+		const pulse = store.todoSidebarPulse;
+		const path = (page.url.pathname || '/').replace(/\/+$/, '') || '/';
+		if (path !== '/todo') {
+			lastTodoSidebarPulseSynced = pulse;
+			return;
+		}
+		if (lastTodoSidebarPulseSynced < 0) {
+			lastTodoSidebarPulseSynced = pulse;
+			return;
+		}
+		if (pulse !== lastTodoSidebarPulseSynced) {
+			lastTodoSidebarPulseSynced = pulse;
+			mobileMenuOpen = true;
+		}
+	});
 
 	const goalMenuItems = $derived.by(() =>
 		getVisibleGoalGroupsByOrdering().map((group) => ({
@@ -491,6 +533,12 @@
 		goto('/notes');
 	}
 
+	$effect(() => {
+		navComposerHandlers.onCreateTodo = createTodoFromComposer;
+		navComposerHandlers.onCreateNote = createNoteFromComposer;
+		return () => navComposerHandlers.clear();
+	});
+
 	function createNextTodo(currentTodoId, group) {
 		const currentTodo = store.harada_chart.todos.find((t) => t.id === currentTodoId);
 		if (!currentTodo) return null;
@@ -605,6 +653,17 @@
 
 <div class="p-4 pb-24 md:p-8 md:pb-8">
 	<div class="mx-auto max-w-7xl">
+		<div class="mb-3 md:hidden">
+			<WorkspaceToolbar
+				mode="mobile"
+				bind:searchText
+				showSidebarToggle={!mobileMenuOpen}
+				onSidebarToggle={() => (mobileMenuOpen = true)}
+				showHamburger={false}
+				composeTabDefault="task"
+			/>
+		</div>
+
 		<div class="hidden gap-8 md:grid md:grid-cols-[18rem_minmax(0,1fr)]">
 			<aside class="todo-panel h-[calc(100vh-5.5rem)] overflow-y-auto p-3">
 				<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">TO-DO</h2>
@@ -630,22 +689,12 @@
 			</aside>
 
 			<div class="min-w-0">
-				<div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-					<div class="flex-1">
-						<div class="flex flex-row gap-5 justify-between w-full">
-							<h1>Todo</h1>
-							<input
-								type="text"
-								placeholder="Search"
-								bind:value={searchText}
-								class="w-full rounded-md border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-100 placeholder:text-slate-500 shadow-sm focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/60"
-							/>
-						</div>
-						<p class="page-subtitle">
-							{allTodos.length} todo{allTodos.length !== 1 ? 's' : ''} across {todoGroups.filter((g) => g.id !== 'no-goal').length} goal{todoGroups.filter((g) => g.id !== 'no-goal').length !== 1 ? 's' : ''}
-						</p>
-					</div>
+				<div class="mb-6 hidden md:block">
+					<WorkspaceToolbar mode="desktop" bind:searchText composeTabDefault="task" />
 				</div>
+				<p class="page-subtitle mb-6">
+					{allTodos.length} todo{allTodos.length !== 1 ? 's' : ''} across {todoGroups.filter((g) => g.id !== 'no-goal').length} goal{todoGroups.filter((g) => g.id !== 'no-goal').length !== 1 ? 's' : ''}
+				</p>
 				<TodoList
 					groups={todoGroups}
 					isMainTodoFeed={true}
@@ -705,29 +754,9 @@
 				</div>
 
 				<div class="w-1/2 pl-2">
-					<div class="mb-3">
-						<button
-							type="button"
-							onclick={() => (mobileMenuOpen = true)}
-							class="inline-flex items-center gap-1 rounded-md border border-slate-700 px-2.5 py-1 text-sm transition hover:border-violet-500/60 hover:bg-violet-500/10"
-						>
-							<ChevronLeft class="h-4 w-4" />
-						</button>
-					</div>
-					<div class="mb-6 flex flex-col gap-3">
-						<div class="flex flex-row gap-3 justify-between w-full items-center">
-							<h1>Todo</h1>
-							<input
-								type="text"
-								placeholder="Search"
-								bind:value={searchText}
-								class="w-full rounded-md border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-100 placeholder:text-slate-500 shadow-sm focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/60"
-							/>
-						</div>
-						<p class="page-subtitle">
-							{allTodos.length} todo{allTodos.length !== 1 ? 's' : ''} across {todoGroups.filter((g) => g.id !== 'no-goal').length} goal{todoGroups.filter((g) => g.id !== 'no-goal').length !== 1 ? 's' : ''}
-						</p>
-					</div>
+					<p class="page-subtitle mb-4">
+						{allTodos.length} todo{allTodos.length !== 1 ? 's' : ''} across {todoGroups.filter((g) => g.id !== 'no-goal').length} goal{todoGroups.filter((g) => g.id !== 'no-goal').length !== 1 ? 's' : ''}
+					</p>
 					<TodoList
 						groups={todoGroups}
 						isMainTodoFeed={true}
@@ -756,10 +785,4 @@
 			</div>
 		</div>
 	</div>
-	<Nav
-		{allGoals}
-		defaultGoalIndex={null}
-		onCreateTodo={createTodoFromComposer}
-		onCreateNote={createNoteFromComposer}
-	/>
 </div>

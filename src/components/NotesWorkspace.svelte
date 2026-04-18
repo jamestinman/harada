@@ -1,5 +1,8 @@
 <script>
+	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
+	import { browser } from '$app/environment';
 	import { store } from '$stores/store.svelte.js';
 	import {
 		canonicalGoalIndex,
@@ -9,7 +12,13 @@
 		renderNoteMarkdown
 	} from '$lib/todoUtils.js';
 	import GoalSelect from './GoalSelect.svelte';
-	import { ChevronLeft } from 'lucide-svelte';
+	import WorkspaceToolbar from './WorkspaceToolbar.svelte';
+	import { ChevronLeft, Trash2 } from 'lucide-svelte';
+	import {
+		persistNotesMobileSidebar,
+		readNotesMobileSidebarOpen,
+		isWorkspaceNarrowLayout
+	} from '$lib/workspaceNavResume.js';
 
 	let { goalParam = null } = $props();
 
@@ -17,6 +26,29 @@
 	const notes = $derived(store.notes);
 	const dataLoaded = $derived(!store.isBootstrapping);
 	let mobileMenuOpen = $state(false);
+	let mobileSidebarHydrated = $state(false);
+	let searchText = $state('');
+
+	onMount(() => {
+		if (isWorkspaceNarrowLayout() && readNotesMobileSidebarOpen()) {
+			mobileMenuOpen = true;
+		}
+		mobileSidebarHydrated = true;
+	});
+
+	$effect(() => {
+		if (!browser || !mobileSidebarHydrated) return;
+		if (!page.url.pathname.startsWith('/notes')) return;
+		if (!isWorkspaceNarrowLayout()) return;
+		persistNotesMobileSidebar(mobileMenuOpen);
+	});
+
+	function noteMatchesQuery(note, q) {
+		if (!q) return true;
+		const t = getNoteTitle(note.content).toLowerCase();
+		const body = (note.content ?? '').toLowerCase();
+		return t.includes(q) || body.includes(q);
+	}
 
 	const goalIndices = Array.from({ length: 81 }, (_, i) => i);
 	function getGoalLabelFromIndex(index) {
@@ -51,14 +83,19 @@
 	});
 
 	const filteredNotes = $derived.by(() => {
-		if (typeof scopedGoalIndex !== 'number') return [...notes].sort((a, b) => b.updatedAt - a.updatedAt);
-		return notes
-			.filter((note) => note.goalIndex === scopedGoalIndex)
-			.sort((a, b) => b.updatedAt - a.updatedAt);
+		const base =
+			typeof scopedGoalIndex !== 'number'
+				? [...notes].sort((a, b) => b.updatedAt - a.updatedAt)
+				: notes
+						.filter((note) => note.goalIndex === scopedGoalIndex)
+						.sort((a, b) => b.updatedAt - a.updatedAt);
+		const q = searchText.trim().toLowerCase();
+		if (!q) return base;
+		return base.filter((note) => noteMatchesQuery(note, q));
 	});
 
 	const goalNotesCount = $derived.by(() => {
-		if (typeof selectedNote?.goalIndex !== 'number') return 0;
+		if (selectedNote?.goalIndex && typeof selectedNote?.goalIndex !== 'number') return 0;
 		return notes.filter((n) => n.goalIndex === selectedNote.goalIndex).length;
 	});
 
@@ -71,6 +108,7 @@
 	});
 
 	let selectedNoteId = $state(null);
+	let resumeNoteId = $state(store.lastOpenedNoteId);
 	let isEditing = $state(false);
 	let editContent = $state('');
 	let editGoalValue = $state('');
@@ -79,9 +117,9 @@
 	let shouldAutoEdit = $state(false);
 	let lastSavedContent = $state('');
 	let lastSavedGoalIndex = $state(null);
-let previousSelectedNoteId = $state(null);
+  let previousSelectedNoteId = $state(null);
 
-	const selectedNote = $derived.by(() => {
+	var selectedNote = $derived.by(() => {
 		if (selectedNoteId) {
 			const fromId = filteredNotes.find((note) => note.id === selectedNoteId);
 			if (fromId) return fromId;
@@ -91,6 +129,55 @@ let previousSelectedNoteId = $state(null);
 
 	$effect(() => {
 		store.currentGoalIndex = typeof scopedGoalIndex === 'number' ? scopedGoalIndex : null;
+	});
+
+	$effect(() => {
+		if (!browser) return;
+		const path = page.url.pathname;
+		if (!path.startsWith('/notes')) {
+			store.notesMobileDetailOpen = false;
+			return;
+		}
+		// Align with Tailwind lg:hidden (bottom nav / mobile layout): max-width 1023px
+		const narrow =
+			typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches;
+		store.notesMobileDetailOpen = narrow && !!selectedNote && !mobileMenuOpen;
+	});
+
+	$effect(() => {
+		if (!browser) return;
+		if (!page.url.pathname.startsWith('/notes')) return;
+		if (store.notesRevealListDrawer) {
+			mobileMenuOpen = true;
+			store.notesRevealListDrawer = false;
+		}
+	});
+
+	$effect(() => {
+		const pending = store.pendingSelectNoteId;
+		if (!pending) return;
+		if (!dataLoaded) return;
+		const note = notes.find((n) => n.id === pending);
+		if (!note) {
+			store.pendingSelectNoteId = null;
+			return;
+		}
+		store.pendingSelectNoteId = null;
+		selectedNoteId = pending;
+		mobileMenuOpen = false;
+	});
+
+	// Restore the last-viewed note when navigating back to the notes section.
+	$effect(() => {
+		if (!resumeNoteId) return;
+		if (!dataLoaded) return;
+		const target = resumeNoteId;
+		resumeNoteId = null;
+		const note = filteredNotes.find((n) => n.id === target);
+		if (note) {
+			selectedNoteId = note.id;
+			mobileMenuOpen = false;
+		}
 	});
 
 	$effect(() => {
@@ -146,17 +233,6 @@ async function showGoalNotesOnMobile(goalIndex) {
 	await goto(`/notes/${indexToNomenclature(goalIndex)}`);
 }
 
-	function createNoteForCurrentView() {
-		const goalIndex = typeof scopedGoalIndex === 'number' ? scopedGoalIndex : null;
-		const note = store.createNote({ goalIndex, content: '' });
-		selectedNoteId = note.id;
-		editContent = '';
-		editGoalValue = typeof goalIndex === 'number' ? String(goalIndex) : '';
-		shouldAutoEdit = true;
-		isEditing = true;
-		mobileMenuOpen = false;
-	}
-
 	function getGoalIndexFromEditValue() {
 		const parsedGoal = editGoalValue === '' ? null : canonicalGoalIndex(Number(editGoalValue));
 		return Number.isNaN(parsedGoal) ? null : parsedGoal;
@@ -198,6 +274,9 @@ async function showGoalNotesOnMobile(goalIndex) {
 	function deleteNote() {
 		if (!selectedNote) return;
 		const deletingId = selectedNote.id;
+		if (deletingId === store.lastOpenedNoteId) {
+			store.clearLastOpenedNote();
+		}
 		store.deleteNote(deletingId);
 		const remaining = filteredNotes.filter((note) => note.id !== deletingId);
 		selectedNoteId = remaining[0]?.id || null;
@@ -206,6 +285,7 @@ async function showGoalNotesOnMobile(goalIndex) {
 
 	function selectNote(noteId) {
 		selectedNoteId = noteId;
+		store.recordLastOpenedNote(noteId);
 		isEditing = false;
 		shouldAutoEdit = false;
 		mobileMenuOpen = false;
@@ -224,10 +304,41 @@ async function showGoalNotesOnMobile(goalIndex) {
 			}
 		}, 0);
 	}
+
+	const notesDeleteToolbarButtonClass =
+		'shrink-0 inline-flex h-9 w-9 items-center justify-center rounded-md border border-rose-600/80 bg-rose-600 text-white transition hover:bg-rose-500';
 </script>
+
+{#snippet notesDeleteToolbarTrailing()}
+	{#if selectedNote}
+		<button
+			type="button"
+			onclick={deleteNote}
+			class={notesDeleteToolbarButtonClass}
+			aria-label="Delete note"
+		>
+			<Trash2 class="h-5 w-5" strokeWidth={2} />
+		</button>
+	{/if}
+{/snippet}
 
 <div class="p-4 pb-24 md:p-8 md:pb-8">
 	<div class="mx-auto max-w-7xl">
+		<div class="mb-3 md:hidden">
+			<WorkspaceToolbar
+				mode="mobile"
+				bind:searchText
+				showSidebarToggle={!mobileMenuOpen}
+				onSidebarToggle={() => (mobileMenuOpen = true)}
+				showHamburger={false}
+				composeTabDefault="note"
+			>
+				{#snippet trailing()}
+					{@render notesDeleteToolbarTrailing()}
+				{/snippet}
+			</WorkspaceToolbar>
+		</div>
+
 		<div class="hidden gap-8 md:grid md:grid-cols-[18rem_minmax(0,1fr)]">
 			<aside class="todo-panel h-[calc(100vh-5.5rem)] overflow-y-auto p-3">
 				<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">NOTES</h2>
@@ -235,6 +346,7 @@ async function showGoalNotesOnMobile(goalIndex) {
 					<div class="mb-3 flex items-center gap-2 p-1">
 						<a
 							href="/notes"
+							onclick={() => store.clearLastOpenedNote()}
 							class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-500 text-slate-700 transition hover:border-violet-500/60 hover:bg-violet-500/10 dark:text-slate-200"
 							aria-label="Back to all notes"
 						>
@@ -268,12 +380,17 @@ async function showGoalNotesOnMobile(goalIndex) {
 						</button>
 					{/each}
 				</div>
-				<div class="mt-3">
-					<button type="button" onclick={createNoteForCurrentView} class="rounded-btn w-full">+ New note</button>
-				</div>
 			</aside>
 
 			<div class="min-w-0">
+				<div class="mb-6 hidden md:block">
+					<WorkspaceToolbar mode="desktop" bind:searchText composeTabDefault="note">
+						{#snippet trailing()}
+							{@render notesDeleteToolbarTrailing()}
+						{/snippet}
+					</WorkspaceToolbar>
+				</div>
+
 				{#if !dataLoaded}
 					<div class="goal-loading-message py-10">Loading notes...</div>
 				{:else if hasInvalidGoal}
@@ -312,7 +429,6 @@ async function showGoalNotesOnMobile(goalIndex) {
 								{#if isEditing || isNoteEmpty(selectedNote)}
 									<button type="button" onclick={saveNote} class="rounded-md border border-violet-600/70 bg-violet-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-violet-500">Save</button>
 								{/if}
-								<button type="button" onclick={deleteNote} class="rounded-md border border-rose-600/70 bg-rose-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-rose-500">Delete</button>
 							</div>
 						</div>
 
@@ -364,6 +480,7 @@ async function showGoalNotesOnMobile(goalIndex) {
 							<div class="mb-3 flex items-center gap-2 p-1">
 								<a
 									href="/notes"
+									onclick={() => store.clearLastOpenedNote()}
 									class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-500 text-slate-700 transition hover:border-violet-500/60 hover:bg-violet-500/10 dark:text-slate-200"
 									aria-label="Back to all notes"
 								>
@@ -396,21 +513,11 @@ async function showGoalNotesOnMobile(goalIndex) {
 									<div class="truncate text-xs text-slate-400">{formatUpdatedAt(note.updatedAt)}</div>
 								</button>
 							{/each}
-							<button type="button" onclick={createNoteForCurrentView} class="rounded-btn w-full">+ New note</button>
 						</div>
 					</div>
 				</div>
 
 				<div class="w-1/2 pl-2">
-					<div class="mb-3">
-						<button
-							type="button"
-							onclick={() => (mobileMenuOpen = true)}
-							class="inline-flex items-center gap-1 rounded-md border border-slate-700 px-2.5 py-1 text-sm transition hover:border-violet-500/60 hover:bg-violet-500/10"
-						>
-							<ChevronLeft class="h-4 w-4" />
-						</button>
-					</div>
 					{#if !selectedNote}
 						<div class="todo-empty-section-card">
 							<p class="todo-empty-section-text">No notes yet for this view.</p>
@@ -446,7 +553,6 @@ async function showGoalNotesOnMobile(goalIndex) {
 						{#if isEditing || isNoteEmpty(selectedNote)}
 							<button type="button" onclick={saveNote} class="rounded-md border border-violet-600/70 bg-violet-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-violet-500">Save</button>
 						{/if}
-						<button type="button" onclick={deleteNote} class="rounded-md border border-rose-600/70 bg-rose-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-rose-500">Delete</button>
 					</div>
 						{#if isEditing || isNoteEmpty(selectedNote)}
 							<div class="mb-3">

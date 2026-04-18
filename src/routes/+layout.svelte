@@ -1,7 +1,7 @@
 <script>
 	import { browser } from '$app/environment';
 	import { page } from '$app/state';
-import { goto, onNavigate } from '$app/navigation';
+	import { afterNavigate, goto, onNavigate } from '$app/navigation';
 	import { store } from '$stores/store.svelte.js';
 	import { authStore } from '$stores/auth.svelte.js';
 	import {
@@ -12,6 +12,7 @@ import { goto, onNavigate } from '$app/navigation';
 		buildGoalListMeta
 	} from '$lib/todoUtils.js';
 	import Nav from '$components/Nav.svelte';
+	import { persistWorkspacePath } from '$lib/workspaceNavResume.js';
 	import './layout.css';
 
 	let { children } = $props();
@@ -31,6 +32,57 @@ import { goto, onNavigate } from '$app/navigation';
 		if (userId === lastAuthUserId) return;
 		lastAuthUserId = userId;
 		store.handleAuthChange();
+	});
+
+	// Remember last To-Do / Notes URLs after each navigation (more reliable than tracking page in an effect).
+	if (browser) {
+		afterNavigate(({ to }) => {
+			if (to?.url) persistWorkspacePath(to.url.pathname);
+		});
+	}
+
+	function parseAppDeepLink(url) {
+		if (!url) return null;
+		try {
+			const parsed = new URL(url);
+			const host = parsed.hostname.toLowerCase();
+			if (host !== 'haradato.com' && host !== 'www.haradato.com') return null;
+			const target = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+			return target || '/';
+		} catch {
+			return null;
+		}
+	}
+
+	// Handle universal links/deep links opened from outside the app.
+	$effect(() => {
+		if (!browser) return;
+
+		let cleanup = () => {};
+		import('@capacitor/app')
+			.then(async ({ App }) => {
+				const launch = await App.getLaunchUrl();
+				const launchPath = parseAppDeepLink(launch?.url);
+				if (launchPath) {
+					goto(launchPath, { replaceState: true });
+				}
+
+				const listener = await App.addListener('appUrlOpen', (event) => {
+					const path = parseAppDeepLink(event?.url);
+					if (path) {
+						goto(path, { replaceState: true });
+					}
+				});
+
+				cleanup = () => {
+					listener.remove();
+				};
+			})
+			.catch(() => {
+				// Capacitor App plugin is unavailable in plain web context.
+			});
+
+		return () => cleanup();
 	});
 
 	// Hide iOS keyboard accessory bar (Done/Prev/Next) so it doesn’t overlap the bottom nav

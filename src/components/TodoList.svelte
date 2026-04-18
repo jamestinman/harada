@@ -152,7 +152,8 @@
 		const query = (searchText ?? '').trim().toLowerCase();
 		if (!query) return true;
 		const title = (todo?.title ?? '').toLowerCase();
-		return title.includes(query);
+		const md = (todo?.markdown ?? '').toLowerCase();
+		return title.includes(query) || md.includes(query);
 	}
 
 	function groupMatchesSearch(group) {

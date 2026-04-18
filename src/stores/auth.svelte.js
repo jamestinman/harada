@@ -1,5 +1,10 @@
 import { supabase } from '$lib/supabaseClient.js';
 import { browser } from '$app/environment';
+import {
+	getEmailConfirmationRedirectUrl,
+	getOAuthRedirectUrl,
+	getPasswordRecoveryRedirectUrl
+} from '$lib/authRedirect.js';
 
 const LAST_USER_KEY = 'harada_last_user';
 
@@ -112,7 +117,12 @@ class AuthStore {
 				throw new Error('Supabase is not configured. Please set up your .env file.');
 			}
 
-			const { data, error } = await supabase.auth.signUp({ email, password });
+			const emailRedirectTo = getEmailConfirmationRedirectUrl();
+			const { data, error } = await supabase.auth.signUp({
+				email,
+				password,
+				...(emailRedirectTo ? { options: { emailRedirectTo } } : {})
+			});
 			if (error) throw error;
 
 			if (data.user && !data.session) {
@@ -168,11 +178,10 @@ class AuthStore {
 				throw new Error('Supabase is not configured. Please set up your .env file.');
 			}
 
+			const redirectTo = getOAuthRedirectUrl();
 			const { data, error } = await supabase.auth.signInWithOAuth({
 				provider,
-				options: {
-					redirectTo: browser ? window.location.origin : undefined
-				}
+				...(redirectTo ? { options: { redirectTo } } : {})
 			});
 
 			if (error) throw error;
@@ -218,8 +227,9 @@ class AuthStore {
 			this.error = null;
 			this.loading = true;
 
+			const redirectTo = getPasswordRecoveryRedirectUrl();
 			const { error } = await supabase.auth.resetPasswordForEmail(email, {
-				redirectTo: browser ? `${window.location.origin}/reset-password` : undefined
+				...(redirectTo ? { redirectTo } : {})
 			});
 
 			if (error) throw error;

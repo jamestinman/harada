@@ -1,0 +1,13 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "X9Y64YWU3X.com.haradato.app",
+        "paths": [
+          "/reset-password*"
+        ]
+      }
+    ]
+  }
+}

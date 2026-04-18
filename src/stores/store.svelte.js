@@ -1,4 +1,5 @@
 import { browser } from '$app/environment';
+import { Capacitor } from '@capacitor/core';
 import { localGet, localSet, prefGet, prefSet } from '$lib/PersistentStorage.mjs';
 import { supabase } from '$lib/supabaseClient.js';
 import { synthStore } from './synth.svelte.js';
@@ -79,6 +80,62 @@ class Store {
 	syncError = $state(null);
   showHowItWorksModal = $state(false);
 
+	/** Shared mobile slide-over menu (Nav panel); toggled from todo/notes headers too */
+	mobileNavMenuOpen = $state(false);
+	composerPanelOpen = $state(false);
+	composerPanelTab = $state(/** @type {'task' | 'note'} */ ('task'));
+
+	openComposerPanel(tab = 'task') {
+		this.composerPanelTab = tab === 'note' ? 'note' : 'task';
+		this.composerPanelOpen = true;
+	}
+
+	closeComposerPanel() {
+		this.composerPanelOpen = false;
+	}
+
+	toggleMobileNavMenu() {
+		this.mobileNavMenuOpen = !this.mobileNavMenuOpen;
+	}
+
+	/**
+	 * Incremented when the To-Do bottom-nav item should open the goals sidebar on /todo.
+	 * (Boolean flags on class instances are easy to miss in $effect deps; a counter is reliable.)
+	 */
+	todoSidebarPulse = $state(0);
+
+	requestTodoSidebarOpen() {
+		this.todoSidebarPulse += 1;
+	}
+
+	/** True until NotesWorkspace opens the list drawer (bottom nav → list from note detail) */
+	notesRevealListDrawer = $state(false);
+
+	pulseNotesOpenList() {
+		this.notesRevealListDrawer = true;
+	}
+
+	/** Last note the user explicitly opened (mobile bottom nav MRU); persisted */
+	lastOpenedNoteId = $state(/** @type {string | null} */ (null));
+
+	/** One-shot: select this note after navigation (MRU / deep focus) */
+	pendingSelectNoteId = $state(/** @type {string | null} */ (null));
+
+	/** Mobile notes: right panel showing note content (not list drawer) */
+	notesMobileDetailOpen = $state(false);
+
+	recordLastOpenedNote(noteId) {
+		const id = noteId ?? null;
+		this.lastOpenedNoteId = id;
+		if (!browser) return;
+		if (id) localSet('harada_last_note_id', id);
+		else localStorage.removeItem('harada_last_note_id');
+	}
+
+	clearLastOpenedNote() {
+		this.recordLastOpenedNote(null);
+	}
+
   setTheme(value) {
     this.theme = value;
     localSet('theme', value);
@@ -103,6 +160,15 @@ class Store {
 
 	constructor() {
 		if (!browser) return;
+
+		try {
+			const v = localGet('harada_last_note_id', null);
+			if (v && typeof v === 'string') {
+				this.lastOpenedNoteId = v;
+			}
+		} catch {
+			// ignore
+		}
 
 		window.addEventListener('online', () => {
 			this.isOnline = true;
