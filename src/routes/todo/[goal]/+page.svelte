@@ -530,12 +530,12 @@
 		store.saveNow();
 	}
 
-	function createNoteFromComposer() {
+	function createNoteFromComposer(content = '') {
 		if (goalIndex === null) {
 			goto('/notes');
 			return;
 		}
-		store.createNote({ goalIndex, content: '' });
+		store.createNote({ goalIndex, content });
 		goto(`/notes/${indexToNomenclature(goalIndex)}`);
 	}
 

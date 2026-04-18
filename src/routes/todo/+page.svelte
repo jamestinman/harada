@@ -528,8 +528,8 @@
 		}
 	}
 
-	function createNoteFromComposer() {
-		store.createNote({ goalIndex: null, content: '' });
+	function createNoteFromComposer(content = '') {
+		store.createNote({ goalIndex: null, content });
 		goto('/notes');
 	}
 

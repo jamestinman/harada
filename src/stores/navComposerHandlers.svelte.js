@@ -4,7 +4,7 @@
  */
 class NavComposerHandlers {
 	onCreateTodo = $state(/** @type {null | ((payload: unknown) => void)} */ (null));
-	onCreateNote = $state(/** @type {null | (() => void)} */ (null));
+	onCreateNote = $state(/** @type {null | ((content: string) => void)} */ (null));
 
 	clear() {
 		this.onCreateTodo = null;

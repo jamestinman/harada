@@ -46,6 +46,7 @@
 	let composerMarkdown = $state('');
 	let composerGoalValue = $state('');
 	let composerNewListName = $state('');
+	let composerNoteContent = $state('');
 	let composerTitleInputElement = $state(null);
   let showSettingsModal = $state(false);
   let showAuthModal = $state(false);
@@ -68,8 +69,9 @@ const clearAll = () => {
 	$effect(() => {
 		const open = store.composerPanelOpen;
 		if (open && !composerWasOpen) {
-			composerTitle = '';
-			composerMarkdown = '';
+		composerTitle = '';
+		composerMarkdown = '';
+		composerNoteContent = '';
 			const activeGoalIndex =
 				typeof store.currentGoalIndex === 'number'
 					? store.currentGoalIndex
@@ -104,7 +106,7 @@ const clearAll = () => {
 
 	function submitNoteTab() {
 		if (!effectiveCreateNote) return;
-		effectiveCreateNote();
+		effectiveCreateNote(composerNoteContent.trim());
 		closeComposer();
 	}
 
@@ -480,9 +482,12 @@ const clearAll = () => {
 					</button>
 				</div>
 			{:else}
-				<p class="mb-4 text-sm text-slate-400">
-					Creates a new note using your current goal context when applicable, then opens it for editing.
-				</p>
+				<textarea
+					bind:value={composerNoteContent}
+					placeholder="Write your note…"
+					class="composer-textarea mb-4 min-h-[12rem]"
+					autofocus
+				></textarea>
 				<button
 					type="button"
 					onclick={submitNoteTab}

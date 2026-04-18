@@ -310,6 +310,19 @@ export function renderNoteMarkdown(markdown) {
 	return renderMarkdown(withHeading);
 }
 
+/** Everything after the first line (first line is the note title for list/detail chrome). */
+export function getNoteBodyMarkdown(markdown) {
+	if (typeof markdown !== 'string') return '';
+	const lines = markdown.split(/\r?\n/);
+	return lines.slice(1).join('\n').trim();
+}
+
+export function renderNoteBodyMarkdown(markdown) {
+	const body = getNoteBodyMarkdown(markdown);
+	if (!body) return '';
+	return renderMarkdown(body);
+}
+
 // Convert grid index to chess-like nomenclature (e.g., 40 -> "E5")
 export function indexToNomenclature(index) {
 	const row = Math.floor(index / 9) + 1; // 1-9

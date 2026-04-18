@@ -162,12 +162,12 @@
 		store.saveNow();
 	}
 
-	function createNoteFromComposer() {
+	function createNoteFromComposer(content = '') {
 		const normalizedGoalIndex =
 			typeof store.currentGoalIndex === 'number'
 				? canonicalGoalIndex(store.currentGoalIndex)
 				: null;
-		store.createNote({ goalIndex: normalizedGoalIndex, content: '' });
+		store.createNote({ goalIndex: normalizedGoalIndex, content });
 		store.currentGoalIndex = normalizedGoalIndex;
 		if (typeof normalizedGoalIndex === 'number') {
 			goto(`/notes/${indexToNomenclature(normalizedGoalIndex)}`);

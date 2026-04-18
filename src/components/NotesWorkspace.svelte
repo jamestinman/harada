@@ -1,5 +1,5 @@
 <script>
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { browser } from '$app/environment';
@@ -9,7 +9,7 @@
 		indexToNomenclature,
 		nomenclatureToIndex,
 		getNoteTitle,
-		renderNoteMarkdown
+		renderNoteBodyMarkdown
 	} from '$lib/todoUtils.js';
 	import GoalSelect from './GoalSelect.svelte';
 	import WorkspaceToolbar from './WorkspaceToolbar.svelte';
@@ -34,6 +34,9 @@
 			mobileMenuOpen = true;
 		}
 		mobileSidebarHydrated = true;
+		const onResize = () => resizeTextarea({ force: true });
+		window.addEventListener('resize', onResize);
+		return () => window.removeEventListener('resize', onResize);
 	});
 
 	$effect(() => {
@@ -112,8 +115,10 @@
 	let isEditing = $state(false);
 	let editContent = $state('');
 	let editGoalValue = $state('');
-	let editTextareaElement = $state(null);
-	let markdownPreviewElement = $state(null);
+	let editTextareaDesktop = $state(null);
+	let editTextareaMobile = $state(null);
+	/** Used so we refit height when the note changes, but not on every keystroke (preserves drag-resize). */
+	let prevNoteIdForTextareaResize = null;
 	let shouldAutoEdit = $state(false);
 	let lastSavedContent = $state('');
 	let lastSavedGoalIndex = $state(null);
@@ -291,17 +296,63 @@ async function showGoalNotesOnMobile(goalIndex) {
 		mobileMenuOpen = false;
 	}
 
+	function activeNoteTextareaEl() {
+		if (!browser) return null;
+		return window.matchMedia('(min-width: 768px)').matches ? editTextareaDesktop : editTextareaMobile;
+	}
+
+	function resizeTextarea(opts = {}) {
+		const force = opts.force === true;
+		const el = activeNoteTextareaEl();
+		if (!el) return;
+		const maxHeight = window.innerHeight - 64;
+		const minHeight = 140;
+
+		if (force) {
+			el.style.height = 'auto';
+			const h = Math.min(Math.max(el.scrollHeight, minHeight), maxHeight);
+			el.style.height = `${h}px`;
+			el.style.overflowY = el.scrollHeight > maxHeight ? 'auto' : 'hidden';
+			return;
+		}
+
+		const prev = el.offsetHeight;
+		el.style.height = 'auto';
+		const needed = Math.min(Math.max(el.scrollHeight, minHeight), maxHeight);
+		if (needed > prev) {
+			el.style.height = `${needed}px`;
+		} else {
+			el.style.height = `${prev}px`;
+		}
+		el.style.overflowY = el.scrollHeight > maxHeight ? 'auto' : 'hidden';
+	}
+
+	$effect(() => {
+		if (!browser || !isEditing) return;
+		const id = selectedNote?.id;
+		editContent;
+		void tick().then(() => {
+			const force = prevNoteIdForTextareaResize !== id;
+			prevNoteIdForTextareaResize = id;
+			resizeTextarea({ force });
+		});
+	});
+
+	$effect(() => {
+		if (!isEditing) prevNoteIdForTextareaResize = null;
+	});
+
 	function enterEditMode() {
 		if (!selectedNote) return;
 		if (isEditing) return;
-		const previewHeight = markdownPreviewElement?.offsetHeight ?? null;
 		isEditing = true;
 		setTimeout(() => {
-			if (editTextareaElement) {
-				if (previewHeight) editTextareaElement.style.height = `${previewHeight}px`;
-				editTextareaElement.focus();
-				editTextareaElement.select();
-			}
+			void tick().then(() => {
+				resizeTextarea({ force: true });
+				const el = activeNoteTextareaEl();
+				el?.focus();
+				el?.select();
+			});
 		}, 0);
 	}
 
@@ -401,67 +452,80 @@ async function showGoalNotesOnMobile(goalIndex) {
 							<p class="todo-empty-section-text">No notes yet for this view.</p>
 						</div>
 					{:else}
-					<div class="todo-panel p-4">
-						<div class="mb-3 flex items-start justify-between gap-2">
-							<div>
-								<h2 class="text-lg font-semibold">{getNoteTitle(selectedNote.content)}</h2>
-								<p class="mt-0.5 text-xs text-slate-400">Updated {formatUpdatedAt(selectedNote.updatedAt)}</p>
-								{#if !(isEditing || isNoteEmpty(selectedNote)) && typeof selectedNote.goalIndex === 'number'}
-									<div class="mt-2 flex items-center gap-2">
-										<span class="text-xs text-slate-400">{getGoalLabelFromIndex(selectedNote.goalIndex)}</span>
-										<span class="text-slate-600">·</span>
-										<a
-											href={`/notes/${indexToNomenclature(selectedNote.goalIndex)}`}
-											class="rounded border border-violet-400/40 bg-violet-500/5 px-2.5 py-1 text-xs font-medium text-violet-400 transition hover:bg-violet-500/15"
-										>
-											{goalNotesCount} note{goalNotesCount === 1 ? '' : 's'}
-										</a>
-										<a
-											href={`/todo/${indexToNomenclature(selectedNote.goalIndex)}`}
-											class="rounded border border-violet-400/40 bg-violet-500/5 px-2.5 py-1 text-xs font-medium text-violet-400 transition hover:bg-violet-500/15"
-										>
-											{goalTodosCount} task{goalTodosCount === 1 ? '' : 's'}
-										</a>
-									</div>
-								{/if}
-						</div>
-						<div class="flex shrink-0 gap-2">
-								{#if isEditing || isNoteEmpty(selectedNote)}
-									<button type="button" onclick={saveNote} class="rounded-md border border-violet-600/70 bg-violet-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-violet-500">Save</button>
-								{/if}
-							</div>
-						</div>
-
+					<div class={`p-4 ${isEditing ? 'rounded-lg bg-white' : 'todo-panel'}`}>
 							{#if isEditing || isNoteEmpty(selectedNote)}
-								<div class="mb-3 max-w-xs">
-									<GoalSelect
-										allGoals={allGoals}
-										bind:value={editGoalValue}
-										includeUnassigned={true}
-										includeNewList={false}
-										stringValues={true}
-										unassignedLabel="No goal association"
-									/>
-								</div>
-								<textarea
-									bind:this={editTextareaElement}
-									bind:value={editContent}
-									class="composer-textarea min-h-[22rem]"
-									placeholder="Write in markdown. First line becomes the title."
-									onblur={handleTextareaBlur}
-								></textarea>
+							<textarea
+								bind:this={editTextareaDesktop}
+								bind:value={editContent}
+								class="composer-textarea !min-h-0 resize-y"
+								placeholder="Write in markdown. First line becomes the title."
+								oninput={() => resizeTextarea({ force: false })}
+								onblur={handleTextareaBlur}
+							></textarea>
 						{:else}
-							<div
-								bind:this={markdownPreviewElement}
-								role="button"
-								tabindex="0"
-								class="notes-markdown-display markdown min-h-[22rem]"
+						<h1 class="mb-3 text-lg font-semibold leading-tight text-slate-900 dark:text-slate-100">
+							<button
+								type="button"
+								class="inline-block w-full cursor-text border-0 bg-transparent p-0 text-left font-semibold tracking-tight text-inherit outline-none focus-visible:rounded focus-visible:ring-2 focus-visible:ring-violet-500/50 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900"
 								onclick={enterEditMode}
-								onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && enterEditMode()}
 							>
-								{@html renderNoteMarkdown(selectedNote.content)}
-							</div>
+								{getNoteTitle(selectedNote.content)}
+							</button>
+						</h1>
+						<div
+							role="button"
+							tabindex="0"
+							class="notes-markdown-display markdown min-h-[22rem] !bg-transparent !border-transparent"
+							onclick={enterEditMode}
+							onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && enterEditMode()}
+						>
+							{@html renderNoteBodyMarkdown(selectedNote.content)}
+						</div>
 						{/if}
+
+						<div class="mt-4 pt-4">
+							{#if isEditing || isNoteEmpty(selectedNote)}
+								<div class="flex flex-wrap items-end justify-between gap-3">
+									<div class="min-w-0 max-w-md flex-1">
+										<GoalSelect
+											allGoals={allGoals}
+											bind:value={editGoalValue}
+											includeUnassigned={true}
+											includeNewList={false}
+											stringValues={true}
+											unassignedLabel="No goal association"
+										/>
+									</div>
+									<button
+										type="button"
+										onclick={saveNote}
+										class="shrink-0 rounded-md border border-violet-600/70 bg-violet-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-violet-500"
+									>
+										Save
+									</button>
+								</div>
+							{:else if typeof selectedNote.goalIndex === 'number'}
+								<div class="flex flex-wrap items-center gap-2">
+									<span class="text-xs text-slate-400">{getGoalLabelFromIndex(selectedNote.goalIndex)}</span>
+									<span class="text-slate-600">·</span>
+									<a
+										href={`/notes/${indexToNomenclature(selectedNote.goalIndex)}`}
+										class="rounded border border-violet-400/40 bg-violet-500/5 px-2.5 py-1 text-xs font-medium text-violet-400 transition hover:bg-violet-500/15"
+									>
+										{goalNotesCount} note{goalNotesCount === 1 ? '' : 's'}
+									</a>
+									<a
+										href={`/todo/${indexToNomenclature(selectedNote.goalIndex)}`}
+										class="rounded border border-violet-400/40 bg-violet-500/5 px-2.5 py-1 text-xs font-medium text-violet-400 transition hover:bg-violet-500/15"
+									>
+										{goalTodosCount} task{goalTodosCount === 1 ? '' : 's'}
+									</a>
+								</div>
+							{/if}
+							<p class="hidden mt-3 text-xs text-slate-400">
+								Updated {formatUpdatedAt(selectedNote.updatedAt)}
+							</p>
+						</div>
 						</div>
 					{/if}
 				{/if}
@@ -523,67 +587,83 @@ async function showGoalNotesOnMobile(goalIndex) {
 							<p class="todo-empty-section-text">No notes yet for this view.</p>
 						</div>
 					{:else}
-					<div class="mb-3">
-						<h1 class="mb-0.5">{getNoteTitle(selectedNote.content)}</h1>
-						<p class="text-xs text-slate-400">Updated {formatUpdatedAt(selectedNote.updatedAt)}</p>
-						{#if !(isEditing || isNoteEmpty(selectedNote)) && typeof selectedNote.goalIndex === 'number'}
-							<div class="mt-2 flex flex-wrap items-center gap-2">
-								<span class="text-xs text-slate-400">{getGoalLabelFromIndex(selectedNote.goalIndex)}</span>
-								<span class="text-slate-600">·</span>
-								<a
-									href={`/notes/${indexToNomenclature(selectedNote.goalIndex)}`}
-									onclick={async (event) => {
-										event.preventDefault();
-										await showGoalNotesOnMobile(selectedNote.goalIndex);
-									}}
-									class="rounded border border-violet-400/40 bg-violet-500/5 px-2.5 py-1 text-xs font-medium text-violet-400 transition hover:bg-violet-500/15"
-								>
-									{goalNotesCount} note{goalNotesCount === 1 ? '' : 's'}
-								</a>
-								<a
-									href={`/todo/${indexToNomenclature(selectedNote.goalIndex)}`}
-									class="rounded border border-violet-400/40 bg-violet-500/5 px-2.5 py-1 text-xs font-medium text-violet-400 transition hover:bg-violet-500/15"
-								>
-									{goalTodosCount} task{goalTodosCount === 1 ? '' : 's'}
-								</a>
-							</div>
-						{/if}
-					</div>
-					<div class="mb-3 flex gap-2">
 						{#if isEditing || isNoteEmpty(selectedNote)}
-							<button type="button" onclick={saveNote} class="rounded-md border border-violet-600/70 bg-violet-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-violet-500">Save</button>
-						{/if}
-					</div>
-						{#if isEditing || isNoteEmpty(selectedNote)}
-							<div class="mb-3">
-								<GoalSelect
-									allGoals={allGoals}
-									bind:value={editGoalValue}
-									includeUnassigned={true}
-									includeNewList={false}
-									stringValues={true}
-									unassignedLabel="No goal association"
-								/>
-							</div>
-							<textarea
-								bind:this={editTextareaElement}
-								bind:value={editContent}
-								class="composer-textarea min-h-[18rem]"
-								placeholder="Write in markdown. First line becomes the title."
-								onblur={handleTextareaBlur}
-							></textarea>
+						<textarea
+							bind:this={editTextareaMobile}
+							bind:value={editContent}
+							class="composer-textarea !min-h-0 resize-y"
+							placeholder="Write in markdown. First line becomes the title."
+							oninput={() => resizeTextarea({ force: false })}
+							onblur={handleTextareaBlur}
+						></textarea>
 						{:else}
-						<div
-							bind:this={markdownPreviewElement}
-							role="button"
-							tabindex="0"
-							class="notes-markdown-display markdown min-h-[18rem] !p-3"
-							onclick={enterEditMode}
-							onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && enterEditMode()}
-						>
-							{@html renderNoteMarkdown(selectedNote.content)}
-						</div>
+						<h1 class="mb-3 text-lg font-semibold leading-tight text-slate-900 dark:text-slate-100">
+							<button
+								type="button"
+								class="inline-block w-full cursor-text border-0 bg-transparent p-0 text-left font-semibold tracking-tight text-inherit outline-none focus-visible:rounded focus-visible:ring-2 focus-visible:ring-violet-500/50 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900"
+								onclick={enterEditMode}
+							>
+								{getNoteTitle(selectedNote.content)}
+							</button>
+						</h1>
+					<div
+						role="button"
+						tabindex="0"
+						class="notes-markdown-display markdown min-h-[18rem] !p-3 !bg-transparent !border-transparent"
+						onclick={enterEditMode}
+						onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && enterEditMode()}
+					>
+						{@html renderNoteBodyMarkdown(selectedNote.content)}
+					</div>
 						{/if}
+
+						<div class="my-4">
+							{#if isEditing || isNoteEmpty(selectedNote)}
+								<div class="flex flex-wrap items-end justify-between gap-3">
+									<div class="min-w-0 flex-1">
+										<GoalSelect
+											allGoals={allGoals}
+											bind:value={editGoalValue}
+											includeUnassigned={true}
+											includeNewList={false}
+											stringValues={true}
+											unassignedLabel="No goal association"
+										/>
+									</div>
+									<button
+										type="button"
+										onclick={saveNote}
+										class="shrink-0 rounded-md border border-violet-600/70 bg-violet-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-violet-500"
+									>
+										Save
+									</button>
+								</div>
+							{:else if typeof selectedNote.goalIndex === 'number'}
+								<div class="flex flex-wrap items-center gap-2">
+									<span class="text-xs text-slate-400">{getGoalLabelFromIndex(selectedNote.goalIndex)}</span>
+									<span class="text-slate-600">·</span>
+									<a
+										href={`/notes/${indexToNomenclature(selectedNote.goalIndex)}`}
+										onclick={async (event) => {
+											event.preventDefault();
+											await showGoalNotesOnMobile(selectedNote.goalIndex);
+										}}
+										class="rounded border border-violet-400/40 bg-violet-500/5 px-2.5 py-1 text-xs font-medium text-violet-400 transition hover:bg-violet-500/15"
+									>
+										{goalNotesCount} note{goalNotesCount === 1 ? '' : 's'}
+									</a>
+									<a
+										href={`/todo/${indexToNomenclature(selectedNote.goalIndex)}`}
+										class="rounded border border-violet-400/40 bg-violet-500/5 px-2.5 py-1 text-xs font-medium text-violet-400 transition hover:bg-violet-500/15"
+									>
+										{goalTodosCount} task{goalTodosCount === 1 ? '' : 's'}
+									</a>
+								</div>
+							{/if}
+							<p class="hidden mt-3 text-xs text-slate-400">
+								Updated {formatUpdatedAt(selectedNote.updatedAt)}
+							</p>
+						</div>
 					{/if}
 				</div>
 			</div>
