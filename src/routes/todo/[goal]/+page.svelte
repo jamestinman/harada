@@ -454,14 +454,11 @@
 			ordering: getTopOrdering(listMeta.listId, null)
 		};
 		store.harada_chart.todos = [...store.harada_chart.todos, todo];
-		
-		// Update goal timestamp if todo is associated with a goal
+
 		if (typeof targetGoalIndex === 'number') {
-			updateGoalTimestamp(store.harada_chart.grid, targetGoalIndex);
-			// Force reactivity by reassigning
-			store.harada_chart.grid = [...store.harada_chart.grid];
+			store.bumpGoalAfterTodoActivity(targetGoalIndex);
 		}
-		
+
 		// Set active todo ID so it gets focused
 		activeTodoId = todo.id;
 		store.saveNow();
@@ -481,8 +478,7 @@
 					ordering: getTopOrdering(listMeta.listId, null)
 				};
 				store.harada_chart.todos = [...store.harada_chart.todos, todo];
-				updateGoalTimestamp(store.harada_chart.grid, goalIndex);
-				store.harada_chart.grid = [...store.harada_chart.grid];
+				store.bumpGoalAfterTodoActivity(goalIndex);
 				activeTodoId = todo.id;
 				store.saveNow();
 			}
@@ -515,14 +511,11 @@
 			ordering: getTopOrdering(`goal:${targetGoalIndex}`, null)
 		};
 		store.harada_chart.todos = [...store.harada_chart.todos, todo];
-		
-		// Update goal timestamp if todo is associated with a goal
+
 		if (typeof targetGoalIndex === 'number') {
-			updateGoalTimestamp(store.harada_chart.grid, targetGoalIndex);
-			// Force reactivity by reassigning
-			store.harada_chart.grid = [...store.harada_chart.grid];
+			store.bumpGoalAfterTodoActivity(targetGoalIndex);
 		}
-		
+
 		// Set active todo ID so it gets focused (if title is empty, it will auto-focus)
 		if (!title || title.trim() === '') {
 			activeTodoId = todo.id;
@@ -577,14 +570,11 @@
 			ordering: newOrdering
 		};
 		store.harada_chart.todos = [...store.harada_chart.todos, newTodo];
-		
-		// Update goal timestamp if todo is associated with a goal
+
 		if (typeof targetGoalIndex === 'number') {
-			updateGoalTimestamp(store.harada_chart.grid, targetGoalIndex);
-			// Force reactivity by reassigning
-			store.harada_chart.grid = [...store.harada_chart.grid];
+			store.bumpGoalAfterTodoActivity(targetGoalIndex);
 		}
-		
+
 		store.saveNow();
 		return newTodo;
 	}

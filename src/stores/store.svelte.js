@@ -7,6 +7,7 @@ import {
 	buildGoalListMeta,
 	buildCustomListMeta,
 	updateGoalTimestamp,
+	canonicalGoalIndex,
 	normalizeTodoListMeta,
 	mergeTodoLists,
 	defaultNote,
@@ -65,7 +66,7 @@ function createSeededGrid() {
 }
 
 class Store {
-	version = $state('1.0.12');
+	version = $state('1.0.13');
 	activeTab = $state('harada');
 	selectedGoalFilter = $state('all');
 	selectedGoalForNew = $state('');
@@ -837,6 +838,55 @@ class Store {
 
 	// --- Domain mutations ---
 
+	/**
+	 * After adding or changing a goal-linked todo, refresh the goal cell timestamp and
+	 * move that goal's section to the top of the All Todos list (via todo_group_ordering).
+	 */
+	bumpGoalAfterTodoActivity(goalIndex) {
+		if (typeof goalIndex !== 'number') return;
+
+		const canonical = canonicalGoalIndex(goalIndex);
+
+		const updatedTodos = this.harada_chart.todos || [];
+		const nextGrid = [...this.harada_chart.grid];
+		updateGoalTimestamp(nextGrid, canonical);
+
+		const goalsWithTodos = new Set();
+		for (const todo of updatedTodos) {
+			if (
+				(todo.listType === 'goal' || !todo.listType) &&
+				todo.status !== 'done' &&
+				typeof todo.goalIndex === 'number'
+			) {
+				goalsWithTodos.add(canonicalGoalIndex(todo.goalIndex));
+			}
+		}
+
+		let minOrdering = null;
+		for (const idx of goalsWithTodos) {
+			if (idx === canonical) continue;
+			const cell = nextGrid[idx];
+			const ordering =
+				typeof cell?.todo_group_ordering === 'number' && Number.isFinite(cell.todo_group_ordering)
+					? cell.todo_group_ordering
+					: (idx + 1) * GOAL_GROUP_ORDER_STEP;
+			if (minOrdering === null || ordering < minOrdering) {
+				minOrdering = ordering;
+			}
+		}
+
+		const newOrdering =
+			minOrdering === null ? GOAL_GROUP_ORDER_STEP : minOrdering - GOAL_GROUP_ORDER_STEP;
+
+		const existingCell = nextGrid[canonical] || defaultCell();
+		nextGrid[canonical] = {
+			...existingCell,
+			todo_group_ordering: newOrdering
+		};
+
+		this.harada_chart = { ...this.harada_chart, grid: nextGrid };
+	}
+
 	updateTodo(id, patch) {
 		if (!id || !patch) return;
 
@@ -911,45 +961,7 @@ class Store {
 		const updatedTodo = updatedTodos.find((t) => t.id === id);
 		const goalIndexToUpdate = updatedTodo?.goalIndex ?? previousTodo?.goalIndex;
 		if (typeof goalIndexToUpdate === 'number') {
-			const nextGrid = [...this.harada_chart.grid];
-			updateGoalTimestamp(nextGrid, goalIndexToUpdate);
-
-			// Move this goal's group to the top when a related task is edited.
-			// Find all goal indices (except the one we're updating) that currently have active todos.
-			const goalsWithTodos = new Set();
-			for (const todo of updatedTodos) {
-				if (
-					(todo.listType === 'goal' || !todo.listType) &&
-					todo.status !== 'done' &&
-					typeof todo.goalIndex === 'number'
-				) {
-					goalsWithTodos.add(todo.goalIndex);
-				}
-			}
-
-			let minOrdering = null;
-			for (const idx of goalsWithTodos) {
-				if (idx === goalIndexToUpdate) continue;
-				const cell = nextGrid[idx];
-				const ordering =
-					typeof cell?.todo_group_ordering === 'number' && Number.isFinite(cell.todo_group_ordering)
-						? cell.todo_group_ordering
-						: (idx + 1) * GOAL_GROUP_ORDER_STEP;
-				if (minOrdering === null || ordering < minOrdering) {
-					minOrdering = ordering;
-				}
-			}
-
-			const newOrdering =
-				minOrdering === null ? GOAL_GROUP_ORDER_STEP : minOrdering - GOAL_GROUP_ORDER_STEP;
-
-			const existingCell = nextGrid[goalIndexToUpdate] || defaultCell();
-			nextGrid[goalIndexToUpdate] = {
-				...existingCell,
-				todo_group_ordering: newOrdering
-			};
-
-			this.harada_chart = { ...this.harada_chart, grid: nextGrid };
+			this.bumpGoalAfterTodoActivity(goalIndexToUpdate);
 		}
 
 		this.saveNow();

@@ -11,8 +11,7 @@
 		defaultTodo,
 		normalizeTodoListMeta,
 		buildGoalListMeta,
-		buildCustomListMeta,
-		updateGoalTimestamp
+		buildCustomListMeta
 	} from '$lib/todoUtils.js';
 	import TodoList from '$components/TodoList.svelte';
 	import WorkspaceToolbar from '$components/WorkspaceToolbar.svelte';
@@ -474,14 +473,11 @@
 			title
 		};
 		store.harada_chart.todos = [...store.harada_chart.todos, todo];
-		
-		// Update goal timestamp if todo is associated with a goal
+
 		if (typeof goalIndex === 'number') {
-			updateGoalTimestamp(store.harada_chart.grid, goalIndex);
-			// Force reactivity by reassigning
-			store.harada_chart.grid = [...store.harada_chart.grid];
+			store.bumpGoalAfterTodoActivity(goalIndex);
 		}
-		
+
 		// Set active todo ID so it gets focused
 		activeTodoId = todo.id;
 		store.saveNow();
@@ -559,8 +555,13 @@
 		};
 
 		store.harada_chart.todos = [...store.harada_chart.todos, newTodo];
+
+		if (typeof normalizedCurrentTodo.goalIndex === 'number') {
+			store.bumpGoalAfterTodoActivity(normalizedCurrentTodo.goalIndex);
+		}
+
 		store.saveNow();
-		
+
 		return newTodo;
 	}
 

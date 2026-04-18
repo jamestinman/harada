@@ -336,6 +336,16 @@ const clearAll = () => {
 	style="padding-bottom: env(safe-area-inset-bottom, 0px);"
 >
 	<div class="mobile-bottom-nav-inner {borderColorClass}">
+		<div class="mobile-bottom-nav-actions">
+			<button
+				type="button"
+				onclick={() => store.openComposerPanel('task')}
+				class="mobile-bottom-nav-fab mobile-bottom-nav-fab-task"
+				aria-label="Quick add task or note"
+			>
+				<span class="mobile-bottom-nav-fab-plus" aria-hidden="true">+</span>
+			</button>
+		</div>
 		<div class="mobile-bottom-nav-links">
 			<a href="/" class="mobile-bottom-nav-link">Harada</a>
 			<a href={todoResumeHref} class="mobile-bottom-nav-link" onclick={handleMobileTodoNav}>To-Do</a>

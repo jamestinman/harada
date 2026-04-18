@@ -8,7 +8,6 @@
 		indexToNomenclature,
 		canonicalGoalIndex,
 		defaultTodo,
-		updateGoalTimestamp,
 		buildGoalListMeta
 	} from '$lib/todoUtils.js';
 	import Nav from '$components/Nav.svelte';
@@ -156,8 +155,7 @@
 		};
 		store.harada_chart.todos = [...store.harada_chart.todos, todo];
 		if (typeof normalizedGoalIndex === 'number') {
-			updateGoalTimestamp(store.harada_chart.grid, normalizedGoalIndex);
-			store.harada_chart.grid = [...store.harada_chart.grid];
+			store.bumpGoalAfterTodoActivity(normalizedGoalIndex);
 		}
 		store.saveNow();
 	}

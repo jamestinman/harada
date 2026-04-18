@@ -847,13 +847,17 @@ h4 {
 }
 
 .mobile-bottom-nav-fab {
-  @apply relative mx-auto flex h-12 w-12 -translate-y-[70%] items-center justify-center rounded-full border-2 bg-violet-600 p-0 text-3xl font-bold shadow-lg transition pointer-events-auto;
+  @apply relative mx-auto flex h-12 w-12 -translate-y-[70%] items-center justify-center rounded-full border-2 bg-violet-600 p-0 text-3xl font-bold leading-none shadow-lg transition pointer-events-auto;
   .dark & {
     @apply border-violet-300 text-slate-950 hover:bg-violet-500;
   }
   .light & {
     @apply border-violet-200 text-white hover:bg-violet-500;
   }
+}
+
+.mobile-bottom-nav-fab-plus {
+  @apply block -translate-y-0.5 leading-none;
 }
 
 .mobile-bottom-nav-actions {
