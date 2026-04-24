@@ -327,6 +327,227 @@ REVOKE ALL ON FUNCTION upsert_notes_if_newer(jsonb) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION upsert_notes_if_newer(jsonb) TO authenticated;
 
 -- ---------------------------------------------------------------------------
+-- Note links (many-to-many note associations)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS note_task_links (
+  id TEXT PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  deleted_at TIMESTAMPTZ NULL,
+  UNIQUE (user_id, note_id, task_id)
+);
+
+CREATE TABLE IF NOT EXISTS note_goal_links (
+  id TEXT PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+  goal_index INTEGER NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  deleted_at TIMESTAMPTZ NULL,
+  UNIQUE (user_id, note_id, goal_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_note_task_links_user_note ON note_task_links(user_id, note_id);
+CREATE INDEX IF NOT EXISTS idx_note_task_links_user_task ON note_task_links(user_id, task_id);
+CREATE INDEX IF NOT EXISTS idx_note_task_links_user_active ON note_task_links(user_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_note_goal_links_user_note ON note_goal_links(user_id, note_id);
+CREATE INDEX IF NOT EXISTS idx_note_goal_links_user_goal ON note_goal_links(user_id, goal_index);
+CREATE INDEX IF NOT EXISTS idx_note_goal_links_user_active ON note_goal_links(user_id) WHERE deleted_at IS NULL;
+
+ALTER TABLE note_task_links ENABLE ROW LEVEL SECURITY;
+ALTER TABLE note_goal_links ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can read own note task links" ON note_task_links;
+CREATE POLICY "Users can read own note task links"
+  ON note_task_links FOR SELECT
+  USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can insert own note task links" ON note_task_links;
+CREATE POLICY "Users can insert own note task links"
+  ON note_task_links FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can update own note task links" ON note_task_links;
+CREATE POLICY "Users can update own note task links"
+  ON note_task_links FOR UPDATE
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can delete own note task links" ON note_task_links;
+CREATE POLICY "Users can delete own note task links"
+  ON note_task_links FOR DELETE
+  USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can read own note goal links" ON note_goal_links;
+CREATE POLICY "Users can read own note goal links"
+  ON note_goal_links FOR SELECT
+  USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can insert own note goal links" ON note_goal_links;
+CREATE POLICY "Users can insert own note goal links"
+  ON note_goal_links FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can update own note goal links" ON note_goal_links;
+CREATE POLICY "Users can update own note goal links"
+  ON note_goal_links FOR UPDATE
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can delete own note goal links" ON note_goal_links;
+CREATE POLICY "Users can delete own note goal links"
+  ON note_goal_links FOR DELETE
+  USING (auth.uid() = user_id);
+
+DROP TRIGGER IF EXISTS update_note_task_links_updated_at ON note_task_links;
+CREATE TRIGGER update_note_task_links_updated_at
+  BEFORE UPDATE ON note_task_links
+  FOR EACH ROW
+  EXECUTE FUNCTION set_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_note_goal_links_updated_at ON note_goal_links;
+CREATE TRIGGER update_note_goal_links_updated_at
+  BEFORE UPDATE ON note_goal_links
+  FOR EACH ROW
+  EXECUTE FUNCTION set_updated_at_column();
+
+CREATE OR REPLACE FUNCTION upsert_note_task_links_if_newer(in_rows jsonb)
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  row_data jsonb;
+  affected_count INTEGER := 0;
+BEGIN
+  IF in_rows IS NULL OR jsonb_typeof(in_rows) <> 'array' THEN RETURN 0; END IF;
+  FOR row_data IN SELECT value FROM jsonb_array_elements(in_rows) AS t(value)
+  LOOP
+    IF (row_data->>'user_id')::uuid IS DISTINCT FROM auth.uid() THEN CONTINUE; END IF;
+    INSERT INTO note_task_links (id, user_id, note_id, task_id, created_at, updated_at, deleted_at)
+    VALUES (
+      row_data->>'id',
+      (row_data->>'user_id')::uuid,
+      row_data->>'note_id',
+      row_data->>'task_id',
+      COALESCE((row_data->>'created_at')::timestamptz, NOW()),
+      COALESCE((row_data->>'updated_at')::timestamptz, NOW()),
+      NULLIF(row_data->>'deleted_at', '')::timestamptz
+    )
+    ON CONFLICT (user_id, note_id, task_id) DO UPDATE
+    SET updated_at = EXCLUDED.updated_at, deleted_at = EXCLUDED.deleted_at
+    WHERE note_task_links.user_id = auth.uid()
+      AND EXCLUDED.updated_at > note_task_links.updated_at;
+    IF FOUND THEN affected_count := affected_count + 1; END IF;
+  END LOOP;
+  RETURN affected_count;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION upsert_note_task_links_if_newer(jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION upsert_note_task_links_if_newer(jsonb) TO authenticated;
+
+CREATE OR REPLACE FUNCTION upsert_note_goal_links_if_newer(in_rows jsonb)
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  row_data jsonb;
+  affected_count INTEGER := 0;
+BEGIN
+  IF in_rows IS NULL OR jsonb_typeof(in_rows) <> 'array' THEN RETURN 0; END IF;
+  FOR row_data IN SELECT value FROM jsonb_array_elements(in_rows) AS t(value)
+  LOOP
+    IF (row_data->>'user_id')::uuid IS DISTINCT FROM auth.uid() THEN CONTINUE; END IF;
+    INSERT INTO note_goal_links (id, user_id, note_id, goal_index, created_at, updated_at, deleted_at)
+    VALUES (
+      row_data->>'id',
+      (row_data->>'user_id')::uuid,
+      row_data->>'note_id',
+      NULLIF(row_data->>'goal_index', '')::integer,
+      COALESCE((row_data->>'created_at')::timestamptz, NOW()),
+      COALESCE((row_data->>'updated_at')::timestamptz, NOW()),
+      NULLIF(row_data->>'deleted_at', '')::timestamptz
+    )
+    ON CONFLICT (user_id, note_id, goal_index) DO UPDATE
+    SET updated_at = EXCLUDED.updated_at, deleted_at = EXCLUDED.deleted_at
+    WHERE note_goal_links.user_id = auth.uid()
+      AND EXCLUDED.updated_at > note_goal_links.updated_at;
+    IF FOUND THEN affected_count := affected_count + 1; END IF;
+  END LOOP;
+  RETURN affected_count;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION upsert_note_goal_links_if_newer(jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION upsert_note_goal_links_if_newer(jsonb) TO authenticated;
+
+-- One-time batch migration for legacy task markdown -> notes + links
+CREATE OR REPLACE FUNCTION migrate_task_markdown_notes_to_notes_and_links()
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  task_row RECORD;
+  note_id TEXT;
+  migrated_count INTEGER := 0;
+BEGIN
+  FOR task_row IN
+    SELECT * FROM tasks
+    WHERE user_id = auth.uid()
+      AND deleted_at IS NULL
+      AND COALESCE(trim(markdown), '') <> ''
+  LOOP
+    IF EXISTS (
+      SELECT 1 FROM note_task_links
+      WHERE user_id = auth.uid() AND task_id = task_row.id AND deleted_at IS NULL
+    ) THEN
+      CONTINUE;
+    END IF;
+
+    note_id := 'note_' || floor(extract(epoch FROM clock_timestamp()) * 1000)::bigint || '_' || substr(md5(random()::text), 1, 8);
+
+    INSERT INTO notes (id, user_id, content, created_at, updated_at)
+    VALUES (note_id, auth.uid(), task_row.markdown, NOW(), NOW());
+
+    INSERT INTO note_task_links (id, user_id, note_id, task_id, created_at, updated_at)
+    VALUES (
+      'ntl_' || floor(extract(epoch FROM clock_timestamp()) * 1000)::bigint || '_' || substr(md5(random()::text), 1, 8),
+      auth.uid(), note_id, task_row.id, NOW(), NOW()
+    );
+
+    IF task_row.goal_index IS NOT NULL THEN
+      INSERT INTO note_goal_links (id, user_id, note_id, goal_index, created_at, updated_at)
+      VALUES (
+        'ngl_' || floor(extract(epoch FROM clock_timestamp()) * 1000)::bigint || '_' || substr(md5(random()::text), 1, 8),
+        auth.uid(), note_id, task_row.goal_index, NOW(), NOW()
+      )
+      ON CONFLICT (user_id, note_id, goal_index) DO NOTHING;
+    END IF;
+
+    UPDATE tasks
+    SET markdown = '', updated_at = NOW()
+    WHERE id = task_row.id AND user_id = auth.uid();
+
+    migrated_count := migrated_count + 1;
+  END LOOP;
+  RETURN migrated_count;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION migrate_task_markdown_notes_to_notes_and_links() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION migrate_task_markdown_notes_to_notes_and_links() TO authenticated;
+
+-- ---------------------------------------------------------------------------
 -- Realtime
 -- ---------------------------------------------------------------------------
 DO $$
@@ -345,6 +566,18 @@ BEGIN
 
   BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE notes;
+  EXCEPTION WHEN duplicate_object THEN
+    NULL;
+  END;
+
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE note_task_links;
+  EXCEPTION WHEN duplicate_object THEN
+    NULL;
+  END;
+
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE note_goal_links;
   EXCEPTION WHEN duplicate_object THEN
     NULL;
   END;

@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Examples:
+// node tools/backupSupabase.js tasks notes
+// node tools/backupSupabase.js --full
 
 import 'dotenv/config';
 import { createClient } from '@supabase/supabase-js';
@@ -101,17 +104,87 @@ async function backupTable(tableName, outDir) {
 	console.log(`Wrote backup for ${tableName} to ${filePath}`);
 }
 
+function parseArgs(rawArgs) {
+	const args = [...rawArgs];
+	const flags = {
+		full: false
+	};
+	const tables = [];
+
+	while (args.length > 0) {
+		const arg = args.shift();
+		if (arg === '--full') {
+			flags.full = true;
+			continue;
+		}
+		tables.push(arg);
+	}
+
+	return { flags, tables };
+}
+
+async function discoverTablesFromOpenApi() {
+	// Supabase REST root serves an OpenAPI document of exposed relations.
+	// This acts as a dynamic "data dictionary" for backup discovery.
+	const url = `${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/`;
+	const response = await fetch(url, {
+		method: 'GET',
+		headers: {
+			apikey: SUPABASE_KEY,
+			Authorization: `Bearer ${SUPABASE_KEY}`
+		}
+	});
+
+	if (!response.ok) {
+		throw new Error(`Failed to fetch OpenAPI dictionary (${response.status} ${response.statusText})`);
+	}
+
+	const spec = await response.json();
+	const paths = spec?.paths || {};
+	const discovered = new Set();
+
+	for (const route of Object.keys(paths)) {
+		// Example route keys:
+		// /tasks
+		// /notes
+		// /rpc/upsert_tasks_if_newer
+		if (!route.startsWith('/')) continue;
+		if (route.startsWith('/rpc/')) continue;
+		if (route.includes('{')) continue; // skip parameterized helpers
+
+		const name = route.slice(1).trim();
+		// Keep only simple relation names.
+		if (!name || !/^[A-Za-z0-9_]+$/.test(name)) continue;
+		discovered.add(name);
+	}
+
+	return [...discovered].sort((a, b) => a.localeCompare(b));
+}
+
 async function main() {
-	const args = process.argv.slice(2);
+	const { flags, tables: cliTables } = parseArgs(process.argv.slice(2));
 
 	// If tables/views are passed as CLI args, use those.
-	// Otherwise, default to the tables used by the app.
+	// If --full is passed, discover exposed relations dynamically.
+	// Otherwise, default to the core tables used by the app.
 	const defaultTables = ['harada_charts', 'tasks'];
-	const tables = args.length > 0 ? args : defaultTables;
+	const tables =
+		cliTables.length > 0
+			? cliTables
+			: flags.full
+				? await discoverTablesFromOpenApi()
+				: defaultTables;
+
+	if (tables.length === 0) {
+		console.error('No tables discovered for backup. Check REST exposure and API key permissions.');
+		process.exit(1);
+	}
 
 	const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 	const outDir = path.join(BACKUP_ROOT, timestamp);
 	ensureDir(outDir);
+
+	console.log(`Backing up ${tables.length} table(s): ${tables.join(', ')}`);
 
 	for (const table of tables) {
 		await backupTable(table, outDir);

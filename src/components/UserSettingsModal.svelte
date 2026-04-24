@@ -194,14 +194,17 @@ function startEditingName() {
 			</div>
 
 			<div class="settings-footer">
-				<div class="settings-footer-text">Version {store.version}</div>
+        <a href="/about" class="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 underline-offset-2 hover:underline">
+          About
+        </a>
 				<a
 					href="/privacy"
-					class="mt-1 text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 underline-offset-2 hover:underline"
+					class="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 underline-offset-2 hover:underline"
 				>
 					Privacy Policy
 				</a>
 			</div>
+      <p class="italic text-xs text-slate-500 dark:text-slate-400 text-right">Version {store.version}</p>
 		</div>
 	</div>
 {/if}

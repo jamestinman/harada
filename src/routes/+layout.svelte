@@ -165,7 +165,10 @@
 			typeof store.currentGoalIndex === 'number'
 				? canonicalGoalIndex(store.currentGoalIndex)
 				: null;
-		store.createNote({ goalIndex: normalizedGoalIndex, content });
+		const note = store.createNote({ content });
+		if (typeof normalizedGoalIndex === 'number') {
+			store.linkNoteToGoal(note.id, normalizedGoalIndex);
+		}
 		store.currentGoalIndex = normalizedGoalIndex;
 		if (typeof normalizedGoalIndex === 'number') {
 			goto(`/notes/${indexToNomenclature(normalizedGoalIndex)}`);

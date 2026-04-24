@@ -237,7 +237,7 @@ h4 {
 }
 
 .settings-footer {
-  @apply border-t pt-4 text-center;
+  @apply border-t pt-4 text-center flex flex-row gap-2 items-center justify-center;
   .dark & {
     @apply border-slate-700;
   }

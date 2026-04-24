@@ -20,7 +20,6 @@
 		buildCustomListMeta,
 		updateGoalTimestamp
 	} from '$lib/todoUtils.js';
-	import SquareMap from '$components/SquareMap.svelte';
 	import TodoList from '$components/TodoList.svelte';
 	import WorkspaceToolbar from '$components/WorkspaceToolbar.svelte';
 	import { navComposerHandlers } from '$stores/navComposerHandlers.svelte.js';
@@ -35,7 +34,10 @@
 	const grid = $derived(store.harada_chart.grid);
 	const todos = $derived(store.harada_chart.todos.map((todo) => normalizeTodoListMeta(todo)));
 	const notes = $derived(store.notes);
+	const noteTaskLinks = $derived(store.noteTaskLinks);
+	const noteGoalLinks = $derived(store.noteGoalLinks);
 	const dataLoaded = $derived(!store.isBootstrapping);
+	let activeGoalTab = $state('tasks');
 	let activeTodoId = $state(null);
 	let searchText = $state('');
 	
@@ -405,17 +407,22 @@
 		}))
 	);
 
-	const goalNotesSummary = $derived.by(() => {
-		if (typeof goalIndex !== 'number') return null;
-		const goalNotes = notes
-			.filter((note) => note.goalIndex === goalIndex)
-			.sort((a, b) => b.updatedAt - a.updatedAt);
-		if (goalNotes.length === 0) return null;
-		return {
-			count: goalNotes.length,
-			latestTitle: getNoteTitle(goalNotes[0].content),
-			href: `/notes/${indexToNomenclature(goalIndex)}`
-		};
+	const associatedGoalNotes = $derived.by(() => {
+		if (typeof goalIndex !== 'number') return [];
+		const goalTaskIds = new Set(
+			todos
+				.filter((todo) => (todo.listType === 'goal' || !todo.listType) && todo.goalIndex === goalIndex)
+				.map((todo) => todo.id)
+		);
+		const linkedIds = new Set(
+			noteGoalLinks
+				.filter((link) => link.goalIndex === goalIndex)
+				.map((link) => link.noteId)
+		);
+		for (const link of noteTaskLinks) {
+			if (goalTaskIds.has(link.taskId)) linkedIds.add(link.noteId);
+		}
+		return notes.filter((note) => linkedIds.has(note.id)).sort((a, b) => b.updatedAt - a.updatedAt);
 	});
 
 	let mobileMenuOpen = $state(false);
@@ -528,7 +535,8 @@
 			goto('/notes');
 			return;
 		}
-		store.createNote({ goalIndex, content });
+		const note = store.createNote({ content });
+		store.linkNoteToGoal(note.id, goalIndex);
 		goto(`/notes/${indexToNomenclature(goalIndex)}`);
 	}
 
@@ -540,6 +548,22 @@
 
 	function updateTodo(id, patch) {
 		store.updateTodo(id, patch);
+	}
+
+	function getLinkedNotesForTodo(todoId) {
+		return store.getNotesForTask(todoId);
+	}
+
+	function upsertLinkedNote(noteId, content) {
+		store.updateNote(noteId, { content });
+	}
+
+	function createLinkedNoteForTodo(todoId, content) {
+		store.createLinkedTaskNote(todoId, { content, goalIndex });
+	}
+
+	function removeLinkedNoteFromTodo(todoId, noteId) {
+		store.unlinkNoteFromTask(noteId, todoId);
 	}
 
 	function deleteTodo(id) {
@@ -868,7 +892,7 @@
 
 		<div class="hidden gap-8 md:grid md:grid-cols-[18rem_minmax(0,1fr)]">
 			<aside class="todo-panel h-[calc(100vh-5.5rem)] overflow-y-auto p-3">
-				<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">TO-DO</h2>
+				<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">TASKS</h2>
 				<div class="space-y-1.5">
 					<a
 						href="/todo"
@@ -876,6 +900,13 @@
 					>
 						<span>All Todos</span>
 						<span class="text-xs text-slate-400">{todos.filter((t) => t.status !== 'done').length}</span>
+					</a>
+					<a
+						href="/todo?view=notes"
+						class="flex items-center justify-between rounded-md border border-slate-700/70 px-3 py-2 text-sm font-semibold transition hover:border-violet-500/50 hover:bg-violet-500/10"
+					>
+						<span>All Notes</span>
+						<span class="text-xs text-slate-400">{store.notes.length}</span>
 					</a>
 					{#each goalMenuItems as item (item.id)}
 						<a
@@ -909,7 +940,7 @@
 					</div>
 					<!-- Header -->
 					<div class="mb-6">
-						<div class="mb-4 flex items-center justify-between">
+						<div class="mb-4 flex items-start justify-between gap-4">
 							<div class="flex-1">
 								{#if isEditingGoal}
 									<div class="space-y-3">
@@ -971,32 +1002,31 @@
 									</button>
 								{/if}
 							</div>
-							<div class="md:hidden ml-4">
-								<SquareMap goal={indexToNomenclature(goalIndex)} {grid} />
+							<div class="flex shrink-0 flex-col items-end gap-2">
+								<div class="flex gap-1">
+									{#each goalColors as color}
+										<button
+											type="button"
+											class="goal-color-button {selectedColor === color.value
+												? 'goal-color-selected'
+												: 'goal-color-unselected'} {color.preview || 'goal-color-default-bg'}"
+											title={color.label}
+											onclick={() => updateGoalColor(color.value)}
+										></button>
+									{/each}
+								</div>
+								<label class="flex cursor-pointer select-none items-center gap-1.5 text-sm text-slate-800 dark:text-slate-200">
+									<input
+										type="checkbox"
+										bind:checked={showCompleted}
+										class="h-3.5 w-3.5 rounded border text-violet-600 focus:ring-2 focus:ring-violet-500/50"
+									/>
+									<span>Show completed</span>
+								</label>
 							</div>
 						</div>
 
 					<div class="mb-4 flex flex-wrap items-center gap-2">
-						<div class="flex gap-1">
-							{#each goalColors as color}
-								<button
-									type="button"
-									class="goal-color-button {selectedColor === color.value
-										? 'goal-color-selected'
-										: 'goal-color-unselected'} {color.preview || 'goal-color-default-bg'}"
-									title={color.label}
-									onclick={() => updateGoalColor(color.value)}
-								></button>
-							{/each}
-						</div>
-						<label class="flex cursor-pointer select-none items-center gap-1.5 text-sm text-slate-800 dark:text-slate-200">
-							<input
-								type="checkbox"
-								bind:checked={showCompleted}
-								class="h-3.5 w-3.5 rounded border text-violet-600 focus:ring-2 focus:ring-violet-500/50"
-							/>
-							<span>Show completed</span>
-						</label>
 						<div class="ml-auto flex items-center gap-2">
 							{#if isEditingGoal}
 								<button
@@ -1021,48 +1051,90 @@
 								>
 									Cancel
 								</button>
-							{:else if goalNotesSummary}
-								<a
-									href={goalNotesSummary.href}
-									class="flex items-center gap-1.5 rounded border border-violet-400/40 bg-violet-500/5 px-2.5 py-1 text-xs transition hover:bg-violet-500/15"
-								>
-									<span class="font-semibold text-violet-400">{goalNotesSummary.count} note{goalNotesSummary.count === 1 ? '' : 's'}</span>
-									<span class="hidden max-w-[16rem] truncate text-slate-400 sm:inline">&middot; {goalNotesSummary.latestTitle}</span>
-								</a>
-							{:else}
-								<a
-									href={`/notes/${indexToNomenclature(goalIndex)}`}
-									class="rounded border border-dashed border-slate-700 px-2.5 py-1 text-xs text-slate-500 transition hover:border-violet-500/50 hover:text-violet-400"
-								>
-									+ Add note
-								</a>
 							{/if}
 						</div>
 					</div>
+					<div class="mb-4 flex items-center gap-2 border-b border-slate-700/60 pb-2">
+						<button
+							type="button"
+							onclick={() => (activeGoalTab = 'tasks')}
+							class={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+								activeGoalTab === 'tasks'
+									? 'bg-violet-600/90 text-white'
+									: 'text-slate-700 hover:bg-slate-200/80 dark:text-slate-300 dark:hover:bg-slate-800/80'
+							}`}
+						>
+							Tasks
+						</button>
+						<button
+							type="button"
+							onclick={() => (activeGoalTab = 'notes')}
+							class={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+								activeGoalTab === 'notes'
+									? 'bg-violet-600/90 text-white'
+									: 'text-slate-700 hover:bg-slate-200/80 dark:text-slate-300 dark:hover:bg-slate-800/80'
+							}`}
+						>
+							Notes ({associatedGoalNotes.length})
+						</button>
+					</div>
 				</div>
-
-					<TodoList
-						groups={goalGroups}
-						{allGoals}
-						onAddToGroup={(group) => addTodo(group.goalIndex)}
-						onUpdate={updateTodo}
-						onDelete={deleteTodo}
-						onToggleStatus={cycleTodoStatus}
-						onCreateNext={(todoId, group) => createNextTodo(todoId, group.goalIndex)}
-						onDeletePrevious={(todoId, group) => deleteAndFocusPrevious(todoId, group.goalIndex)}
-						onMakeSubtask={(todoId, group) => makeSubtask(todoId, group.goalIndex)}
-						onOutdent={(todoId) => outdentTodo(todoId)}
-						onTitleFocus={(id) => (activeTodoId = id)}
-						getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
-						canIndent={(todoId, group) => canIndentTodo(todoId, group.goalIndex)}
-						canOutdent={(todoId) => canOutdentTodo(todoId)}
-						disableAutoFocus={hasNoCustomTitle || isEditingGoal}
-						onCreateTodo={createTodoFromComposer}
-						onMoveTodo={moveTodo}
-						allowCrossListMove={false}
-						enableGroupDrag={false}
-						searchText={searchText}
-					/>
+					{#if activeGoalTab === 'tasks'}
+						<TodoList
+							groups={goalGroups}
+							{allGoals}
+							onAddToGroup={(group) => addTodo(group.goalIndex)}
+							onUpdate={updateTodo}
+							onDelete={deleteTodo}
+							onToggleStatus={cycleTodoStatus}
+							onCreateNext={(todoId, group) => createNextTodo(todoId, group.goalIndex)}
+							onDeletePrevious={(todoId, group) => deleteAndFocusPrevious(todoId, group.goalIndex)}
+							onMakeSubtask={(todoId, group) => makeSubtask(todoId, group.goalIndex)}
+							onOutdent={(todoId) => outdentTodo(todoId)}
+							onTitleFocus={(id) => (activeTodoId = id)}
+							getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
+							canIndent={(todoId, group) => canIndentTodo(todoId, group.goalIndex)}
+							canOutdent={(todoId) => canOutdentTodo(todoId)}
+							disableAutoFocus={hasNoCustomTitle || isEditingGoal}
+							onCreateTodo={createTodoFromComposer}
+							onMoveTodo={moveTodo}
+							allowCrossListMove={false}
+							enableGroupDrag={false}
+							searchText={searchText}
+							{getLinkedNotesForTodo}
+							onUpsertLinkedNote={upsertLinkedNote}
+							onCreateLinkedNote={createLinkedNoteForTodo}
+							onRemoveNoteLink={removeLinkedNoteFromTodo}
+						/>
+					{:else}
+						<div class="space-y-3">
+							<div class="mb-6 hidden lg:block">
+								<button
+									type="button"
+									onclick={() => createNoteFromComposer()}
+									class="rounded-btn"
+								>
+									+ New note
+								</button>
+							</div>
+							{#if associatedGoalNotes.length === 0}
+								<div class="todo-empty-section-card">
+									<p class="todo-empty-section-text">No notes linked to this goal yet.</p>
+								</div>
+							{:else}
+								{#each associatedGoalNotes as note (note.id)}
+									<a
+										href={`/notes/${indexToNomenclature(goalIndex)}`}
+										onclick={() => (store.pendingSelectNoteId = note.id)}
+										class="block rounded-md border border-slate-700/70 p-3 transition hover:border-violet-500/50 hover:bg-violet-500/10"
+									>
+										<div class="text-sm font-semibold">{getNoteTitle(note.content)}</div>
+										<div class="mt-1 line-clamp-2 text-xs text-slate-400">{note.content}</div>
+									</a>
+								{/each}
+							{/if}
+						</div>
+					{/if}
 				{/if}
 			</div>
 		</div>
@@ -1074,7 +1146,7 @@
 			>
 				<div class="w-1/2 pr-4">
 					<div class="todo-panel h-[calc(100vh-8rem)] overflow-y-auto p-3">
-						<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">TO-DO</h2>
+						<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">TASKS</h2>
 						<div class="space-y-1.5">
 							<a
 								href="/todo"
@@ -1083,6 +1155,14 @@
 							>
 								<span>All Todos</span>
 								<span class="text-xs text-slate-400">{todos.filter((t) => t.status !== 'done').length}</span>
+							</a>
+							<a
+								href="/todo?view=notes"
+								onclick={() => (mobileMenuOpen = false)}
+								class="flex items-center justify-between rounded-md border border-slate-700/70 px-3 py-2 text-sm font-semibold transition hover:border-violet-500/50 hover:bg-violet-500/10"
+							>
+								<span>All Notes</span>
+								<span class="text-xs text-slate-400">{store.notes.length}</span>
 							</a>
 							{#each goalMenuItems as item (item.id)}
 								<a
@@ -1114,7 +1194,7 @@
 						</div>
 					{:else}
 						<div class="mb-6">
-							<div class="mb-4 flex items-center justify-between">
+							<div class="mb-4 flex items-start justify-between gap-4">
 								<div class="flex-1">
 									{#if isEditingGoal}
 										<div class="space-y-3">
@@ -1176,31 +1256,30 @@
 										</button>
 									{/if}
 								</div>
-								<div class="ml-4">
-									<SquareMap goal={indexToNomenclature(goalIndex)} {grid} />
+								<div class="flex shrink-0 flex-col items-end gap-2">
+									<div class="flex gap-1">
+										{#each goalColors as color}
+											<button
+												type="button"
+												class="goal-color-button {selectedColor === color.value
+													? 'goal-color-selected'
+													: 'goal-color-unselected'} {color.preview || 'goal-color-default-bg'}"
+												title={color.label}
+												onclick={() => updateGoalColor(color.value)}
+											></button>
+										{/each}
+									</div>
+									<label class="flex cursor-pointer select-none items-center gap-1.5 text-sm text-slate-300">
+										<input
+											type="checkbox"
+											bind:checked={showCompleted}
+											class="h-3.5 w-3.5 rounded border text-violet-600 focus:ring-2 focus:ring-violet-500/50"
+										/>
+										<span>Show completed</span>
+									</label>
 								</div>
 							</div>
 						<div class="mb-4 flex flex-wrap items-center gap-2">
-							<div class="flex gap-1">
-								{#each goalColors as color}
-									<button
-										type="button"
-										class="goal-color-button {selectedColor === color.value
-											? 'goal-color-selected'
-											: 'goal-color-unselected'} {color.preview || 'goal-color-default-bg'}"
-										title={color.label}
-										onclick={() => updateGoalColor(color.value)}
-									></button>
-								{/each}
-							</div>
-							<label class="flex cursor-pointer select-none items-center gap-1.5 text-sm text-slate-300">
-								<input
-									type="checkbox"
-									bind:checked={showCompleted}
-									class="h-3.5 w-3.5 rounded border text-violet-600 focus:ring-2 focus:ring-violet-500/50"
-								/>
-								<span>Show completed</span>
-							</label>
 							<div class="ml-auto flex items-center gap-2">
 								{#if isEditingGoal}
 									<button
@@ -1225,47 +1304,90 @@
 									>
 										Cancel
 									</button>
-								{:else if goalNotesSummary}
-									<a
-										href={goalNotesSummary.href}
-										class="flex items-center gap-1.5 rounded border border-violet-400/40 bg-violet-500/5 px-2.5 py-1 text-xs transition hover:bg-violet-500/15"
-									>
-										<span class="font-semibold text-violet-400">{goalNotesSummary.count} note{goalNotesSummary.count === 1 ? '' : 's'}</span>
-										<span class="max-w-[10rem] truncate text-slate-400">&middot; {goalNotesSummary.latestTitle}</span>
-									</a>
-								{:else}
-									<a
-										href={`/notes/${indexToNomenclature(goalIndex)}`}
-										class="rounded border border-dashed border-slate-700 px-2.5 py-1 text-xs text-slate-500 transition hover:border-violet-500/50 hover:text-violet-400"
-									>
-										+ Add note
-									</a>
 								{/if}
 							</div>
 						</div>
+						<div class="mb-4 flex items-center gap-2 border-b border-slate-700/60 pb-2">
+							<button
+								type="button"
+								onclick={() => (activeGoalTab = 'tasks')}
+								class={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+									activeGoalTab === 'tasks'
+										? 'bg-violet-600/90 text-white'
+										: 'text-slate-700 hover:bg-slate-200/80 dark:text-slate-300 dark:hover:bg-slate-800/80'
+								}`}
+							>
+								Tasks
+							</button>
+							<button
+								type="button"
+								onclick={() => (activeGoalTab = 'notes')}
+								class={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+									activeGoalTab === 'notes'
+										? 'bg-violet-600/90 text-white'
+										: 'text-slate-700 hover:bg-slate-200/80 dark:text-slate-300 dark:hover:bg-slate-800/80'
+								}`}
+							>
+								Notes ({associatedGoalNotes.length})
+							</button>
+						</div>
 					</div>
-						<TodoList
-							groups={goalGroups}
-							{allGoals}
-							onAddToGroup={(group) => addTodo(group.goalIndex)}
-							onUpdate={updateTodo}
-							onDelete={deleteTodo}
-							onToggleStatus={cycleTodoStatus}
-							onCreateNext={(todoId, group) => createNextTodo(todoId, group.goalIndex)}
-							onDeletePrevious={(todoId, group) => deleteAndFocusPrevious(todoId, group.goalIndex)}
-							onMakeSubtask={(todoId, group) => makeSubtask(todoId, group.goalIndex)}
-							onOutdent={(todoId) => outdentTodo(todoId)}
-							onTitleFocus={(id) => (activeTodoId = id)}
-							getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
-							canIndent={(todoId, group) => canIndentTodo(todoId, group.goalIndex)}
-							canOutdent={(todoId) => canOutdentTodo(todoId)}
-							disableAutoFocus={hasNoCustomTitle || isEditingGoal}
-							onCreateTodo={createTodoFromComposer}
-							onMoveTodo={moveTodo}
-							allowCrossListMove={false}
-							enableGroupDrag={false}
-							searchText={searchText}
-						/>
+						{#if activeGoalTab === 'tasks'}
+							<TodoList
+								groups={goalGroups}
+								{allGoals}
+								onAddToGroup={(group) => addTodo(group.goalIndex)}
+								onUpdate={updateTodo}
+								onDelete={deleteTodo}
+								onToggleStatus={cycleTodoStatus}
+								onCreateNext={(todoId, group) => createNextTodo(todoId, group.goalIndex)}
+								onDeletePrevious={(todoId, group) => deleteAndFocusPrevious(todoId, group.goalIndex)}
+								onMakeSubtask={(todoId, group) => makeSubtask(todoId, group.goalIndex)}
+								onOutdent={(todoId) => outdentTodo(todoId)}
+								onTitleFocus={(id) => (activeTodoId = id)}
+								getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
+								canIndent={(todoId, group) => canIndentTodo(todoId, group.goalIndex)}
+								canOutdent={(todoId) => canOutdentTodo(todoId)}
+								disableAutoFocus={hasNoCustomTitle || isEditingGoal}
+								onCreateTodo={createTodoFromComposer}
+								onMoveTodo={moveTodo}
+								allowCrossListMove={false}
+								enableGroupDrag={false}
+								searchText={searchText}
+								{getLinkedNotesForTodo}
+								onUpsertLinkedNote={upsertLinkedNote}
+								onCreateLinkedNote={createLinkedNoteForTodo}
+								onRemoveNoteLink={removeLinkedNoteFromTodo}
+							/>
+						{:else}
+							<div class="space-y-3">
+								<div class="mb-4">
+									<button
+										type="button"
+										onclick={() => createNoteFromComposer()}
+										class="rounded-btn w-full"
+									>
+										+ New note
+									</button>
+								</div>
+								{#if associatedGoalNotes.length === 0}
+									<div class="todo-empty-section-card">
+										<p class="todo-empty-section-text">No notes linked to this goal yet.</p>
+									</div>
+								{:else}
+									{#each associatedGoalNotes as note (note.id)}
+										<a
+											href={`/notes/${indexToNomenclature(goalIndex)}`}
+											onclick={() => (store.pendingSelectNoteId = note.id)}
+											class="block rounded-md border border-slate-700/70 p-3 transition hover:border-violet-500/50 hover:bg-violet-500/10"
+										>
+											<div class="text-sm font-semibold">{getNoteTitle(note.content)}</div>
+											<div class="mt-1 line-clamp-2 text-xs text-slate-400">{note.content}</div>
+										</a>
+									{/each}
+								{/if}
+							</div>
+						{/if}
 					{/if}
 				</div>
 			</div>

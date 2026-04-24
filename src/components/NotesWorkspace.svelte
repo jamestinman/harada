@@ -1,6 +1,6 @@
 <script>
 	import { onMount, tick } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { beforeNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { browser } from '$app/environment';
 	import { store } from '$stores/store.svelte.js';
@@ -24,6 +24,9 @@
 
 	const grid = $derived(store.harada_chart.grid);
 	const notes = $derived(store.notes);
+	const noteTaskLinks = $derived(store.noteTaskLinks);
+	const noteGoalLinks = $derived(store.noteGoalLinks);
+	const todos = $derived(store.harada_chart.todos);
 	const dataLoaded = $derived(!store.isBootstrapping);
 	let mobileMenuOpen = $state(false);
 	let mobileSidebarHydrated = $state(false);
@@ -67,6 +70,12 @@
 		return parsed === null ? null : canonicalGoalIndex(parsed);
 	}
 
+	function getTaskLabel(taskId) {
+		const todo = todos.find((t) => t.id === taskId);
+		if (!todo) return 'Task';
+		return (todo.title || '').trim() || 'Untitled task';
+	}
+
 	const scopedGoalIndex = $derived.by(() => parseGoalIndexFromParam(goalParam));
 	const hasInvalidGoal = $derived(!!goalParam && scopedGoalIndex === null);
 
@@ -90,21 +99,61 @@
 			typeof scopedGoalIndex !== 'number'
 				? [...notes].sort((a, b) => b.updatedAt - a.updatedAt)
 				: notes
-						.filter((note) => note.goalIndex === scopedGoalIndex)
+						.filter((note) => noteMatchesScopedGoal(note.id, scopedGoalIndex))
 						.sort((a, b) => b.updatedAt - a.updatedAt);
 		const q = searchText.trim().toLowerCase();
 		if (!q) return base;
 		return base.filter((note) => noteMatchesQuery(note, q));
 	});
 
+	function noteMatchesScopedGoal(noteId, goalIdx) {
+		const canonical = canonicalGoalIndex(goalIdx);
+		if (noteGoalLinks.some((link) => link.noteId === noteId && link.goalIndex === canonical)) return true;
+		const taskIds = noteTaskLinks
+			.filter((link) => link.noteId === noteId)
+			.map((link) => link.taskId);
+		for (const taskId of taskIds) {
+			const todo = todos.find((t) => t.id === taskId);
+			if (
+				todo &&
+				(todo.listType === 'goal' || !todo.listType) &&
+				todo.goalIndex === canonical &&
+				todo.status !== 'done'
+			) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	function getLinkedGoalIndices(noteId) {
+		return noteGoalLinks.filter((link) => link.noteId === noteId).map((link) => link.goalIndex);
+	}
+
+	function getLinkedTaskIds(noteId) {
+		return noteTaskLinks.filter((link) => link.noteId === noteId).map((link) => link.taskId);
+	}
+
+	function getPrimaryGoalIndex(noteId) {
+		const directGoal = getLinkedGoalIndices(noteId)[0];
+		if (typeof directGoal === 'number') return directGoal;
+		const taskId = getLinkedTaskIds(noteId)[0];
+		const todo = todos.find((t) => t.id === taskId);
+		return typeof todo?.goalIndex === 'number' ? todo.goalIndex : null;
+	}
+
 	const goalNotesCount = $derived.by(() => {
-		if (selectedNote?.goalIndex && typeof selectedNote?.goalIndex !== 'number') return 0;
-		return notes.filter((n) => n.goalIndex === selectedNote.goalIndex).length;
+		if (!selectedNote) return 0;
+		const primary = getPrimaryGoalIndex(selectedNote.id);
+		if (typeof primary !== 'number') return 0;
+		return notes.filter((note) => noteMatchesScopedGoal(note.id, primary)).length;
 	});
 
 	const goalTodosCount = $derived.by(() => {
-		if (typeof selectedNote?.goalIndex !== 'number') return 0;
-		const listId = `goal:${selectedNote.goalIndex}`;
+		if (!selectedNote) return 0;
+		const primary = getPrimaryGoalIndex(selectedNote.id);
+		if (typeof primary !== 'number') return 0;
+		const listId = `goal:${primary}`;
 		return store.harada_chart.todos.filter(
 			(t) => t.listId === listId && t.status !== 'done'
 		).length;
@@ -131,6 +180,9 @@
 		}
 		return filteredNotes[0] || null;
 	});
+	const selectedPrimaryGoalIndex = $derived.by(() =>
+		selectedNote ? getPrimaryGoalIndex(selectedNote.id) : null
+	);
 
 	$effect(() => {
 		store.currentGoalIndex = typeof scopedGoalIndex === 'number' ? scopedGoalIndex : null;
@@ -168,6 +220,7 @@
 			return;
 		}
 		store.pendingSelectNoteId = null;
+		flushNoteEditsIfNeeded();
 		selectedNoteId = pending;
 		mobileMenuOpen = false;
 	});
@@ -180,6 +233,7 @@
 		resumeNoteId = null;
 		const note = filteredNotes.find((n) => n.id === target);
 		if (note) {
+			flushNoteEditsIfNeeded();
 			selectedNoteId = note.id;
 			mobileMenuOpen = false;
 		}
@@ -201,8 +255,7 @@
 		previousSelectedNoteId = selectedNote.id;
 
 		const content = selectedNote.content || '';
-		const goalIndex =
-			typeof selectedNote.goalIndex === 'number' ? selectedNote.goalIndex : null;
+		const goalIndex = getPrimaryGoalIndex(selectedNote.id);
 
 		editContent = content;
 		editGoalValue = typeof goalIndex === 'number' ? String(goalIndex) : '';
@@ -243,38 +296,47 @@ async function showGoalNotesOnMobile(goalIndex) {
 		return Number.isNaN(parsedGoal) ? null : parsedGoal;
 	}
 
-	function saveNote() {
+	function noteHasUnsavedChanges() {
+		if (!selectedNote) return false;
+		const goalIndex = getGoalIndexFromEditValue();
+		return editContent !== lastSavedContent || goalIndex !== lastSavedGoalIndex;
+	}
+
+	function persistCurrentNoteEdits() {
 		if (!selectedNote) return;
 		const goalIndex = getGoalIndexFromEditValue();
 		const normalizedContent = editContent;
-	const noteIsEmpty = normalizedContent.trim().length === 0;
-
 		store.updateNote(selectedNote.id, {
-			content: normalizedContent,
-			goalIndex
+			content: normalizedContent
 		});
-
+		const existingGoals = getLinkedGoalIndices(selectedNote.id);
+		for (const existingGoal of existingGoals) {
+			store.unlinkNoteFromGoal(selectedNote.id, existingGoal);
+		}
+		if (typeof goalIndex === 'number') {
+			store.linkNoteToGoal(selectedNote.id, goalIndex);
+		}
 		lastSavedContent = normalizedContent;
 		lastSavedGoalIndex = goalIndex;
-	isEditing = noteIsEmpty;
 	}
 
-	function handleTextareaBlur() {
+	function saveNote() {
 		if (!selectedNote) return;
-		if (!isEditing) return;
-
-		const goalIndex = getGoalIndexFromEditValue();
-		const content = editContent;
-	const noteIsEmpty = content.trim().length === 0;
-
-		const changed = content !== lastSavedContent || goalIndex !== lastSavedGoalIndex;
-		if (!changed) {
+		persistCurrentNoteEdits();
+		const noteIsEmpty = editContent.trim().length === 0;
 		isEditing = noteIsEmpty;
-			return;
-		}
-
-		saveNote();
 	}
+
+	function flushNoteEditsIfNeeded() {
+		if (!noteHasUnsavedChanges()) return;
+		persistCurrentNoteEdits();
+		const noteIsEmpty = editContent.trim().length === 0;
+		isEditing = noteIsEmpty;
+	}
+
+	beforeNavigate(() => {
+		flushNoteEditsIfNeeded();
+	});
 
 	function deleteNote() {
 		if (!selectedNote) return;
@@ -289,9 +351,9 @@ async function showGoalNotesOnMobile(goalIndex) {
 	}
 
 	function selectNote(noteId) {
+		flushNoteEditsIfNeeded();
 		selectedNoteId = noteId;
 		store.recordLastOpenedNote(noteId);
-		isEditing = false;
 		shouldAutoEdit = false;
 		mobileMenuOpen = false;
 	}
@@ -460,7 +522,6 @@ async function showGoalNotesOnMobile(goalIndex) {
 								class="composer-textarea !min-h-0 resize-y"
 								placeholder="Write in markdown. First line becomes the title."
 								oninput={() => resizeTextarea({ force: false })}
-								onblur={handleTextareaBlur}
 							></textarea>
 						{:else}
 						<h1 class="mb-3 text-lg font-semibold leading-tight text-slate-900 dark:text-slate-100">
@@ -504,22 +565,34 @@ async function showGoalNotesOnMobile(goalIndex) {
 										Save
 									</button>
 								</div>
-							{:else if typeof selectedNote.goalIndex === 'number'}
+							{:else}
 								<div class="flex flex-wrap items-center gap-2">
-									<span class="text-xs text-slate-400">{getGoalLabelFromIndex(selectedNote.goalIndex)}</span>
-									<span class="text-slate-600">·</span>
-									<a
-										href={`/notes/${indexToNomenclature(selectedNote.goalIndex)}`}
-										class="rounded border border-violet-400/40 bg-violet-500/5 px-2.5 py-1 text-xs font-medium text-violet-400 transition hover:bg-violet-500/15"
-									>
-										{goalNotesCount} note{goalNotesCount === 1 ? '' : 's'}
-									</a>
-									<a
-										href={`/todo/${indexToNomenclature(selectedNote.goalIndex)}`}
-										class="rounded border border-violet-400/40 bg-violet-500/5 px-2.5 py-1 text-xs font-medium text-violet-400 transition hover:bg-violet-500/15"
-									>
-										{goalTodosCount} task{goalTodosCount === 1 ? '' : 's'}
-									</a>
+									{#if typeof selectedPrimaryGoalIndex === 'number'}
+										<a
+											href={`/notes/${indexToNomenclature(selectedPrimaryGoalIndex)}`}
+											class="rounded border border-violet-400/40 bg-violet-500/5 px-2.5 py-1 text-xs font-medium text-violet-400 transition hover:bg-violet-500/15"
+										>
+											{goalNotesCount} note{goalNotesCount === 1 ? '' : 's'}
+										</a>
+										<a
+											href={`/todo/${indexToNomenclature(selectedPrimaryGoalIndex)}`}
+											class="rounded border border-violet-400/40 bg-violet-500/5 px-2.5 py-1 text-xs font-medium text-violet-400 transition hover:bg-violet-500/15"
+										>
+											{goalTodosCount} task{goalTodosCount === 1 ? '' : 's'}
+										</a>
+									{/if}
+									{#each getLinkedGoalIndices(selectedNote.id) as linkedGoal}
+										<span class="inline-flex items-center gap-1 rounded border border-slate-600 px-2 py-1 text-xs text-slate-300">
+											<a href={`/todo/${indexToNomenclature(linkedGoal)}`}>{getGoalLabelFromIndex(linkedGoal)}</a>
+											<button type="button" class="text-rose-300" onclick={() => store.unlinkNoteFromGoal(selectedNote.id, linkedGoal)}>x</button>
+										</span>
+									{/each}
+									{#each getLinkedTaskIds(selectedNote.id) as linkedTaskId}
+										<span class="inline-flex items-center gap-1 rounded border border-slate-600 px-2 py-1 text-xs text-slate-300">
+											<span>{getTaskLabel(linkedTaskId)}</span>
+											<button type="button" class="text-rose-300" onclick={() => store.unlinkNoteFromTask(selectedNote.id, linkedTaskId)}>x</button>
+										</span>
+									{/each}
 								</div>
 							{/if}
 							<p class="hidden mt-3 text-xs text-slate-400">
@@ -594,7 +667,6 @@ async function showGoalNotesOnMobile(goalIndex) {
 							class="composer-textarea !min-h-0 resize-y"
 							placeholder="Write in markdown. First line becomes the title."
 							oninput={() => resizeTextarea({ force: false })}
-							onblur={handleTextareaBlur}
 						></textarea>
 						{:else}
 						<h1 class="mb-3 text-lg font-semibold leading-tight text-slate-900 dark:text-slate-100">
@@ -638,26 +710,38 @@ async function showGoalNotesOnMobile(goalIndex) {
 										Save
 									</button>
 								</div>
-							{:else if typeof selectedNote.goalIndex === 'number'}
+							{:else}
 								<div class="flex flex-wrap items-center gap-2">
-									<span class="text-xs text-slate-400">{getGoalLabelFromIndex(selectedNote.goalIndex)}</span>
-									<span class="text-slate-600">·</span>
-									<a
-										href={`/notes/${indexToNomenclature(selectedNote.goalIndex)}`}
-										onclick={async (event) => {
-											event.preventDefault();
-											await showGoalNotesOnMobile(selectedNote.goalIndex);
-										}}
-										class="rounded border border-violet-400/40 bg-violet-500/5 px-2.5 py-1 text-xs font-medium text-violet-400 transition hover:bg-violet-500/15"
-									>
-										{goalNotesCount} note{goalNotesCount === 1 ? '' : 's'}
-									</a>
-									<a
-										href={`/todo/${indexToNomenclature(selectedNote.goalIndex)}`}
-										class="rounded border border-violet-400/40 bg-violet-500/5 px-2.5 py-1 text-xs font-medium text-violet-400 transition hover:bg-violet-500/15"
-									>
-										{goalTodosCount} task{goalTodosCount === 1 ? '' : 's'}
-									</a>
+									{#if typeof selectedPrimaryGoalIndex === 'number'}
+										<a
+											href={`/notes/${indexToNomenclature(selectedPrimaryGoalIndex)}`}
+											onclick={async (event) => {
+												event.preventDefault();
+												await showGoalNotesOnMobile(selectedPrimaryGoalIndex);
+											}}
+											class="rounded border border-violet-400/40 bg-violet-500/5 px-2.5 py-1 text-xs font-medium text-violet-400 transition hover:bg-violet-500/15"
+										>
+											{goalNotesCount} note{goalNotesCount === 1 ? '' : 's'}
+										</a>
+										<a
+											href={`/todo/${indexToNomenclature(selectedPrimaryGoalIndex)}`}
+											class="rounded border border-violet-400/40 bg-violet-500/5 px-2.5 py-1 text-xs font-medium text-violet-400 transition hover:bg-violet-500/15"
+										>
+											{goalTodosCount} task{goalTodosCount === 1 ? '' : 's'}
+										</a>
+									{/if}
+									{#each getLinkedGoalIndices(selectedNote.id) as linkedGoal}
+										<span class="inline-flex items-center gap-1 rounded border border-slate-600 px-2 py-1 text-xs text-slate-300">
+											<a href={`/todo/${indexToNomenclature(linkedGoal)}`}>{getGoalLabelFromIndex(linkedGoal)}</a>
+											<button type="button" class="text-rose-300" onclick={() => store.unlinkNoteFromGoal(selectedNote.id, linkedGoal)}>x</button>
+										</span>
+									{/each}
+									{#each getLinkedTaskIds(selectedNote.id) as linkedTaskId}
+										<span class="inline-flex items-center gap-1 rounded border border-slate-600 px-2 py-1 text-xs text-slate-300">
+											<span>{getTaskLabel(linkedTaskId)}</span>
+											<button type="button" class="text-rose-300" onclick={() => store.unlinkNoteFromTask(selectedNote.id, linkedTaskId)}>x</button>
+										</span>
+									{/each}
 								</div>
 							{/if}
 							<p class="hidden mt-3 text-xs text-slate-400">

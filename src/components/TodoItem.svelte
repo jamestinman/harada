@@ -6,7 +6,6 @@
 		parseListSelection,
 		renderMarkdown
 	} from '$lib/todoUtils.js';
-	import SquareMap from './SquareMap.svelte';
 	import GoalSelect from './GoalSelect.svelte';
 	import { ArrowRightToLine, ArrowLeftFromLine, ChevronDown, Check, Pin } from 'lucide-svelte';
 
@@ -32,7 +31,11 @@
 		/** Omit DOM id so duplicate pinned rows on /todo don’t steal querySelector from the canonical row */
 		isFeedPinnedDuplicate = false,
 		/** 'top' = pinned strip under + New task; 'inline' = same task under its goal on /todo */
-		mainFeedPinStyle = null
+		mainFeedPinStyle = null,
+		linkedNotes = [],
+		onUpsertLinkedNote = null,
+		onCreateLinkedNote = null,
+		onRemoveNoteLink = null
 	} = $props();
 
 	let isEditing = $state(false);
@@ -43,14 +46,18 @@
 	let editMarkdown = $state('');
 	let editListValue = $state('');
 	let editNewListName = $state('');
+	let editLinkedNotes = $state([]);
 	let titleInputElement = $state(null);
 	let markdownTextareaElement = $state(null);
 	let markdownPreviewElement = $state(null);
 	let isCreatingNext = $state(false);
 
-	const hasNotes = $derived((todo.markdown || '').trim().length > 0);
+	const hasNotes = $derived(
+		linkedNotes.length > 0 || (typeof todo.markdown === 'string' && todo.markdown.trim().length > 0)
+	);
 	const inlineNotePreview = $derived.by(() => {
-		const raw = (todo.markdown || '').trim();
+		const firstLinked = linkedNotes[0]?.content || '';
+		const raw = (firstLinked || todo.markdown || '').trim();
 		if (!raw) return '';
 		const firstNonEmptyLine = raw
 			.split(/\r?\n/)
@@ -199,6 +206,9 @@
 
 	function startEditingNotes() {
 		editTitle = todo.title || '';
+		editLinkedNotes = linkedNotes.length
+			? linkedNotes.map((note) => ({ id: note.id, content: note.content || '' }))
+			: [{ id: null, content: '' }];
 		editMarkdown = todo.markdown || '';
 		if (todo.listType === 'custom') {
 			editListValue = NEW_LIST_OPTION_VALUE;
@@ -236,12 +246,38 @@
 		if (!listMeta) return;
 		onUpdate({
 			title: editTitle,
-			markdown: editMarkdown,
 			...listMeta
 		});
+		if (onUpsertLinkedNote || onCreateLinkedNote) {
+			for (const note of editLinkedNotes) {
+				const content = (note?.content || '').trim();
+				if (note?.id && onUpsertLinkedNote) {
+					onUpsertLinkedNote(note.id, note.content || '');
+					continue;
+				}
+				if (!note?.id && content && onCreateLinkedNote) {
+					onCreateLinkedNote(content);
+				}
+			}
+		}
 		isEditing = false;
 		isEditingMarkdown = false;
 		showMobileEditor = false;
+	}
+
+	function addLinkedNoteDraft() {
+		editLinkedNotes = [...editLinkedNotes, { id: null, content: '' }];
+	}
+
+	function removeLinkedNoteDraft(index) {
+		const note = editLinkedNotes[index];
+		if (note?.id && onRemoveNoteLink) {
+			onRemoveNoteLink(note.id);
+		}
+		editLinkedNotes = editLinkedNotes.filter((_, i) => i !== index);
+		if (editLinkedNotes.length === 0) {
+			editLinkedNotes = [{ id: null, content: '' }];
+		}
 	}
 
 	const selectedGoalIndexForMap = $derived.by(() => {
@@ -453,26 +489,32 @@
 			/>
 		</div>
 
-		<!-- Notes -->
-		<div class="mb-3">
-			{#if isEditingMarkdown || !editMarkdown.trim()}
-				<textarea
-					bind:this={markdownTextareaElement}
-					bind:value={editMarkdown}
-					placeholder="Add notes in markdown..."
-				></textarea>
-			{:else}
-				<div
-					bind:this={markdownPreviewElement}
-					role="button"
-					tabindex="0"
-					class="notes-markdown-display markdown"
-					onclick={enterMarkdownEdit}
-					onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && enterMarkdownEdit()}
-				>
-					{@html renderMarkdown(editMarkdown)}
+		<!-- Linked notes -->
+		<div class="mb-3 space-y-2">
+			{#each editLinkedNotes as linkedNote, idx (linkedNote.id || `draft-${idx}`)}
+				<div class="space-y-1">
+					<textarea
+						bind:value={editLinkedNotes[idx].content}
+						placeholder="Add note in markdown..."
+					></textarea>
+					<div class="flex justify-end">
+						<button
+							type="button"
+							onclick={() => removeLinkedNoteDraft(idx)}
+							class="rounded-md px-2 py-1 text-xs text-rose-300 transition hover:bg-rose-900/40"
+						>
+							Remove note
+						</button>
+					</div>
 				</div>
-			{/if}
+			{/each}
+			<button
+				type="button"
+				onclick={addLinkedNoteDraft}
+				class="rounded-md px-2 py-1 text-xs text-violet-300 transition hover:bg-violet-900/40"
+			>
+				+ Add linked note
+			</button>
 		</div>
 
 
@@ -562,13 +604,33 @@
 				/>
 			</div>
 
-			<!-- Notes -->
-			<div class="mb-4">
-				<textarea
-					bind:value={editMarkdown}
-					placeholder=""
-					class="composer-textarea"
-				></textarea>
+			<!-- Linked notes -->
+			<div class="mb-4 space-y-2">
+				{#each editLinkedNotes as linkedNote, idx (linkedNote.id || `mobile-draft-${idx}`)}
+					<div class="space-y-1">
+						<textarea
+							bind:value={editLinkedNotes[idx].content}
+							placeholder=""
+							class="composer-textarea"
+						></textarea>
+						<div class="flex justify-end">
+							<button
+								type="button"
+								onclick={() => removeLinkedNoteDraft(idx)}
+								class="rounded-md px-2 py-1 text-xs text-rose-300 transition hover:bg-rose-900/40"
+							>
+								Remove note
+							</button>
+						</div>
+					</div>
+				{/each}
+				<button
+					type="button"
+					onclick={addLinkedNoteDraft}
+					class="rounded-md px-2 py-1 text-xs text-violet-300 transition hover:bg-violet-900/40"
+				>
+					+ Add linked note
+				</button>
 			</div>
 
 			<!-- Actions -->

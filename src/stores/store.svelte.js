@@ -46,6 +46,9 @@ const defaultCell = (i = null) => {
   return { text, status: 'todo', readme: '', color: 'default', updated_at }
 }
 const GOAL_GROUP_ORDER_STEP = 1024;
+function createLinkId(prefix) {
+	return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
 
 function isGridBlank(grid) {
 	if (!Array.isArray(grid) || grid.length !== 81) return false;
@@ -63,6 +66,49 @@ function isGridBlank(grid) {
 function createSeededGrid() {
 	const grid = Array.from({ length: 81 }, () => defaultCell());
 	return grid;
+}
+
+function normalizeNoteTaskLink(link) {
+	if (!link || typeof link !== 'object') return null;
+	if (typeof link.noteId !== 'string' || !link.noteId) return null;
+	if (typeof link.taskId !== 'string' || !link.taskId) return null;
+	const createdAt =
+		typeof link.createdAt === 'number' && Number.isFinite(link.createdAt)
+			? link.createdAt
+			: Date.now();
+	const updatedAt =
+		typeof link.updatedAt === 'number' && Number.isFinite(link.updatedAt)
+			? link.updatedAt
+			: createdAt;
+	return {
+		id: typeof link.id === 'string' && link.id ? link.id : createLinkId('ntl'),
+		noteId: link.noteId,
+		taskId: link.taskId,
+		createdAt,
+		updatedAt
+	};
+}
+
+function normalizeNoteGoalLink(link) {
+	if (!link || typeof link !== 'object') return null;
+	if (typeof link.noteId !== 'string' || !link.noteId) return null;
+	if (typeof link.goalIndex !== 'number' || Number.isNaN(link.goalIndex)) return null;
+	const canonical = canonicalGoalIndex(link.goalIndex);
+	const createdAt =
+		typeof link.createdAt === 'number' && Number.isFinite(link.createdAt)
+			? link.createdAt
+			: Date.now();
+	const updatedAt =
+		typeof link.updatedAt === 'number' && Number.isFinite(link.updatedAt)
+			? link.updatedAt
+			: createdAt;
+	return {
+		id: typeof link.id === 'string' && link.id ? link.id : createLinkId('ngl'),
+		noteId: link.noteId,
+		goalIndex: canonical,
+		createdAt,
+		updatedAt
+	};
 }
 
 class Store {
@@ -147,6 +193,8 @@ class Store {
 		todos: []
 	});
 	notes = $state([]);
+	noteTaskLinks = $state([]);
+	noteGoalLinks = $state([]);
 
   getDefaultCell(i) {
     return defaultCell(i);
@@ -221,6 +269,13 @@ class Store {
 					this.notes = Array.isArray(local.notes)
 						? local.notes.map((note) => normalizeNote(note))
 						: [];
+					this.noteTaskLinks = Array.isArray(local.noteTaskLinks)
+						? local.noteTaskLinks.map((link) => normalizeNoteTaskLink(link)).filter(Boolean)
+						: [];
+					this.noteGoalLinks = Array.isArray(local.noteGoalLinks)
+						? local.noteGoalLinks.map((link) => normalizeNoteGoalLink(link)).filter(Boolean)
+						: [];
+					this._migrateLegacyTaskMarkdownInMemory();
 				}
 			} catch (err) {
 				console.error('Failed to load local Harada chart:', err);
@@ -242,7 +297,10 @@ class Store {
 
 			// 3) If online and authenticated, hydrate from Supabase and overwrite local snapshot
 			const data = await this.loadFromSupabase();
-			if (data) await this._mergeAndApplyRemoteSnapshot(data, { persistLocal: true });
+			if (data) {
+				await this._mergeAndApplyRemoteSnapshot(data, { persistLocal: true });
+				this._migrateLegacyTaskMarkdownInMemory();
+			}
 		} catch (err) {
 			console.error('Failed to initialize from Supabase:', err);
 			this.syncError = err.message;
@@ -350,15 +408,76 @@ class Store {
 		return { merged, changed };
 	}
 
+	mergeNoteTaskLinksByUpdatedAt(localLinksSnapshot, remoteLinksSnapshot) {
+		const localLinks = Array.isArray(localLinksSnapshot)
+			? localLinksSnapshot.map((link) => normalizeNoteTaskLink(link)).filter(Boolean)
+			: [];
+		const remoteLinks = Array.isArray(remoteLinksSnapshot)
+			? remoteLinksSnapshot.map((link) => normalizeNoteTaskLink(link)).filter(Boolean)
+			: [];
+		const byComposite = new Map();
+		for (const link of [...localLinks, ...remoteLinks]) {
+			const key = `${link.noteId}:${link.taskId}`;
+			const existing = byComposite.get(key);
+			if (!existing || link.updatedAt > existing.updatedAt) {
+				byComposite.set(key, link);
+			}
+		}
+		const merged = [...byComposite.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+		const changed =
+			merged.length !== localLinks.length ||
+			merged.some((link, idx) => JSON.stringify(link) !== JSON.stringify(localLinks[idx]));
+		return { merged, changed };
+	}
+
+	mergeNoteGoalLinksByUpdatedAt(localLinksSnapshot, remoteLinksSnapshot) {
+		const localLinks = Array.isArray(localLinksSnapshot)
+			? localLinksSnapshot.map((link) => normalizeNoteGoalLink(link)).filter(Boolean)
+			: [];
+		const remoteLinks = Array.isArray(remoteLinksSnapshot)
+			? remoteLinksSnapshot.map((link) => normalizeNoteGoalLink(link)).filter(Boolean)
+			: [];
+		const byComposite = new Map();
+		for (const link of [...localLinks, ...remoteLinks]) {
+			const key = `${link.noteId}:${link.goalIndex}`;
+			const existing = byComposite.get(key);
+			if (!existing || link.updatedAt > existing.updatedAt) {
+				byComposite.set(key, link);
+			}
+		}
+		const merged = [...byComposite.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+		const changed =
+			merged.length !== localLinks.length ||
+			merged.some((link, idx) => JSON.stringify(link) !== JSON.stringify(localLinks[idx]));
+		return { merged, changed };
+	}
+
 	async _mergeAndApplyRemoteSnapshot(data, { persistLocal = false } = {}) {
 		const nextRemoteGrid = this._normalizeGridSnapshot(data?.grid || []);
 		const nextRemoteTodos = Array.isArray(data?.todos) ? data.todos : [];
 		const nextRemoteNotes = Array.isArray(data?.notes) ? data.notes : [];
+		const nextRemoteNoteTaskLinks = Array.isArray(data?.noteTaskLinks) ? data.noteTaskLinks : [];
+		const nextRemoteNoteGoalLinks = Array.isArray(data?.noteGoalLinks) ? data.noteGoalLinks : [];
 		const gridMerge = this.mergeGridByUpdatedAt(this.harada_chart.grid, nextRemoteGrid);
 		const todoMerge = this.mergeTodosByUpdatedAt(this.harada_chart.todos, nextRemoteTodos);
 		const noteMerge = this.mergeNotesByUpdatedAt(this.notes, nextRemoteNotes);
+		const noteTaskLinkMerge = this.mergeNoteTaskLinksByUpdatedAt(
+			this.noteTaskLinks,
+			nextRemoteNoteTaskLinks
+		);
+		const noteGoalLinkMerge = this.mergeNoteGoalLinksByUpdatedAt(
+			this.noteGoalLinks,
+			nextRemoteNoteGoalLinks
+		);
 
-		if (!gridMerge.changed && !todoMerge.changed && !noteMerge.changed) return false;
+		if (
+			!gridMerge.changed &&
+			!todoMerge.changed &&
+			!noteMerge.changed &&
+			!noteTaskLinkMerge.changed &&
+			!noteGoalLinkMerge.changed
+		)
+			return false;
 
 		if (gridMerge.changed) {
 			this.harada_chart = { ...this.harada_chart, grid: gridMerge.merged };
@@ -370,6 +489,14 @@ class Store {
 		if (noteMerge.changed) {
 			await Promise.resolve();
 			this.notes = noteMerge.merged;
+		}
+		if (noteTaskLinkMerge.changed) {
+			await Promise.resolve();
+			this.noteTaskLinks = noteTaskLinkMerge.merged;
+		}
+		if (noteGoalLinkMerge.changed) {
+			await Promise.resolve();
+			this.noteGoalLinks = noteGoalLinkMerge.merged;
 		}
 
 		if (persistLocal) {
@@ -432,6 +559,30 @@ class Store {
 					this._applyRealtimeNoteChange(payload);
 				}
 			)
+			.on(
+				'postgres_changes',
+				{
+					event: '*',
+					schema: 'public',
+					table: 'note_task_links',
+					filter: `user_id=eq.${userId}`
+				},
+				(payload) => {
+					this._applyRealtimeNoteTaskLinkChange(payload);
+				}
+			)
+			.on(
+				'postgres_changes',
+				{
+					event: '*',
+					schema: 'public',
+					table: 'note_goal_links',
+					filter: `user_id=eq.${userId}`
+				},
+				(payload) => {
+					this._applyRealtimeNoteGoalLinkChange(payload);
+				}
+			)
 			.subscribe((status) => {
 				if (status === 'SUBSCRIBED') {
 					this.syncError = null;
@@ -482,6 +633,7 @@ class Store {
 				...this.harada_chart,
 				todos: this.harada_chart.todos.filter((t) => t.id !== id)
 			};
+			this.noteTaskLinks = this.noteTaskLinks.filter((link) => link.taskId !== id);
 			return;
 		}
 
@@ -521,6 +673,8 @@ class Store {
 
 		if (eventType === 'DELETE' || newRow?.deleted_at) {
 			this.notes = this.notes.filter((note) => note.id !== id);
+			this.noteTaskLinks = this.noteTaskLinks.filter((link) => link.noteId !== id);
+			this.noteGoalLinks = this.noteGoalLinks.filter((link) => link.noteId !== id);
 			return;
 		}
 
@@ -543,6 +697,60 @@ class Store {
 					.map((note) => (note.id === remoteNote.id ? remoteNote : note))
 					.sort((a, b) => b.updatedAt - a.updatedAt);
 			}
+		}
+	}
+
+	_applyRealtimeNoteTaskLinkChange(payload) {
+		const { eventType, new: newRow, old: oldRow } = payload;
+		const key = `${newRow?.note_id || oldRow?.note_id}:${newRow?.task_id || oldRow?.task_id}`;
+		if (!key) return;
+		if (eventType === 'DELETE' || newRow?.deleted_at) {
+			this.noteTaskLinks = this.noteTaskLinks.filter(
+				(link) => `${link.noteId}:${link.taskId}` !== key
+			);
+			return;
+		}
+		const remoteLink = this._noteTaskLinkRowToLink(newRow);
+		if (!remoteLink) return;
+		const existing = this.noteTaskLinks.find(
+			(link) => link.noteId === remoteLink.noteId && link.taskId === remoteLink.taskId
+		);
+		if (!existing) {
+			this.noteTaskLinks = [remoteLink, ...this.noteTaskLinks];
+			return;
+		}
+		if (remoteLink.updatedAt > (existing.updatedAt ?? 0)) {
+			this.noteTaskLinks = this.noteTaskLinks.map((link) =>
+				link.noteId === remoteLink.noteId && link.taskId === remoteLink.taskId ? remoteLink : link
+			);
+		}
+	}
+
+	_applyRealtimeNoteGoalLinkChange(payload) {
+		const { eventType, new: newRow, old: oldRow } = payload;
+		const key = `${newRow?.note_id || oldRow?.note_id}:${newRow?.goal_index || oldRow?.goal_index}`;
+		if (!key) return;
+		if (eventType === 'DELETE' || newRow?.deleted_at) {
+			this.noteGoalLinks = this.noteGoalLinks.filter(
+				(link) => `${link.noteId}:${link.goalIndex}` !== key
+			);
+			return;
+		}
+		const remoteLink = this._noteGoalLinkRowToLink(newRow);
+		if (!remoteLink) return;
+		const existing = this.noteGoalLinks.find(
+			(link) => link.noteId === remoteLink.noteId && link.goalIndex === remoteLink.goalIndex
+		);
+		if (!existing) {
+			this.noteGoalLinks = [remoteLink, ...this.noteGoalLinks];
+			return;
+		}
+		if (remoteLink.updatedAt > (existing.updatedAt ?? 0)) {
+			this.noteGoalLinks = this.noteGoalLinks.map((link) =>
+				link.noteId === remoteLink.noteId && link.goalIndex === remoteLink.goalIndex
+					? remoteLink
+					: link
+			);
 		}
 	}
 
@@ -607,6 +815,8 @@ class Store {
 				this.harada_chart.grid,
 				this.harada_chart.todos,
 				this.notes,
+				this.noteTaskLinks,
+				this.noteGoalLinks,
 				'My Harada Chart'
 			);
 		} catch (err) {
@@ -625,10 +835,18 @@ class Store {
 			const plainNotes = Array.isArray(this.notes)
 				? this.notes.map((note) => (note && typeof note === 'object' ? { ...note } : note))
 				: [];
+			const plainNoteTaskLinks = Array.isArray(this.noteTaskLinks)
+				? this.noteTaskLinks.map((link) => (link && typeof link === 'object' ? { ...link } : link))
+				: [];
+			const plainNoteGoalLinks = Array.isArray(this.noteGoalLinks)
+				? this.noteGoalLinks.map((link) => (link && typeof link === 'object' ? { ...link } : link))
+				: [];
 			await prefSet('harada_chart_local', {
 				grid: plainGrid,
 				todos: plainTodos,
 				notes: plainNotes,
+				noteTaskLinks: plainNoteTaskLinks,
+				noteGoalLinks: plainNoteGoalLinks,
 				savedAt: new Date().toISOString()
 			});
 		} catch (err) {
@@ -644,18 +862,25 @@ class Store {
 		try {
 			this.syncError = null;
 
-			const [chartResult, tasksResult, notesResult] = await Promise.all([
+			const [chartResult, tasksResult, notesResult, noteTaskLinksResult, noteGoalLinksResult] =
+				await Promise.all([
 				supabase.from('harada_charts').select('*').eq('user_id', authStore.user.id).single(),
 				supabase.from('tasks').select('*').eq('user_id', authStore.user.id),
-				supabase.from('notes').select('*').eq('user_id', authStore.user.id)
+				supabase.from('notes').select('*').eq('user_id', authStore.user.id),
+				supabase.from('note_task_links').select('*').eq('user_id', authStore.user.id),
+				supabase.from('note_goal_links').select('*').eq('user_id', authStore.user.id)
 			]);
 
 			const { data: chartData, error: chartError } = chartResult;
 			const { data: taskRows, error: tasksError } = tasksResult;
 			const { data: noteRows, error: notesError } = notesResult;
+			const { data: noteTaskLinkRows, error: noteTaskLinksError } = noteTaskLinksResult;
+			const { data: noteGoalLinkRows, error: noteGoalLinksError } = noteGoalLinksResult;
 
 			if (tasksError) throw tasksError;
 			if (notesError) throw notesError;
+			if (noteTaskLinksError) throw noteTaskLinksError;
+			if (noteGoalLinksError) throw noteGoalLinksError;
 			if (chartError && chartError.code !== 'PGRST116') throw chartError;
 
 			const todos = (taskRows || [])
@@ -667,13 +892,30 @@ class Store {
 				.map((row) => this._noteRowToNote(row))
 				.filter(Boolean)
 				.sort((a, b) => b.updatedAt - a.updatedAt);
+			const noteTaskLinks = (noteTaskLinkRows || [])
+				.filter((row) => !row.deleted_at)
+				.map((row) => this._noteTaskLinkRowToLink(row))
+				.filter(Boolean);
+			const noteGoalLinks = (noteGoalLinkRows || [])
+				.filter((row) => !row.deleted_at)
+				.map((row) => this._noteGoalLinkRowToLink(row))
+				.filter(Boolean);
 
-			if (!chartData && todos.length === 0 && notes.length === 0) return null;
+			if (
+				!chartData &&
+				todos.length === 0 &&
+				notes.length === 0 &&
+				noteTaskLinks.length === 0 &&
+				noteGoalLinks.length === 0
+			)
+				return null;
 
 			return {
 				grid: chartData?.grid || [],
 				todos,
 				notes,
+				noteTaskLinks,
+				noteGoalLinks,
 				title: chartData?.title || 'My Harada Chart'
 			};
 		} catch (err) {
@@ -683,7 +925,14 @@ class Store {
 		}
 	}
 
-	async saveToSupabase(gridSnapshot, todosSnapshot, notesSnapshot, title = 'My Harada Chart') {
+	async saveToSupabase(
+		gridSnapshot,
+		todosSnapshot,
+		notesSnapshot,
+		noteTaskLinksSnapshot,
+		noteGoalLinksSnapshot,
+		title = 'My Harada Chart'
+	) {
 		if (!browser || !authStore.user || !supabase) return false;
 
 		// If we're offline, remember that we have local changes that still need
@@ -711,6 +960,12 @@ class Store {
 			const noteRows = (notesSnapshot || [])
 				.map((note) => this._noteToRow(note, authStore.user.id))
 				.filter(Boolean);
+			const noteTaskLinkRows = (noteTaskLinksSnapshot || [])
+				.map((link) => this._noteTaskLinkToRow(link, authStore.user.id))
+				.filter(Boolean);
+			const noteGoalLinkRows = (noteGoalLinksSnapshot || [])
+				.map((link) => this._noteGoalLinkToRow(link, authStore.user.id))
+				.filter(Boolean);
 
 			if (taskRows.length > 0) {
 				const { error: tasksError } = await supabase.rpc('upsert_tasks_if_newer', {
@@ -723,6 +978,24 @@ class Store {
 					in_rows: noteRows
 				});
 				if (notesError) throw notesError;
+			}
+			if (noteTaskLinkRows.length > 0) {
+				const { error: noteTaskLinksError } = await supabase.rpc(
+					'upsert_note_task_links_if_newer',
+					{
+						in_rows: noteTaskLinkRows
+					}
+				);
+				if (noteTaskLinksError) throw noteTaskLinksError;
+			}
+			if (noteGoalLinkRows.length > 0) {
+				const { error: noteGoalLinksError } = await supabase.rpc(
+					'upsert_note_goal_links_if_newer',
+					{
+						in_rows: noteGoalLinkRows
+					}
+				);
+				if (noteGoalLinksError) throw noteGoalLinksError;
 			}
 
 			this._pendingCloudSync = false;
@@ -807,7 +1080,6 @@ class Store {
 		const createdAt = row.created_at ? new Date(row.created_at).getTime() : updatedAt;
 		return normalizeNote({
 			id: row.id,
-			goalIndex: typeof row.goal_index === 'number' ? row.goal_index : null,
 			content: typeof row.content === 'string' ? row.content : '',
 			createdAt,
 			updatedAt
@@ -828,7 +1100,6 @@ class Store {
 		return {
 			id: normalized.id,
 			user_id: userId,
-			goal_index: typeof normalized.goalIndex === 'number' ? normalized.goalIndex : null,
 			content: typeof normalized.content === 'string' ? normalized.content : '',
 			created_at: new Date(createdAtMs).toISOString(),
 			updated_at: new Date(updatedAtMs).toISOString(),
@@ -836,7 +1107,101 @@ class Store {
 		};
 	}
 
+	_noteTaskLinkRowToLink(row) {
+		if (!row || typeof row !== 'object') return null;
+		return normalizeNoteTaskLink({
+			id: row.id,
+			noteId: row.note_id,
+			taskId: row.task_id,
+			createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
+			updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now()
+		});
+	}
+
+	_noteTaskLinkToRow(link, userId) {
+		const normalized = normalizeNoteTaskLink(link);
+		if (!normalized) return null;
+		return {
+			id: normalized.id,
+			user_id: userId,
+			note_id: normalized.noteId,
+			task_id: normalized.taskId,
+			created_at: new Date(normalized.createdAt).toISOString(),
+			updated_at: new Date(normalized.updatedAt).toISOString(),
+			deleted_at: null
+		};
+	}
+
+	_noteGoalLinkRowToLink(row) {
+		if (!row || typeof row !== 'object') return null;
+		return normalizeNoteGoalLink({
+			id: row.id,
+			noteId: row.note_id,
+			goalIndex: row.goal_index,
+			createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
+			updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now()
+		});
+	}
+
+	_noteGoalLinkToRow(link, userId) {
+		const normalized = normalizeNoteGoalLink(link);
+		if (!normalized) return null;
+		return {
+			id: normalized.id,
+			user_id: userId,
+			note_id: normalized.noteId,
+			goal_index: normalized.goalIndex,
+			created_at: new Date(normalized.createdAt).toISOString(),
+			updated_at: new Date(normalized.updatedAt).toISOString(),
+			deleted_at: null
+		};
+	}
+
 	// --- Domain mutations ---
+
+	_migrateLegacyTaskMarkdownInMemory() {
+		const legacyTodos = (this.harada_chart.todos || []).filter(
+			(todo) =>
+				typeof todo?.id === 'string' &&
+				typeof todo?.markdown === 'string' &&
+				todo.markdown.trim().length > 0 &&
+				!this.noteTaskLinks.some((link) => link.taskId === todo.id)
+		);
+		if (legacyTodos.length === 0) return;
+		const now = Date.now();
+		const newLinks = [];
+		const newNotes = [];
+		const newGoalLinks = [];
+		const updatedTodos = this.harada_chart.todos.map((todo) => {
+			const legacy = legacyTodos.find((t) => t.id === todo.id);
+			if (!legacy) return todo;
+			const note = defaultNote({ content: legacy.markdown });
+			newNotes.push(note);
+			newLinks.push(
+				normalizeNoteTaskLink({
+					noteId: note.id,
+					taskId: legacy.id,
+					createdAt: now,
+					updatedAt: now
+				})
+			);
+			if (typeof legacy.goalIndex === 'number') {
+				newGoalLinks.push(
+					normalizeNoteGoalLink({
+						noteId: note.id,
+						goalIndex: legacy.goalIndex,
+						createdAt: now,
+						updatedAt: now
+					})
+				);
+			}
+			return { ...todo, markdown: '', updatedAt: now };
+		});
+		this.notes = [...newNotes, ...this.notes];
+		this.noteTaskLinks = [...newLinks.filter(Boolean), ...this.noteTaskLinks];
+		this.noteGoalLinks = [...newGoalLinks.filter(Boolean), ...this.noteGoalLinks];
+		this.harada_chart = { ...this.harada_chart, todos: updatedTodos };
+	}
 
 	/**
 	 * After adding or changing a goal-linked todo, refresh the goal cell timestamp and
@@ -974,6 +1339,7 @@ class Store {
 		const todo = previousTodos.find((t) => t.id === id);
 		const nextTodos = previousTodos.filter((t) => t.id !== id);
 		this.harada_chart = { ...this.harada_chart, todos: nextTodos };
+		this.noteTaskLinks = this.noteTaskLinks.filter((link) => link.taskId !== id);
 
 		if (todo && typeof todo.goalIndex === 'number') {
 			const nextGrid = [...this.harada_chart.grid];
@@ -991,6 +1357,14 @@ class Store {
 				.eq('user_id', authStore.user.id)
 				.then(({ error }) => {
 					if (error) console.error('Failed to soft-delete task:', error);
+				});
+			supabase
+				.from('note_task_links')
+				.update({ deleted_at: now, updated_at: now })
+				.eq('task_id', id)
+				.eq('user_id', authStore.user.id)
+				.then(({ error }) => {
+					if (error) console.error('Failed to soft-delete task note links:', error);
 				});
 		}
 
@@ -1036,8 +1410,8 @@ class Store {
 		this.saveNow();
 	}
 
-	createNote({ goalIndex = null, content = '' } = {}) {
-		const note = defaultNote({ goalIndex, content });
+	createNote({ content = '' } = {}) {
+		const note = defaultNote({ content });
 		this.notes = [note, ...this.notes];
 		this.saveNow();
 		return note;
@@ -1052,12 +1426,6 @@ class Store {
 				return normalizeNote({
 					...note,
 					...patch,
-					goalIndex:
-						typeof patch.goalIndex === 'number'
-							? patch.goalIndex
-							: patch.goalIndex === null
-								? null
-								: note.goalIndex,
 					updatedAt: ts
 				});
 			})
@@ -1065,9 +1433,117 @@ class Store {
 		this.saveNow();
 	}
 
+	getNotesForTask(taskId) {
+		if (!taskId) return [];
+		const noteIds = new Set(
+			this.noteTaskLinks.filter((link) => link.taskId === taskId).map((link) => link.noteId)
+		);
+		return this.notes
+			.filter((note) => noteIds.has(note.id))
+			.sort((a, b) => b.updatedAt - a.updatedAt);
+	}
+
+	getNotesForGoal(goalIndex) {
+		if (typeof goalIndex !== 'number') return [];
+		const noteIds = new Set(
+			this.noteGoalLinks
+				.filter((link) => link.goalIndex === canonicalGoalIndex(goalIndex))
+				.map((link) => link.noteId)
+		);
+		return this.notes
+			.filter((note) => noteIds.has(note.id))
+			.sort((a, b) => b.updatedAt - a.updatedAt);
+	}
+
+	getLinkedTaskIdsForNote(noteId) {
+		if (!noteId) return [];
+		return this.noteTaskLinks.filter((link) => link.noteId === noteId).map((link) => link.taskId);
+	}
+
+	getLinkedGoalIndicesForNote(noteId) {
+		if (!noteId) return [];
+		return this.noteGoalLinks.filter((link) => link.noteId === noteId).map((link) => link.goalIndex);
+	}
+
+	linkNoteToTask(noteId, taskId) {
+		if (!noteId || !taskId) return;
+		if (this.noteTaskLinks.some((link) => link.noteId === noteId && link.taskId === taskId)) return;
+		this.noteTaskLinks = [
+			normalizeNoteTaskLink({ noteId, taskId, createdAt: Date.now(), updatedAt: Date.now() }),
+			...this.noteTaskLinks
+		].filter(Boolean);
+		this.saveNow();
+	}
+
+	unlinkNoteFromTask(noteId, taskId) {
+		if (!noteId || !taskId) return;
+		this.noteTaskLinks = this.noteTaskLinks.filter(
+			(link) => !(link.noteId === noteId && link.taskId === taskId)
+		);
+		if (browser && authStore.user && supabase) {
+			const now = new Date().toISOString();
+			supabase
+				.from('note_task_links')
+				.update({ deleted_at: now, updated_at: now })
+				.eq('note_id', noteId)
+				.eq('task_id', taskId)
+				.eq('user_id', authStore.user.id)
+				.then(({ error }) => {
+					if (error) console.error('Failed to soft-delete note/task link:', error);
+				});
+		}
+		this.saveNow();
+	}
+
+	linkNoteToGoal(noteId, goalIndex) {
+		if (!noteId || typeof goalIndex !== 'number') return;
+		const canonical = canonicalGoalIndex(goalIndex);
+		if (this.noteGoalLinks.some((link) => link.noteId === noteId && link.goalIndex === canonical)) return;
+		this.noteGoalLinks = [
+			normalizeNoteGoalLink({
+				noteId,
+				goalIndex: canonical,
+				createdAt: Date.now(),
+				updatedAt: Date.now()
+			}),
+			...this.noteGoalLinks
+		].filter(Boolean);
+		this.saveNow();
+	}
+
+	unlinkNoteFromGoal(noteId, goalIndex) {
+		if (!noteId || typeof goalIndex !== 'number') return;
+		const canonical = canonicalGoalIndex(goalIndex);
+		this.noteGoalLinks = this.noteGoalLinks.filter(
+			(link) => !(link.noteId === noteId && link.goalIndex === canonical)
+		);
+		if (browser && authStore.user && supabase) {
+			const now = new Date().toISOString();
+			supabase
+				.from('note_goal_links')
+				.update({ deleted_at: now, updated_at: now })
+				.eq('note_id', noteId)
+				.eq('goal_index', canonical)
+				.eq('user_id', authStore.user.id)
+				.then(({ error }) => {
+					if (error) console.error('Failed to soft-delete note/goal link:', error);
+				});
+		}
+		this.saveNow();
+	}
+
+	createLinkedTaskNote(taskId, { content = '', goalIndex = null } = {}) {
+		const note = this.createNote({ content });
+		this.linkNoteToTask(note.id, taskId);
+		if (typeof goalIndex === 'number') this.linkNoteToGoal(note.id, goalIndex);
+		return note;
+	}
+
 	deleteNote(id) {
 		if (!id) return;
 		this.notes = this.notes.filter((note) => note.id !== id);
+		this.noteTaskLinks = this.noteTaskLinks.filter((link) => link.noteId !== id);
+		this.noteGoalLinks = this.noteGoalLinks.filter((link) => link.noteId !== id);
 
 		if (browser && authStore.user && supabase) {
 			const now = new Date().toISOString();
@@ -1107,6 +1583,8 @@ class Store {
 					todos: []
 				};
 				this.notes = [];
+				this.noteTaskLinks = [];
+				this.noteGoalLinks = [];
 			}
 			this._setBootstrapping(false);
 			return;
@@ -1168,6 +1646,8 @@ class Store {
 			todos: []
 		};
 		this.notes = [];
+		this.noteTaskLinks = [];
+		this.noteGoalLinks = [];
     localSet('harada_onboarding_seen', false);
     console.log("Grid is now:",this.harada_chart.grid);
 		this.saveNow();

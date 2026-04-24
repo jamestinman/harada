@@ -11,7 +11,8 @@
 		defaultTodo,
 		normalizeTodoListMeta,
 		buildGoalListMeta,
-		buildCustomListMeta
+		buildCustomListMeta,
+		getNoteTitle
 	} from '$lib/todoUtils.js';
 	import TodoList from '$components/TodoList.svelte';
 	import WorkspaceToolbar from '$components/WorkspaceToolbar.svelte';
@@ -23,6 +24,7 @@
 	} from '$lib/workspaceNavResume.js';
 
 	let searchText = $state('');
+	let activeMainFeed = $state('todos');
 
   // Use store.harada_chart directly - it's reactive
 	const grid = $derived(store.harada_chart.grid);
@@ -374,6 +376,17 @@
 			.sort((a, b) => getTodoOrdering(a) - getTodoOrdering(b))
 	);
 
+	const allNotes = $derived.by(() => {
+		const query = searchText.trim().toLowerCase();
+		const sorted = [...store.notes].sort((a, b) => (b?.updatedAt ?? 0) - (a?.updatedAt ?? 0));
+		if (!query) return sorted;
+		return sorted.filter((note) => {
+			const content = (note?.content ?? '').toLowerCase();
+			const title = getNoteTitle(note?.content ?? '').toLowerCase();
+			return title.includes(query) || content.includes(query);
+		});
+	});
+
 	const feedPinnedTodos = $derived.by(() =>
 		todos
 			.filter((t) => t.pinned === true && t.status !== 'done')
@@ -384,6 +397,9 @@
 	let mobileSidebarHydrated = $state(false);
 
 	onMount(() => {
+		const requestedView = page.url.searchParams.get('view');
+		if (requestedView === 'notes') activeMainFeed = 'notes';
+
 		if (isWorkspaceNarrowLayout() && readTodoMobileSidebarOpen()) {
 			mobileMenuOpen = true;
 		}
@@ -525,8 +541,48 @@
 	}
 
 	function createNoteFromComposer(content = '') {
-		store.createNote({ goalIndex: null, content });
+		store.createNote({ content });
 		goto('/notes');
+	}
+
+	function openNote(noteId) {
+		if (!noteId) return;
+		store.pendingSelectNoteId = noteId;
+		goto('/notes');
+	}
+
+	function getNotePreview(content = '') {
+		return content
+			.replace(/\s+/g, ' ')
+			.replace(/^#+\s*/g, '')
+			.trim();
+	}
+
+	function formatUpdatedAt(timestamp) {
+		if (!timestamp) return 'just now';
+		return new Intl.DateTimeFormat(undefined, {
+			month: 'short',
+			day: 'numeric',
+			hour: 'numeric',
+			minute: '2-digit'
+		}).format(timestamp);
+	}
+
+	function getLinkedNotesForTodo(todoId) {
+		return store.getNotesForTask(todoId);
+	}
+
+	function upsertLinkedNote(noteId, content) {
+		store.updateNote(noteId, { content });
+	}
+
+	function createLinkedNoteForTodo(todoId, content, group) {
+		const maybeGoalIndex = group?.groupType === 'goal' ? group.goalIndex : null;
+		store.createLinkedTaskNote(todoId, { content, goalIndex: maybeGoalIndex });
+	}
+
+	function removeLinkedNoteFromTodo(todoId, noteId) {
+		store.unlinkNoteFromTask(noteId, todoId);
 	}
 
 	$effect(() => {
@@ -667,16 +723,34 @@
 
 		<div class="hidden gap-8 md:grid md:grid-cols-[18rem_minmax(0,1fr)]">
 			<aside class="todo-panel h-[calc(100vh-5.5rem)] overflow-y-auto p-3">
-				<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">TO-DO</h2>
+				<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">TASKS</h2>
 				<div class="space-y-1.5">
-					<a
-						href="/todo"
-						class="flex items-center justify-between rounded-md border border-violet-500/40 bg-violet-500/15 px-3 py-2 text-sm font-medium text-violet-100"
-						aria-current="page"
+					<button
+						type="button"
+						onclick={() => (activeMainFeed = 'todos')}
+						class={`flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm font-semibold shadow-sm transition ${
+							activeMainFeed === 'todos'
+								? 'border-slate-400/60 bg-slate-500/10 text-slate-900 dark:border-slate-500/70 dark:bg-slate-200/10 dark:text-slate-100'
+								: 'border-slate-400/40 text-slate-700 hover:bg-slate-500/10 dark:border-slate-600/70 dark:text-slate-200 dark:hover:bg-slate-200/10'
+						}`}
+						aria-pressed={activeMainFeed === 'todos'}
 					>
 						<span>All Todos</span>
-						<span class="text-xs text-violet-200/80">{allTodos.length}</span>
-					</a>
+						<span class="text-xs text-slate-500 dark:text-slate-300">{allTodos.length}</span>
+					</button>
+					<button
+						type="button"
+						onclick={() => (activeMainFeed = 'notes')}
+						class={`flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm font-semibold shadow-sm transition ${
+							activeMainFeed === 'notes'
+								? 'border-slate-400/60 bg-slate-500/10 text-slate-900 dark:border-slate-500/70 dark:bg-slate-200/10 dark:text-slate-100'
+								: 'border-slate-400/40 text-slate-700 hover:bg-slate-500/10 dark:border-slate-600/70 dark:text-slate-200 dark:hover:bg-slate-200/10'
+						}`}
+						aria-pressed={activeMainFeed === 'notes'}
+					>
+						<span>All Notes</span>
+						<span class="text-xs text-slate-500 dark:text-slate-300">{store.notes.length}</span>
+					</button>
 					{#each goalMenuItems as item (item.id)}
 						<a
 							href={item.href}
@@ -693,69 +767,8 @@
 				<div class="mb-6 hidden md:block">
 					<WorkspaceToolbar mode="desktop" bind:searchText composeTabDefault="task" />
 				</div>
-				<p class="page-subtitle mb-6">
-					{allTodos.length} todo{allTodos.length !== 1 ? 's' : ''} across {todoGroups.filter((g) => g.id !== 'no-goal').length} goal{todoGroups.filter((g) => g.id !== 'no-goal').length !== 1 ? 's' : ''}
-				</p>
-				<TodoList
-					groups={todoGroups}
-					isMainTodoFeed={true}
-					feedPinnedTodos={feedPinnedTodos}
-					{resolveGroupForTodo}
-					{allGoals}
-					onUpdate={updateTodo}
-					onDelete={deleteTodo}
-					onToggleStatus={cycleTodoStatus}
-					onCreateNext={createNextTodo}
-					onDeletePrevious={deleteAndFocusPrevious}
-					onMakeSubtask={makeSubtask}
-					onOutdent={(todoId) => outdentTodo(todoId)}
-					onTitleFocus={(id) => (activeTodoId = id)}
-					getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
-					canIndent={canIndentTodo}
-					canOutdent={(todoId) => canOutdentTodo(todoId)}
-					onCreateTodo={createTodoFromComposer}
-					onMoveTodo={moveTodo}
-					allowCrossListMove={true}
-					enableGroupDrag={true}
-					onMoveGroup={moveGoalGroup}
-					searchText={searchText}
-				/>
-			</div>
-		</div>
-
-		<div class="md:hidden overflow-hidden">
-			<div
-				class="flex w-[200%] transition-transform duration-300 ease-out"
-				style={`transform: translateX(${mobileMenuOpen ? '0%' : '-50%'});`}
-			>
-				<div class="w-1/2 pr-4">
-					<div class="todo-panel h-[calc(100vh-8rem)] overflow-y-auto p-3">
-						<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">TO-DO</h2>
-						<div class="space-y-1.5">
-							<button
-								type="button"
-								onclick={() => (mobileMenuOpen = false)}
-								class="flex w-full items-center justify-between rounded-md border border-violet-500/40 bg-violet-500/15 px-3 py-2 text-left text-sm font-medium text-violet-100"
-							>
-								<span>All Todos</span>
-								<span class="text-xs text-violet-200/80">{allTodos.length}</span>
-							</button>
-							{#each goalMenuItems as item (item.id)}
-								<a
-									href={item.href}
-									onclick={() => (mobileMenuOpen = false)}
-									class="flex items-center justify-between rounded-md border border-slate-700/70 px-3 py-2 text-sm transition hover:border-violet-500/50 hover:bg-violet-500/10"
-								>
-									<span class="truncate pr-3">{item.label}</span>
-									<span class="text-xs text-slate-400">{item.count}</span>
-								</a>
-							{/each}
-						</div>
-					</div>
-				</div>
-
-				<div class="w-1/2 pl-2">
-					<p class="page-subtitle mb-4">
+				{#if activeMainFeed === 'todos'}
+					<p class="page-subtitle mb-6">
 						{allTodos.length} todo{allTodos.length !== 1 ? 's' : ''} across {todoGroups.filter((g) => g.id !== 'no-goal').length} goal{todoGroups.filter((g) => g.id !== 'no-goal').length !== 1 ? 's' : ''}
 					</p>
 					<TodoList
@@ -781,7 +794,152 @@
 						enableGroupDrag={true}
 						onMoveGroup={moveGoalGroup}
 						searchText={searchText}
+						{getLinkedNotesForTodo}
+						onUpsertLinkedNote={upsertLinkedNote}
+						onCreateLinkedNote={createLinkedNoteForTodo}
+						onRemoveNoteLink={removeLinkedNoteFromTodo}
 					/>
+				{:else}
+					<p class="page-subtitle mb-6">
+						{allNotes.length} note{allNotes.length !== 1 ? 's' : ''}, newest first
+					</p>
+					{#if allNotes.length === 0}
+						<div class="todo-panel p-6 text-sm text-slate-700 dark:text-slate-300">No notes match this view.</div>
+					{:else}
+						<div class="space-y-2">
+							{#each allNotes as note (note.id)}
+								<button
+									type="button"
+									onclick={() => openNote(note.id)}
+									class="todo-panel block w-full rounded-lg p-3 text-left transition hover:border-slate-500/40 hover:bg-slate-500/10 dark:hover:border-slate-300/30 dark:hover:bg-slate-200/10"
+								>
+									<div class="mb-1 flex items-center justify-between gap-3">
+										<p class="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{getNoteTitle(note.content)}</p>
+										<p class="shrink-0 text-xs text-slate-500 dark:text-slate-400">{formatUpdatedAt(note.updatedAt)}</p>
+									</div>
+									<p class="line-clamp-2 text-sm text-slate-700 dark:text-slate-300">
+										{getNotePreview(note.content) || 'No content yet'}
+									</p>
+								</button>
+							{/each}
+						</div>
+					{/if}
+				{/if}
+			</div>
+		</div>
+
+		<div class="md:hidden overflow-hidden">
+			<div
+				class="flex w-[200%] transition-transform duration-300 ease-out"
+				style={`transform: translateX(${mobileMenuOpen ? '0%' : '-50%'});`}
+			>
+				<div class="w-1/2 pr-4">
+					<div class="todo-panel h-[calc(100vh-8rem)] overflow-y-auto p-3">
+						<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">TASKS</h2>
+						<div class="space-y-1.5">
+							<button
+								type="button"
+								onclick={() => {
+									activeMainFeed = 'todos';
+									mobileMenuOpen = false;
+								}}
+								class={`flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm font-semibold shadow-sm transition ${
+									activeMainFeed === 'todos'
+										? 'border-slate-400/60 bg-slate-500/10 text-slate-900 dark:border-slate-500/70 dark:bg-slate-200/10 dark:text-slate-100'
+										: 'border-slate-400/40 text-slate-700 dark:border-slate-600/70 dark:text-slate-200'
+								}`}
+							>
+								<span>All Todos</span>
+								<span class="text-xs text-slate-500 dark:text-slate-300">{allTodos.length}</span>
+							</button>
+							<button
+								type="button"
+								onclick={() => {
+									activeMainFeed = 'notes';
+									mobileMenuOpen = false;
+								}}
+								class={`flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm font-semibold shadow-sm transition ${
+									activeMainFeed === 'notes'
+										? 'border-slate-400/60 bg-slate-500/10 text-slate-900 dark:border-slate-500/70 dark:bg-slate-200/10 dark:text-slate-100'
+										: 'border-slate-400/40 text-slate-700 dark:border-slate-600/70 dark:text-slate-200'
+								}`}
+							>
+								<span>All Notes</span>
+								<span class="text-xs text-slate-500 dark:text-slate-300">{store.notes.length}</span>
+							</button>
+							{#each goalMenuItems as item (item.id)}
+								<a
+									href={item.href}
+									onclick={() => (mobileMenuOpen = false)}
+									class="flex items-center justify-between rounded-md border border-slate-700/70 px-3 py-2 text-sm transition hover:border-violet-500/50 hover:bg-violet-500/10"
+								>
+									<span class="truncate pr-3">{item.label}</span>
+									<span class="text-xs text-slate-400">{item.count}</span>
+								</a>
+							{/each}
+						</div>
+					</div>
+				</div>
+
+				<div class="w-1/2 pl-2">
+					{#if activeMainFeed === 'todos'}
+						<p class="page-subtitle mb-4">
+							{allTodos.length} todo{allTodos.length !== 1 ? 's' : ''} across {todoGroups.filter((g) => g.id !== 'no-goal').length} goal{todoGroups.filter((g) => g.id !== 'no-goal').length !== 1 ? 's' : ''}
+						</p>
+						<TodoList
+							groups={todoGroups}
+							isMainTodoFeed={true}
+							feedPinnedTodos={feedPinnedTodos}
+							{resolveGroupForTodo}
+							{allGoals}
+							onUpdate={updateTodo}
+							onDelete={deleteTodo}
+							onToggleStatus={cycleTodoStatus}
+							onCreateNext={createNextTodo}
+							onDeletePrevious={deleteAndFocusPrevious}
+							onMakeSubtask={makeSubtask}
+							onOutdent={(todoId) => outdentTodo(todoId)}
+							onTitleFocus={(id) => (activeTodoId = id)}
+							getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
+							canIndent={canIndentTodo}
+							canOutdent={(todoId) => canOutdentTodo(todoId)}
+							onCreateTodo={createTodoFromComposer}
+							onMoveTodo={moveTodo}
+							allowCrossListMove={true}
+							enableGroupDrag={true}
+							onMoveGroup={moveGoalGroup}
+							searchText={searchText}
+							{getLinkedNotesForTodo}
+							onUpsertLinkedNote={upsertLinkedNote}
+							onCreateLinkedNote={createLinkedNoteForTodo}
+							onRemoveNoteLink={removeLinkedNoteFromTodo}
+						/>
+					{:else}
+						<p class="page-subtitle mb-4">
+							{allNotes.length} note{allNotes.length !== 1 ? 's' : ''}, newest first
+						</p>
+						{#if allNotes.length === 0}
+							<div class="todo-panel p-4 text-sm text-slate-700 dark:text-slate-300">No notes match this view.</div>
+						{:else}
+							<div class="space-y-2">
+								{#each allNotes as note (note.id)}
+									<button
+										type="button"
+										onclick={() => openNote(note.id)}
+										class="todo-panel block w-full rounded-lg p-3 text-left transition hover:border-slate-500/40 hover:bg-slate-500/10 dark:hover:border-slate-300/30 dark:hover:bg-slate-200/10"
+									>
+										<div class="mb-1 flex items-center justify-between gap-3">
+											<p class="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{getNoteTitle(note.content)}</p>
+											<p class="shrink-0 text-xs text-slate-500 dark:text-slate-400">{formatUpdatedAt(note.updatedAt)}</p>
+										</div>
+										<p class="line-clamp-2 text-sm text-slate-700 dark:text-slate-300">
+											{getNotePreview(note.content) || 'No content yet'}
+										</p>
+									</button>
+								{/each}
+							</div>
+						{/if}
+					{/if}
 				</div>
 			</div>
 		</div>

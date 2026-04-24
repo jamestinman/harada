@@ -28,14 +28,10 @@ export function createNoteId() {
 	return `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
 
-export function defaultNote({ goalIndex = null, content = '' } = {}) {
+export function defaultNote({ content = '' } = {}) {
 	const now = Date.now();
 	return {
 		id: createNoteId(),
-		goalIndex:
-			typeof goalIndex === 'number' && !Number.isNaN(goalIndex)
-				? canonicalGoalIndex(goalIndex)
-				: null,
 		content: typeof content === 'string' ? content : '',
 		createdAt: now,
 		updatedAt: now
@@ -142,10 +138,6 @@ export function normalizeNote(note) {
 			: createdAt;
 	return {
 		id: typeof note.id === 'string' && note.id ? note.id : createNoteId(),
-		goalIndex:
-			typeof note.goalIndex === 'number' && !Number.isNaN(note.goalIndex)
-				? canonicalGoalIndex(note.goalIndex)
-				: null,
 		content: typeof note.content === 'string' ? note.content : '',
 		createdAt,
 		updatedAt

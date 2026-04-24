@@ -26,7 +26,11 @@
 		/** When true, pinned tasks show pink chrome; top duplicate strip uses feedPinnedTodos + resolveGroupForTodo */
 		isMainTodoFeed = false,
 		feedPinnedTodos = null,
-		resolveGroupForTodo = null
+		resolveGroupForTodo = null,
+		getLinkedNotesForTodo = null,
+		onUpsertLinkedNote = null,
+		onCreateLinkedNote = null,
+		onRemoveNoteLink = null
 	} = $props();
 
 	const LONG_PRESS_MS = 260;
@@ -736,6 +740,12 @@
 								onToggleCollapse={() => toggleCollapse(todo.id)}
 								isFeedPinnedDuplicate={true}
 								mainFeedPinStyle="top"
+								linkedNotes={getLinkedNotesForTodo ? getLinkedNotesForTodo(todo.id) : []}
+								onUpsertLinkedNote={onUpsertLinkedNote}
+								onCreateLinkedNote={(content) =>
+									onCreateLinkedNote && onCreateLinkedNote(todo.id, content, pinGroup)}
+								onRemoveNoteLink={(noteId) =>
+									onRemoveNoteLink && onRemoveNoteLink(todo.id, noteId, pinGroup)}
 							/>
 						</div>
 					{/if}
@@ -812,6 +822,12 @@
 												isCollapsed={collapsedTodos.has(todo.id)}
 												onToggleCollapse={() => toggleCollapse(todo.id)}
 												mainFeedPinStyle={isMainTodoFeed && todo.pinned ? 'inline' : null}
+												linkedNotes={getLinkedNotesForTodo ? getLinkedNotesForTodo(todo.id) : []}
+												onUpsertLinkedNote={onUpsertLinkedNote}
+												onCreateLinkedNote={(content) =>
+													onCreateLinkedNote && onCreateLinkedNote(todo.id, content, subGroup)}
+												onRemoveNoteLink={(noteId) =>
+													onRemoveNoteLink && onRemoveNoteLink(todo.id, noteId, subGroup)}
 											/>
 										</div>
 										{#if showPlaceholderAfter(todo.id)}
@@ -866,6 +882,12 @@
 								isCollapsed={collapsedTodos.has(todo.id)}
 								onToggleCollapse={() => toggleCollapse(todo.id)}
 								mainFeedPinStyle={isMainTodoFeed && todo.pinned ? 'inline' : null}
+								linkedNotes={getLinkedNotesForTodo ? getLinkedNotesForTodo(todo.id) : []}
+								onUpsertLinkedNote={onUpsertLinkedNote}
+								onCreateLinkedNote={(content) =>
+									onCreateLinkedNote && onCreateLinkedNote(todo.id, content, group)}
+								onRemoveNoteLink={(noteId) =>
+									onRemoveNoteLink && onRemoveNoteLink(todo.id, noteId, group)}
 							/>
 						</div>
 						{#if showPlaceholderAfter(todo.id)}

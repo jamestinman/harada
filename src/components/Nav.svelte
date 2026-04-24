@@ -6,7 +6,7 @@
 	import { page } from '$app/state';
 	import { browser } from '$app/environment';
 	import { NEW_LIST_OPTION_VALUE, parseListSelection } from '$lib/todoUtils.js';
-	import { resumePathTodo, resumePathNotes } from '$lib/workspaceNavResume.js';
+	import { resumePathTodo } from '$lib/workspaceNavResume.js';
 	import { store } from '$stores/store.svelte.js';
 	import { navComposerHandlers } from '$stores/navComposerHandlers.svelte.js';
 	import { authStore } from '$stores/auth.svelte.js';
@@ -200,10 +200,6 @@ const clearAll = () => {
 		return resumePathTodo();
 	});
 
-	const notesResumeHref = $derived.by(() => {
-		void page.url.pathname;
-		return resumePathNotes();
-	});
 
 	function normalizePathname(path) {
 		const p = (path ?? '/').replace(/\/+$/, '') || '/';
@@ -219,26 +215,6 @@ const clearAll = () => {
 			if (path === '/todo') {
 				store.requestTodoSidebarOpen();
 			}
-			return;
-		}
-	}
-
-	/** Mobile bottom nav: resume last Notes URL; from note detail → list uses saved route + drawer */
-	function handleMobileNotesNav(e) {
-		const currentPath = normalizePathname(page.url.pathname);
-		if (store.notesMobileDetailOpen && currentPath.startsWith('/notes')) {
-			e.preventDefault();
-			store.clearLastOpenedNote();
-			store.pendingSelectNoteId = null;
-			store.notesRevealListDrawer = true;
-			goto(resumePathNotes());
-			return;
-		}
-
-		const path = normalizePathname(page.url.pathname);
-		const target = normalizePathname(resumePathNotes());
-		if (path === target) {
-			e.preventDefault();
 			return;
 		}
 	}
@@ -311,9 +287,8 @@ const clearAll = () => {
 				How it works
 			</button>
 
-      <button onclick={() => { goto('/'); store.mobileNavMenuOpen = false;}} class="mobile-menu-item">Harada</button>
-			<button onclick={() => { goto(resumePathTodo()); store.mobileNavMenuOpen = false;}} class="mobile-menu-item">To-Do</button>
-			<button onclick={() => { goto(resumePathNotes()); store.mobileNavMenuOpen = false;}} class="mobile-menu-item">Notes</button>
+      <button onclick={() => { goto('/'); store.mobileNavMenuOpen = false;}} class="mobile-menu-item">Goals</button>
+			<button onclick={() => { goto(resumePathTodo()); store.mobileNavMenuOpen = false;}} class="mobile-menu-item">Tasks</button>
 
 			{#if authStore.user}
 				<button type="button" onclick={handleLogout} class="mobile-menu-item-logout">Logout</button>
@@ -347,9 +322,8 @@ const clearAll = () => {
 			</button>
 		</div>
 		<div class="mobile-bottom-nav-links">
-			<a href="/" class="mobile-bottom-nav-link">Harada</a>
-			<a href={todoResumeHref} class="mobile-bottom-nav-link" onclick={handleMobileTodoNav}>To-Do</a>
-			<a href={notesResumeHref} class="mobile-bottom-nav-link" onclick={handleMobileNotesNav}>Notes</a>
+			<a href="/" class="mobile-bottom-nav-link">Goals</a>
+			<a href={todoResumeHref} class="mobile-bottom-nav-link" onclick={handleMobileTodoNav}>Tasks</a>
 		</div>
 	</div>
 </div>
@@ -383,16 +357,14 @@ const clearAll = () => {
 			Sign In
 		</button>
 	{/if}
-  <a href="/about" class="nav-desktop-link">About</a>
-
+  <hr class="w-full border-slate-300 dark:border-slate-700" />
   <a
 		href="/"
 		class="nav-desktop-link"
 	>
-		Harada
+		Goals
 	</a>
-	<a href={todoResumeHref} class="nav-desktop-link">To-Do</a>
-	<a href={notesResumeHref} class="nav-desktop-link">Notes</a>
+	<a href={todoResumeHref} class="nav-desktop-link">Tasks</a>
   <!-- <button onclick={clearAll}>Clear</button> -->
 </nav>
 
