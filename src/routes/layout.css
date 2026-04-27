@@ -83,11 +83,12 @@ h4 {
 }
 
 .composer-backdrop {
-  @apply fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0;
+  @apply fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/50 p-0;
   /* Use visual viewport height on mobile browsers so the sheet moves above the on‑screen keyboard.
      Fallback to 100vh where dvh is not supported. */
   height: 100vh;
   height: 100dvh;
+  overscroll-behavior: contain;
   .dark & {
     @apply bg-slate-950/70;
   }
@@ -97,7 +98,11 @@ h4 {
 }
 
 .composer-panel {
-  @apply w-full max-w-3xl mx-auto max-h-[85vh] overflow-y-auto rounded-t-2xl p-4 shadow-2xl will-change-transform;
+  @apply mx-auto w-full max-w-3xl overflow-y-auto rounded-t-2xl p-4 shadow-2xl will-change-transform;
+  /* Prefer the full visible viewport on mobile so long task forms remain scrollable. */
+  max-height: calc(100vh - 0.5rem);
+  max-height: calc(100dvh - 0.5rem);
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
   .dark & {
     @apply bg-slate-900 text-slate-100;
   }
@@ -1058,6 +1063,35 @@ select {
   }
   .light & {
     @apply text-slate-900;
+  }
+}
+
+.linked-note-markdown {
+  @apply no-underline;
+  .dark & {
+    @apply border-slate-700/60 bg-slate-950/20 text-slate-100 hover:border-violet-400/50 hover:bg-violet-500/10;
+  }
+  .light & {
+    @apply border-slate-300 bg-white text-slate-900 shadow-sm hover:border-violet-400 hover:bg-violet-50;
+  }
+}
+
+.linked-note-markdown li,
+.linked-note-markdown p {
+  .dark & {
+    @apply text-slate-200;
+  }
+  .light & {
+    @apply !text-slate-800;
+  }
+}
+
+.linked-note-markdown li::marker {
+  .dark & {
+    @apply text-slate-500;
+  }
+  .light & {
+    @apply !text-slate-600;
   }
 }
 

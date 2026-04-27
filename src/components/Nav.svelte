@@ -289,6 +289,7 @@ const clearAll = () => {
 
       <button onclick={() => { goto('/'); store.mobileNavMenuOpen = false;}} class="mobile-menu-item">Goals</button>
 			<button onclick={() => { goto(resumePathTodo()); store.mobileNavMenuOpen = false;}} class="mobile-menu-item">Tasks</button>
+			<button onclick={() => { goto('/notes'); store.mobileNavMenuOpen = false;}} class="mobile-menu-item">Notes</button>
 
 			{#if authStore.user}
 				<button type="button" onclick={handleLogout} class="mobile-menu-item-logout">Logout</button>
@@ -324,6 +325,7 @@ const clearAll = () => {
 		<div class="mobile-bottom-nav-links">
 			<a href="/" class="mobile-bottom-nav-link">Goals</a>
 			<a href={todoResumeHref} class="mobile-bottom-nav-link" onclick={handleMobileTodoNav}>Tasks</a>
+			<a href="/notes" class="mobile-bottom-nav-link">Notes</a>
 		</div>
 	</div>
 </div>
@@ -365,6 +367,7 @@ const clearAll = () => {
 		Goals
 	</a>
 	<a href={todoResumeHref} class="nav-desktop-link">Tasks</a>
+	<a href="/notes" class="nav-desktop-link">Notes</a>
   <!-- <button onclick={clearAll}>Clear</button> -->
 </nav>
 

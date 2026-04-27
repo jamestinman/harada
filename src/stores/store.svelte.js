@@ -84,6 +84,7 @@ function normalizeNoteTaskLink(link) {
 		id: typeof link.id === 'string' && link.id ? link.id : createLinkId('ntl'),
 		noteId: link.noteId,
 		taskId: link.taskId,
+		isPrimary: link.isPrimary === true,
 		createdAt,
 		updatedAt
 	};
@@ -276,6 +277,7 @@ class Store {
 						? local.noteGoalLinks.map((link) => normalizeNoteGoalLink(link)).filter(Boolean)
 						: [];
 					this._migrateLegacyTaskMarkdownInMemory();
+					this._migratePrimaryTaskNotesInMemory();
 				}
 			} catch (err) {
 				console.error('Failed to load local Harada chart:', err);
@@ -300,6 +302,7 @@ class Store {
 			if (data) {
 				await this._mergeAndApplyRemoteSnapshot(data, { persistLocal: true });
 				this._migrateLegacyTaskMarkdownInMemory();
+				this._migratePrimaryTaskNotesInMemory();
 			}
 		} catch (err) {
 			console.error('Failed to initialize from Supabase:', err);
@@ -712,6 +715,16 @@ class Store {
 		}
 		const remoteLink = this._noteTaskLinkRowToLink(newRow);
 		if (!remoteLink) return;
+		if (remoteLink.isPrimary) {
+			this.noteTaskLinks = this.noteTaskLinks.filter(
+				(link) =>
+					!(
+						link.taskId === remoteLink.taskId &&
+						link.isPrimary === true &&
+						link.noteId !== remoteLink.noteId
+					)
+			);
+		}
 		const existing = this.noteTaskLinks.find(
 			(link) => link.noteId === remoteLink.noteId && link.taskId === remoteLink.taskId
 		);
@@ -813,7 +826,7 @@ class Store {
 			this.syncError = null;
 			await this.saveToSupabase(
 				this.harada_chart.grid,
-				this.harada_chart.todos,
+				(this.harada_chart.todos || []).filter((todo) => !todo?.isDraft),
 				this.notes,
 				this.noteTaskLinks,
 				this.noteGoalLinks,
@@ -830,7 +843,9 @@ class Store {
 		try {
 			const plainGrid = this._toPlainArray(this.harada_chart.grid);
 			const plainTodos = Array.isArray(this.harada_chart.todos)
-				? this.harada_chart.todos.map((t) => (t && typeof t === 'object' ? { ...t } : t))
+				? this.harada_chart.todos
+						.filter((t) => !t?.isDraft)
+						.map((t) => (t && typeof t === 'object' ? { ...t } : t))
 				: [];
 			const plainNotes = Array.isArray(this.notes)
 				? this.notes.map((note) => (note && typeof note === 'object' ? { ...note } : note))
@@ -1043,6 +1058,7 @@ class Store {
 	_todoToTaskRow(todo, userId) {
 		if (!todo || typeof todo.id !== 'string') return null;
 		const normalized = normalizeTodoListMeta(todo);
+		if (normalized.isDraft) return null;
 		const updatedAtMs =
 			typeof normalized.updatedAt === 'number' && Number.isFinite(normalized.updatedAt)
 				? normalized.updatedAt
@@ -1113,6 +1129,7 @@ class Store {
 			id: row.id,
 			noteId: row.note_id,
 			taskId: row.task_id,
+			isPrimary: row.is_primary === true,
 			createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
 			updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now()
 		});
@@ -1126,6 +1143,7 @@ class Store {
 			user_id: userId,
 			note_id: normalized.noteId,
 			task_id: normalized.taskId,
+			is_primary: normalized.isPrimary === true,
 			created_at: new Date(normalized.createdAt).toISOString(),
 			updated_at: new Date(normalized.updatedAt).toISOString(),
 			deleted_at: null
@@ -1181,6 +1199,7 @@ class Store {
 				normalizeNoteTaskLink({
 					noteId: note.id,
 					taskId: legacy.id,
+					isPrimary: true,
 					createdAt: now,
 					updatedAt: now
 				})
@@ -1203,9 +1222,36 @@ class Store {
 		this.harada_chart = { ...this.harada_chart, todos: updatedTodos };
 	}
 
+	_migratePrimaryTaskNotesInMemory() {
+		const todos = this.harada_chart.todos || [];
+		if (!Array.isArray(todos) || todos.length === 0) return;
+		let changed = false;
+		const nextLinks = [...this.noteTaskLinks];
+		for (const todo of todos) {
+			if (!todo?.id) continue;
+			const linksForTask = nextLinks
+				.filter((link) => link.taskId === todo.id)
+				.sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0));
+			if (linksForTask.length === 0) continue;
+			const primaryLinks = linksForTask.filter((link) => link.isPrimary === true);
+			if (primaryLinks.length === 1) continue;
+			const preferred = primaryLinks[0] || linksForTask[0];
+			const ts = Date.now();
+			for (const link of linksForTask) {
+				const shouldBePrimary = link === preferred;
+				if (link.isPrimary !== shouldBePrimary) {
+					link.isPrimary = shouldBePrimary;
+					link.updatedAt = ts;
+					changed = true;
+				}
+			}
+		}
+		if (changed) this.noteTaskLinks = nextLinks;
+	}
+
 	/**
 	 * After adding or changing a goal-linked todo, refresh the goal cell timestamp and
-	 * move that goal's section to the top of the All Todos list (via todo_group_ordering).
+	 * move that goal's section to the top of the All Tasks list (via todo_group_ordering).
 	 */
 	bumpGoalAfterTodoActivity(goalIndex) {
 		if (typeof goalIndex !== 'number') return;
@@ -1220,6 +1266,7 @@ class Store {
 		for (const todo of updatedTodos) {
 			if (
 				(todo.listType === 'goal' || !todo.listType) &&
+				!todo.isDraft &&
 				todo.status !== 'done' &&
 				typeof todo.goalIndex === 'number'
 			) {
@@ -1272,6 +1319,15 @@ class Store {
 				previousTodo = todo;
 				break;
 			}
+		}
+
+		const materializesDraft =
+			previousTodo?.isDraft === true &&
+			((typeof nextPatch.title === 'string' && nextPatch.title.trim().length > 0) ||
+				(typeof nextPatch.markdown === 'string' && nextPatch.markdown.trim().length > 0) ||
+				nextPatch.isDraft === false);
+		if (materializesDraft) {
+			nextPatch = { ...nextPatch, isDraft: false };
 		}
 
 		// First apply the patch to the target todo itself
@@ -1443,6 +1499,32 @@ class Store {
 			.sort((a, b) => b.updatedAt - a.updatedAt);
 	}
 
+	getPrimaryNoteForTask(taskId) {
+		if (!taskId) return null;
+		const primaryLink = this.noteTaskLinks
+			.filter((link) => link.taskId === taskId && link.isPrimary === true)
+			.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0];
+		if (!primaryLink) return null;
+		return this.notes.find((note) => note.id === primaryLink.noteId) || null;
+	}
+
+	getFreeNotesForTask(taskId) {
+		if (!taskId) return [];
+		const noteIds = new Set(
+			this.noteTaskLinks
+				.filter((link) => link.taskId === taskId && link.isPrimary !== true)
+				.map((link) => link.noteId)
+		);
+		return this.notes
+			.filter((note) => noteIds.has(note.id))
+			.sort((a, b) => b.updatedAt - a.updatedAt);
+	}
+
+	isPrimaryTaskNote(noteId) {
+		if (!noteId) return false;
+		return this.noteTaskLinks.some((link) => link.noteId === noteId && link.isPrimary === true);
+	}
+
 	getNotesForGoal(goalIndex) {
 		if (typeof goalIndex !== 'number') return [];
 		const noteIds = new Set(
@@ -1465,11 +1547,26 @@ class Store {
 		return this.noteGoalLinks.filter((link) => link.noteId === noteId).map((link) => link.goalIndex);
 	}
 
-	linkNoteToTask(noteId, taskId) {
+	linkNoteToTask(noteId, taskId, { isPrimary = false } = {}) {
 		if (!noteId || !taskId) return;
-		if (this.noteTaskLinks.some((link) => link.noteId === noteId && link.taskId === taskId)) return;
+		if (isPrimary) {
+			this.noteTaskLinks = this.noteTaskLinks.filter(
+				(link) => !(link.taskId === taskId && link.isPrimary === true && link.noteId !== noteId)
+			);
+		}
+		const existing = this.noteTaskLinks.find((link) => link.noteId === noteId && link.taskId === taskId);
+		if (existing) {
+			if (existing.isPrimary === isPrimary) return;
+			this.noteTaskLinks = this.noteTaskLinks.map((link) =>
+				link.noteId === noteId && link.taskId === taskId
+					? { ...link, isPrimary, updatedAt: Date.now() }
+					: link
+			);
+			this.saveNow();
+			return;
+		}
 		this.noteTaskLinks = [
-			normalizeNoteTaskLink({ noteId, taskId, createdAt: Date.now(), updatedAt: Date.now() }),
+			normalizeNoteTaskLink({ noteId, taskId, isPrimary, createdAt: Date.now(), updatedAt: Date.now() }),
 			...this.noteTaskLinks
 		].filter(Boolean);
 		this.saveNow();
@@ -1532,11 +1629,22 @@ class Store {
 		this.saveNow();
 	}
 
-	createLinkedTaskNote(taskId, { content = '', goalIndex = null } = {}) {
+	createLinkedTaskNote(taskId, { content = '', goalIndex = null, isPrimary = false } = {}) {
 		const note = this.createNote({ content });
-		this.linkNoteToTask(note.id, taskId);
+		this.linkNoteToTask(note.id, taskId, { isPrimary });
 		if (typeof goalIndex === 'number') this.linkNoteToGoal(note.id, goalIndex);
 		return note;
+	}
+
+	setPrimaryNoteForTask(taskId, { content = '', goalIndex = null } = {}) {
+		if (!taskId) return null;
+		const primary = this.getPrimaryNoteForTask(taskId);
+		if (primary) {
+			this.updateNote(primary.id, { content });
+			return primary;
+		}
+		if (!String(content || '').trim()) return null;
+		return this.createLinkedTaskNote(taskId, { content, goalIndex, isPrimary: true });
 	}
 
 	deleteNote(id) {

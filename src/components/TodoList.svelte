@@ -23,14 +23,14 @@
 		enableGroupDrag = false,
 		onMoveGroup = null,
 		searchText = '',
+		targetTodoId = null,
 		/** When true, pinned tasks show pink chrome; top duplicate strip uses feedPinnedTodos + resolveGroupForTodo */
 		isMainTodoFeed = false,
 		feedPinnedTodos = null,
 		resolveGroupForTodo = null,
+		getPrimaryNoteForTodo = null,
 		getLinkedNotesForTodo = null,
-		onUpsertLinkedNote = null,
-		onCreateLinkedNote = null,
-		onRemoveNoteLink = null
+		onUpsertPrimaryNote = null
 	} = $props();
 
 	const LONG_PRESS_MS = 260;
@@ -70,6 +70,23 @@
 	});
 	let justDidGroupDrag = false;
 	let collapsedTodos = $state(new Set());
+
+	$effect(() => {
+		if (!targetTodoId) return;
+		const target = getTodoById(targetTodoId);
+		if (!target?.parentId) return;
+		const nextCollapsed = new Set(collapsedTodos);
+		let current = target;
+		const seen = new Set();
+		let changed = false;
+		while (current?.parentId) {
+			if (seen.has(current.id)) break;
+			seen.add(current.id);
+			if (nextCollapsed.delete(current.parentId)) changed = true;
+			current = getTodoById(current.parentId);
+		}
+		if (changed) collapsedTodos = nextCollapsed;
+	});
 
 	$effect(() => {
 		if (taskDrag.active || groupDrag.active) {
@@ -645,6 +662,12 @@
 		return '';
 	}
 
+	function targetTodoClass(todoId) {
+		return targetTodoId === todoId
+			? 'ring-2 ring-violet-400/80 ring-offset-2 ring-offset-transparent'
+			: '';
+	}
+
 	function showChildIndicator(todoId) {
 		return taskDrag.active && taskDrag.targetTodoId === todoId && taskDrag.dropMode === 'child';
 	}
@@ -712,7 +735,7 @@
 						<div
 							data-dnd-item-id={todo.id}
 							onpointerdown={(event) => handleTaskPointerDown(event, todo)}
-							class={`relative rounded-lg transition ${itemDragClass(todo.id)}`}
+							class={`relative rounded-lg transition ${itemDragClass(todo.id)} ${targetTodoClass(todo.id)}`}
 						>
 							{#if showChildIndicator(todo.id)}
 								<div class="pointer-events-none absolute right-2 top-1/2 z-10 -translate-y-1/2">
@@ -740,12 +763,10 @@
 								onToggleCollapse={() => toggleCollapse(todo.id)}
 								isFeedPinnedDuplicate={true}
 								mainFeedPinStyle="top"
+								primaryNote={getPrimaryNoteForTodo ? getPrimaryNoteForTodo(todo.id) : null}
 								linkedNotes={getLinkedNotesForTodo ? getLinkedNotesForTodo(todo.id) : []}
-								onUpsertLinkedNote={onUpsertLinkedNote}
-								onCreateLinkedNote={(content) =>
-									onCreateLinkedNote && onCreateLinkedNote(todo.id, content, pinGroup)}
-								onRemoveNoteLink={(noteId) =>
-									onRemoveNoteLink && onRemoveNoteLink(todo.id, noteId, pinGroup)}
+								onUpsertPrimaryNote={(content) =>
+									onUpsertPrimaryNote && onUpsertPrimaryNote(todo.id, content, pinGroup)}
 							/>
 						</div>
 					{/if}
@@ -795,7 +816,7 @@
 										<div
 											data-dnd-item-id={todo.id}
 											onpointerdown={(event) => handleTaskPointerDown(event, todo)}
-											class={`relative rounded-lg transition ${itemDragClass(todo.id)}`}
+											class={`relative rounded-lg transition ${itemDragClass(todo.id)} ${targetTodoClass(todo.id)}`}
 										>
 											{#if showChildIndicator(todo.id)}
 												<div class="pointer-events-none absolute right-2 top-1/2 z-10 -translate-y-1/2">
@@ -822,12 +843,10 @@
 												isCollapsed={collapsedTodos.has(todo.id)}
 												onToggleCollapse={() => toggleCollapse(todo.id)}
 												mainFeedPinStyle={isMainTodoFeed && todo.pinned ? 'inline' : null}
+												primaryNote={getPrimaryNoteForTodo ? getPrimaryNoteForTodo(todo.id) : null}
 												linkedNotes={getLinkedNotesForTodo ? getLinkedNotesForTodo(todo.id) : []}
-												onUpsertLinkedNote={onUpsertLinkedNote}
-												onCreateLinkedNote={(content) =>
-													onCreateLinkedNote && onCreateLinkedNote(todo.id, content, subGroup)}
-												onRemoveNoteLink={(noteId) =>
-													onRemoveNoteLink && onRemoveNoteLink(todo.id, noteId, subGroup)}
+												onUpsertPrimaryNote={(content) =>
+													onUpsertPrimaryNote && onUpsertPrimaryNote(todo.id, content, subGroup)}
 											/>
 										</div>
 										{#if showPlaceholderAfter(todo.id)}
@@ -855,7 +874,7 @@
 						<div
 							data-dnd-item-id={todo.id}
 							onpointerdown={(event) => handleTaskPointerDown(event, todo)}
-							class={`relative rounded-lg transition ${itemDragClass(todo.id)}`}
+							class={`relative rounded-lg transition ${itemDragClass(todo.id)} ${targetTodoClass(todo.id)}`}
 						>
 							{#if showChildIndicator(todo.id)}
 								<div class="pointer-events-none absolute right-2 top-1/2 z-10 -translate-y-1/2">
@@ -882,12 +901,10 @@
 								isCollapsed={collapsedTodos.has(todo.id)}
 								onToggleCollapse={() => toggleCollapse(todo.id)}
 								mainFeedPinStyle={isMainTodoFeed && todo.pinned ? 'inline' : null}
+								primaryNote={getPrimaryNoteForTodo ? getPrimaryNoteForTodo(todo.id) : null}
 								linkedNotes={getLinkedNotesForTodo ? getLinkedNotesForTodo(todo.id) : []}
-								onUpsertLinkedNote={onUpsertLinkedNote}
-								onCreateLinkedNote={(content) =>
-									onCreateLinkedNote && onCreateLinkedNote(todo.id, content, group)}
-								onRemoveNoteLink={(noteId) =>
-									onRemoveNoteLink && onRemoveNoteLink(todo.id, noteId, group)}
+								onUpsertPrimaryNote={(content) =>
+									onUpsertPrimaryNote && onUpsertPrimaryNote(todo.id, content, group)}
 							/>
 						</div>
 						{#if showPlaceholderAfter(todo.id)}

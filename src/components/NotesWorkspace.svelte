@@ -1,6 +1,6 @@
 <script>
 	import { onMount, tick } from 'svelte';
-	import { beforeNavigate, goto } from '$app/navigation';
+	import { beforeNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { browser } from '$app/environment';
 	import { store } from '$stores/store.svelte.js';
@@ -76,6 +76,15 @@
 		return (todo.title || '').trim() || 'Untitled task';
 	}
 
+	function getTaskHref(taskId) {
+		const todo = todos.find((t) => t.id === taskId);
+		const taskParam = `task=${encodeURIComponent(taskId)}`;
+		if (typeof todo?.goalIndex === 'number') {
+			return `/todo/${indexToNomenclature(todo.goalIndex)}?${taskParam}`;
+		}
+		return `/todo?${taskParam}`;
+	}
+
 	const scopedGoalIndex = $derived.by(() => parseGoalIndexFromParam(goalParam));
 	const hasInvalidGoal = $derived(!!goalParam && scopedGoalIndex === null);
 
@@ -95,10 +104,11 @@
 	});
 
 	const filteredNotes = $derived.by(() => {
+		const freeNotes = notes.filter((note) => !store.isPrimaryTaskNote(note.id));
 		const base =
 			typeof scopedGoalIndex !== 'number'
-				? [...notes].sort((a, b) => b.updatedAt - a.updatedAt)
-				: notes
+				? [...freeNotes].sort((a, b) => b.updatedAt - a.updatedAt)
+				: freeNotes
 						.filter((note) => noteMatchesScopedGoal(note.id, scopedGoalIndex))
 						.sort((a, b) => b.updatedAt - a.updatedAt);
 		const q = searchText.trim().toLowerCase();
@@ -110,7 +120,7 @@
 		const canonical = canonicalGoalIndex(goalIdx);
 		if (noteGoalLinks.some((link) => link.noteId === noteId && link.goalIndex === canonical)) return true;
 		const taskIds = noteTaskLinks
-			.filter((link) => link.noteId === noteId)
+			.filter((link) => link.noteId === noteId && link.isPrimary !== true)
 			.map((link) => link.taskId);
 		for (const taskId of taskIds) {
 			const todo = todos.find((t) => t.id === taskId);
@@ -131,46 +141,25 @@
 	}
 
 	function getLinkedTaskIds(noteId) {
-		return noteTaskLinks.filter((link) => link.noteId === noteId).map((link) => link.taskId);
+		return noteTaskLinks
+			.filter((link) => link.noteId === noteId && link.isPrimary !== true)
+			.map((link) => link.taskId);
 	}
-
-	function getPrimaryGoalIndex(noteId) {
-		const directGoal = getLinkedGoalIndices(noteId)[0];
-		if (typeof directGoal === 'number') return directGoal;
-		const taskId = getLinkedTaskIds(noteId)[0];
-		const todo = todos.find((t) => t.id === taskId);
-		return typeof todo?.goalIndex === 'number' ? todo.goalIndex : null;
-	}
-
-	const goalNotesCount = $derived.by(() => {
-		if (!selectedNote) return 0;
-		const primary = getPrimaryGoalIndex(selectedNote.id);
-		if (typeof primary !== 'number') return 0;
-		return notes.filter((note) => noteMatchesScopedGoal(note.id, primary)).length;
-	});
-
-	const goalTodosCount = $derived.by(() => {
-		if (!selectedNote) return 0;
-		const primary = getPrimaryGoalIndex(selectedNote.id);
-		if (typeof primary !== 'number') return 0;
-		const listId = `goal:${primary}`;
-		return store.harada_chart.todos.filter(
-			(t) => t.listId === listId && t.status !== 'done'
-		).length;
-	});
 
 	let selectedNoteId = $state(null);
 	let resumeNoteId = $state(store.lastOpenedNoteId);
 	let isEditing = $state(false);
 	let editContent = $state('');
-	let editGoalValue = $state('');
+	let linkPanelOpen = $state(false);
+	let linkKind = $state('goal');
+	let linkGoalValue = $state('');
+	let linkTaskValue = $state('');
 	let editTextareaDesktop = $state(null);
 	let editTextareaMobile = $state(null);
 	/** Used so we refit height when the note changes, but not on every keystroke (preserves drag-resize). */
 	let prevNoteIdForTextareaResize = null;
 	let shouldAutoEdit = $state(false);
 	let lastSavedContent = $state('');
-	let lastSavedGoalIndex = $state(null);
   let previousSelectedNoteId = $state(null);
 
 	var selectedNote = $derived.by(() => {
@@ -180,10 +169,6 @@
 		}
 		return filteredNotes[0] || null;
 	});
-	const selectedPrimaryGoalIndex = $derived.by(() =>
-		selectedNote ? getPrimaryGoalIndex(selectedNote.id) : null
-	);
-
 	$effect(() => {
 		store.currentGoalIndex = typeof scopedGoalIndex === 'number' ? scopedGoalIndex : null;
 	});
@@ -243,9 +228,7 @@
 		if (!selectedNote) {
 			selectedNoteId = null;
 			editContent = '';
-			editGoalValue = '';
 			lastSavedContent = '';
-			lastSavedGoalIndex = null;
 			isEditing = false;
 			previousSelectedNoteId = null;
 			return;
@@ -253,14 +236,16 @@
 		selectedNoteId = selectedNote.id;
 		const selectedNoteChanged = selectedNote.id !== previousSelectedNoteId;
 		previousSelectedNoteId = selectedNote.id;
+		if (selectedNoteChanged) {
+			linkPanelOpen = false;
+			linkGoalValue = '';
+			linkTaskValue = '';
+		}
 
 		const content = selectedNote.content || '';
-		const goalIndex = getPrimaryGoalIndex(selectedNote.id);
 
 		editContent = content;
-		editGoalValue = typeof goalIndex === 'number' ? String(goalIndex) : '';
 		lastSavedContent = content;
-		lastSavedGoalIndex = goalIndex;
 
 		const noteIsEmpty = content.trim().length === 0;
 		if (selectedNoteChanged) {
@@ -285,39 +270,53 @@ function isNoteEmpty(note) {
 	return ((note?.content || '').trim().length ?? 0) === 0;
 }
 
-async function showGoalNotesOnMobile(goalIndex) {
-	if (typeof goalIndex !== 'number') return;
-	mobileMenuOpen = true;
-	await goto(`/notes/${indexToNomenclature(goalIndex)}`);
-}
+	function getAvailableTasksForNote(noteId) {
+		const linked = new Set(getLinkedTaskIds(noteId));
+		return todos
+			.filter((todo) => todo?.id && !linked.has(todo.id))
+			.sort((a, b) =>
+				((a.title || '').trim() || 'Untitled task').localeCompare(
+					(b.title || '').trim() || 'Untitled task',
+					undefined,
+					{ sensitivity: 'base' }
+				)
+			);
+	}
 
-	function getGoalIndexFromEditValue() {
-		const parsedGoal = editGoalValue === '' ? null : canonicalGoalIndex(Number(editGoalValue));
-		return Number.isNaN(parsedGoal) ? null : parsedGoal;
+	function openLinkPanel(kind = 'goal') {
+		linkKind = kind;
+		linkGoalValue = '';
+		linkTaskValue = '';
+		linkPanelOpen = true;
+	}
+
+	function addSelectedLink() {
+		if (!selectedNote) return;
+		if (linkKind === 'goal') {
+			const parsedGoal = linkGoalValue === '' ? null : canonicalGoalIndex(Number(linkGoalValue));
+			if (typeof parsedGoal === 'number' && !Number.isNaN(parsedGoal)) {
+				store.linkNoteToGoal(selectedNote.id, parsedGoal);
+			}
+		} else if (linkTaskValue) {
+			store.linkNoteToTask(selectedNote.id, linkTaskValue, { isPrimary: false });
+		}
+		linkPanelOpen = false;
+		linkGoalValue = '';
+		linkTaskValue = '';
 	}
 
 	function noteHasUnsavedChanges() {
 		if (!selectedNote) return false;
-		const goalIndex = getGoalIndexFromEditValue();
-		return editContent !== lastSavedContent || goalIndex !== lastSavedGoalIndex;
+		return editContent !== lastSavedContent;
 	}
 
 	function persistCurrentNoteEdits() {
 		if (!selectedNote) return;
-		const goalIndex = getGoalIndexFromEditValue();
 		const normalizedContent = editContent;
 		store.updateNote(selectedNote.id, {
 			content: normalizedContent
 		});
-		const existingGoals = getLinkedGoalIndices(selectedNote.id);
-		for (const existingGoal of existingGoals) {
-			store.unlinkNoteFromGoal(selectedNote.id, existingGoal);
-		}
-		if (typeof goalIndex === 'number') {
-			store.linkNoteToGoal(selectedNote.id, goalIndex);
-		}
 		lastSavedContent = normalizedContent;
-		lastSavedGoalIndex = goalIndex;
 	}
 
 	function saveNote() {
@@ -435,6 +434,92 @@ async function showGoalNotesOnMobile(goalIndex) {
 	{/if}
 {/snippet}
 
+{#snippet noteLinkControls()}
+	{#if selectedNote}
+		<div class="flex flex-wrap items-center gap-2">
+			{#each getLinkedGoalIndices(selectedNote.id) as linkedGoal}
+				<span class="inline-flex items-center gap-1 rounded-md border border-slate-400 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm dark:border-slate-600 dark:bg-slate-900/60 dark:text-slate-200">
+					<a
+						href={`/todo/${indexToNomenclature(linkedGoal)}`}
+						class="underline-offset-2 hover:text-violet-600 hover:underline dark:hover:text-violet-300"
+					>
+						{getGoalLabelFromIndex(linkedGoal)}
+					</a>
+					<button
+						type="button"
+						class="text-rose-500 hover:text-rose-600 dark:text-rose-300 dark:hover:text-rose-200"
+						aria-label={`Unlink ${getGoalLabelFromIndex(linkedGoal)}`}
+						onclick={() => store.unlinkNoteFromGoal(selectedNote.id, linkedGoal)}
+					>
+						x
+					</button>
+				</span>
+			{/each}
+			{#each getLinkedTaskIds(selectedNote.id) as linkedTaskId}
+				<span class="inline-flex items-center gap-1 rounded-md border border-slate-400 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm dark:border-slate-600 dark:bg-slate-900/60 dark:text-slate-200">
+					<a
+						href={getTaskHref(linkedTaskId)}
+						class="underline-offset-2 hover:text-violet-600 hover:underline dark:hover:text-violet-300"
+					>
+						{getTaskLabel(linkedTaskId)}
+					</a>
+					<button
+						type="button"
+						class="text-rose-500 hover:text-rose-600 dark:text-rose-300 dark:hover:text-rose-200"
+						aria-label={`Unlink ${getTaskLabel(linkedTaskId)}`}
+						onclick={() => store.unlinkNoteFromTask(selectedNote.id, linkedTaskId)}
+					>
+						x
+					</button>
+				</span>
+			{/each}
+			<button
+				type="button"
+				class="rounded border border-violet-400/40 px-2.5 py-1 text-xs font-medium text-violet-400 transition hover:bg-violet-500/15"
+				onclick={() => openLinkPanel('goal')}
+			>
+				+ link
+			</button>
+		</div>
+		{#if linkPanelOpen}
+			<div class="mt-3 flex flex-wrap items-end gap-2 rounded-md border border-slate-700/70 p-3">
+				<select bind:value={linkKind} class="rounded-md border border-slate-600 bg-transparent px-2 py-1.5 text-sm">
+					<option value="goal">Goal</option>
+					<option value="task">Task</option>
+				</select>
+				{#if linkKind === 'goal'}
+					<div class="min-w-0 flex-1">
+						<GoalSelect
+							allGoals={allGoals}
+							bind:value={linkGoalValue}
+							includeUnassigned={false}
+							includeNewList={false}
+							stringValues={true}
+						/>
+					</div>
+				{:else}
+					<select bind:value={linkTaskValue} class="min-w-0 flex-1 rounded-md border border-slate-600 bg-transparent px-2 py-1.5 text-sm">
+						<option value="">Choose a task</option>
+						{#each getAvailableTasksForNote(selectedNote.id) as todo (todo.id)}
+							<option value={todo.id}>{(todo.title || '').trim() || 'Untitled task'}</option>
+						{/each}
+					</select>
+				{/if}
+				<button
+					type="button"
+					onclick={addSelectedLink}
+					class="rounded-md border border-violet-600/70 bg-violet-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-violet-500"
+				>
+					Add
+				</button>
+				<button type="button" onclick={() => (linkPanelOpen = false)} class="rounded-md px-2 py-1.5 text-sm text-slate-400">
+					Cancel
+				</button>
+			</div>
+		{/if}
+	{/if}
+{/snippet}
+
 <div class="p-4 pb-24 md:p-8 md:pb-8">
 	<div class="mx-auto max-w-7xl">
 		<div class="mb-3 md:hidden">
@@ -546,17 +631,8 @@ async function showGoalNotesOnMobile(goalIndex) {
 
 						<div class="mt-4 pt-4">
 							{#if isEditing || isNoteEmpty(selectedNote)}
-								<div class="flex flex-wrap items-end justify-between gap-3">
-									<div class="min-w-0 max-w-md flex-1">
-										<GoalSelect
-											allGoals={allGoals}
-											bind:value={editGoalValue}
-											includeUnassigned={true}
-											includeNewList={false}
-											stringValues={true}
-											unassignedLabel="No goal association"
-										/>
-									</div>
+								<div class="space-y-3">
+									{@render noteLinkControls()}
 									<button
 										type="button"
 										onclick={saveNote}
@@ -566,34 +642,7 @@ async function showGoalNotesOnMobile(goalIndex) {
 									</button>
 								</div>
 							{:else}
-								<div class="flex flex-wrap items-center gap-2">
-									{#if typeof selectedPrimaryGoalIndex === 'number'}
-										<a
-											href={`/notes/${indexToNomenclature(selectedPrimaryGoalIndex)}`}
-											class="rounded border border-violet-400/40 bg-violet-500/5 px-2.5 py-1 text-xs font-medium text-violet-400 transition hover:bg-violet-500/15"
-										>
-											{goalNotesCount} note{goalNotesCount === 1 ? '' : 's'}
-										</a>
-										<a
-											href={`/todo/${indexToNomenclature(selectedPrimaryGoalIndex)}`}
-											class="rounded border border-violet-400/40 bg-violet-500/5 px-2.5 py-1 text-xs font-medium text-violet-400 transition hover:bg-violet-500/15"
-										>
-											{goalTodosCount} task{goalTodosCount === 1 ? '' : 's'}
-										</a>
-									{/if}
-									{#each getLinkedGoalIndices(selectedNote.id) as linkedGoal}
-										<span class="inline-flex items-center gap-1 rounded border border-slate-600 px-2 py-1 text-xs text-slate-300">
-											<a href={`/todo/${indexToNomenclature(linkedGoal)}`}>{getGoalLabelFromIndex(linkedGoal)}</a>
-											<button type="button" class="text-rose-300" onclick={() => store.unlinkNoteFromGoal(selectedNote.id, linkedGoal)}>x</button>
-										</span>
-									{/each}
-									{#each getLinkedTaskIds(selectedNote.id) as linkedTaskId}
-										<span class="inline-flex items-center gap-1 rounded border border-slate-600 px-2 py-1 text-xs text-slate-300">
-											<span>{getTaskLabel(linkedTaskId)}</span>
-											<button type="button" class="text-rose-300" onclick={() => store.unlinkNoteFromTask(selectedNote.id, linkedTaskId)}>x</button>
-										</span>
-									{/each}
-								</div>
+								{@render noteLinkControls()}
 							{/if}
 							<p class="hidden mt-3 text-xs text-slate-400">
 								Updated {formatUpdatedAt(selectedNote.updatedAt)}
@@ -691,17 +740,8 @@ async function showGoalNotesOnMobile(goalIndex) {
 
 						<div class="my-4">
 							{#if isEditing || isNoteEmpty(selectedNote)}
-								<div class="flex flex-wrap items-end justify-between gap-3">
-									<div class="min-w-0 flex-1">
-										<GoalSelect
-											allGoals={allGoals}
-											bind:value={editGoalValue}
-											includeUnassigned={true}
-											includeNewList={false}
-											stringValues={true}
-											unassignedLabel="No goal association"
-										/>
-									</div>
+								<div class="space-y-3">
+									{@render noteLinkControls()}
 									<button
 										type="button"
 										onclick={saveNote}
@@ -711,38 +751,7 @@ async function showGoalNotesOnMobile(goalIndex) {
 									</button>
 								</div>
 							{:else}
-								<div class="flex flex-wrap items-center gap-2">
-									{#if typeof selectedPrimaryGoalIndex === 'number'}
-										<a
-											href={`/notes/${indexToNomenclature(selectedPrimaryGoalIndex)}`}
-											onclick={async (event) => {
-												event.preventDefault();
-												await showGoalNotesOnMobile(selectedPrimaryGoalIndex);
-											}}
-											class="rounded border border-violet-400/40 bg-violet-500/5 px-2.5 py-1 text-xs font-medium text-violet-400 transition hover:bg-violet-500/15"
-										>
-											{goalNotesCount} note{goalNotesCount === 1 ? '' : 's'}
-										</a>
-										<a
-											href={`/todo/${indexToNomenclature(selectedPrimaryGoalIndex)}`}
-											class="rounded border border-violet-400/40 bg-violet-500/5 px-2.5 py-1 text-xs font-medium text-violet-400 transition hover:bg-violet-500/15"
-										>
-											{goalTodosCount} task{goalTodosCount === 1 ? '' : 's'}
-										</a>
-									{/if}
-									{#each getLinkedGoalIndices(selectedNote.id) as linkedGoal}
-										<span class="inline-flex items-center gap-1 rounded border border-slate-600 px-2 py-1 text-xs text-slate-300">
-											<a href={`/todo/${indexToNomenclature(linkedGoal)}`}>{getGoalLabelFromIndex(linkedGoal)}</a>
-											<button type="button" class="text-rose-300" onclick={() => store.unlinkNoteFromGoal(selectedNote.id, linkedGoal)}>x</button>
-										</span>
-									{/each}
-									{#each getLinkedTaskIds(selectedNote.id) as linkedTaskId}
-										<span class="inline-flex items-center gap-1 rounded border border-slate-600 px-2 py-1 text-xs text-slate-300">
-											<span>{getTaskLabel(linkedTaskId)}</span>
-											<button type="button" class="text-rose-300" onclick={() => store.unlinkNoteFromTask(selectedNote.id, linkedTaskId)}>x</button>
-										</span>
-									{/each}
-								</div>
+								{@render noteLinkControls()}
 							{/if}
 							<p class="hidden mt-3 text-xs text-slate-400">
 								Updated {formatUpdatedAt(selectedNote.updatedAt)}

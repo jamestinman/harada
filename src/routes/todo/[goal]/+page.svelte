@@ -1,5 +1,5 @@
 <script>
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
@@ -37,6 +37,7 @@
 	const noteTaskLinks = $derived(store.noteTaskLinks);
 	const noteGoalLinks = $derived(store.noteGoalLinks);
 	const dataLoaded = $derived(!store.isBootstrapping);
+	const targetTodoId = $derived(page.url.searchParams.get('task') || null);
 	let activeGoalTab = $state('tasks');
 	let activeTodoId = $state(null);
 	let searchText = $state('');
@@ -422,7 +423,9 @@
 		for (const link of noteTaskLinks) {
 			if (goalTaskIds.has(link.taskId)) linkedIds.add(link.noteId);
 		}
-		return notes.filter((note) => linkedIds.has(note.id)).sort((a, b) => b.updatedAt - a.updatedAt);
+		return notes
+			.filter((note) => linkedIds.has(note.id) && !store.isPrimaryTaskNote(note.id))
+			.sort((a, b) => b.updatedAt - a.updatedAt);
 	});
 
 	let mobileMenuOpen = $state(false);
@@ -442,33 +445,58 @@
 		persistTodoMobileSidebar(mobileMenuOpen);
 	});
 
+	$effect(() => {
+		if (!browser || !dataLoaded || !targetTodoId) return;
+		activeGoalTab = 'tasks';
+		mobileMenuOpen = false;
+		activeTodoId = targetTodoId;
+		if (todos.find((todo) => todo.id === targetTodoId)?.status === 'done') {
+			showCompleted = true;
+		}
+		void tick().then(() => scrollToLinkedTask(targetTodoId));
+	});
+
+	function scrollToLinkedTask(todoId, attempt = 0) {
+		if (!browser || !todoId) return;
+		const escaped = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(todoId) : todoId;
+		const el = document.querySelector(`[data-todo-item-id="${escaped}"]`);
+		if (!el) {
+			if (attempt < 8) {
+				setTimeout(() => scrollToLinkedTask(todoId, attempt + 1), 50);
+			}
+			return;
+		}
+		el.scrollIntoView({ behavior: attempt === 0 ? 'smooth' : 'auto', block: 'center' });
+	}
+
 	// When this goal has no todos, ensure one blank todo exists so the user can type immediately
 	$effect(() => {
 		if (goalIndex === null || !dataLoaded) return;
 		if (goalGroups.length === 0) {
-			addTodo(goalIndex);
+			addTodo(goalIndex, { draft: true });
 		}
 	});
 
 	// Todo management functions
-	function addTodo(targetGoalIndex = goalIndex) {
+	function addTodo(targetGoalIndex = goalIndex, { draft = false } = {}) {
 		if (targetGoalIndex === null) return;
 		const listMeta = buildGoalListMeta(targetGoalIndex);
 		const todo = {
 			...defaultTodo(),
 			...listMeta,
+			isDraft: draft,
 			parentId: null,
 			ordering: getTopOrdering(listMeta.listId, null)
 		};
 		store.harada_chart.todos = [...store.harada_chart.todos, todo];
 
-		if (typeof targetGoalIndex === 'number') {
+		if (!draft && typeof targetGoalIndex === 'number') {
 			store.bumpGoalAfterTodoActivity(targetGoalIndex);
 		}
 
 		// Set active todo ID so it gets focused
 		activeTodoId = todo.id;
-		store.saveNow();
+		if (!draft) store.saveNow();
 		return todo;
 	}
 
@@ -497,12 +525,15 @@
 			const todo = {
 				...defaultTodo(),
 				title: title || '',
-				markdown: markdown || '',
+				markdown: '',
 				...customMeta,
 				parentId: null,
 				ordering: getTopOrdering(customMeta.listId, null)
 			};
 			store.harada_chart.todos = [...store.harada_chart.todos, todo];
+			if (markdown?.trim()) {
+				store.setPrimaryNoteForTask(todo.id, { content: markdown.trim() });
+			}
 			store.saveNow();
 			return;
 		}
@@ -512,12 +543,15 @@
 		const todo = {
 			...defaultTodo(),
 			title: title || '',
-			markdown: markdown || '',
+			markdown: '',
 			...buildGoalListMeta(targetGoalIndex),
 			parentId: null,
 			ordering: getTopOrdering(`goal:${targetGoalIndex}`, null)
 		};
 		store.harada_chart.todos = [...store.harada_chart.todos, todo];
+		if (markdown?.trim()) {
+			store.setPrimaryNoteForTask(todo.id, { content: markdown.trim(), goalIndex: targetGoalIndex });
+		}
 
 		if (typeof targetGoalIndex === 'number') {
 			store.bumpGoalAfterTodoActivity(targetGoalIndex);
@@ -551,19 +585,18 @@
 	}
 
 	function getLinkedNotesForTodo(todoId) {
-		return store.getNotesForTask(todoId);
+		return store.getFreeNotesForTask(todoId);
 	}
 
-	function upsertLinkedNote(noteId, content) {
-		store.updateNote(noteId, { content });
+	function getPrimaryNoteForTodo(todoId) {
+		return store.getPrimaryNoteForTask(todoId);
 	}
 
-	function createLinkedNoteForTodo(todoId, content) {
-		store.createLinkedTaskNote(todoId, { content, goalIndex });
-	}
-
-	function removeLinkedNoteFromTodo(todoId, noteId) {
-		store.unlinkNoteFromTask(noteId, todoId);
+	function upsertPrimaryNoteForTodo(todoId, content) {
+		if (content?.trim()) {
+			store.updateTodo(todoId, { isDraft: false });
+		}
+		store.setPrimaryNoteForTask(todoId, { content, goalIndex });
 	}
 
 	function deleteTodo(id) {
@@ -896,17 +929,10 @@
 				<div class="space-y-1.5">
 					<a
 						href="/todo"
-						class="flex items-center justify-between rounded-md border border-slate-700/70 px-3 py-2 text-sm transition hover:border-violet-500/50 hover:bg-violet-500/10"
-					>
-						<span>All Todos</span>
-						<span class="text-xs text-slate-400">{todos.filter((t) => t.status !== 'done').length}</span>
-					</a>
-					<a
-						href="/todo?view=notes"
 						class="flex items-center justify-between rounded-md border border-slate-700/70 px-3 py-2 text-sm font-semibold transition hover:border-violet-500/50 hover:bg-violet-500/10"
 					>
-						<span>All Notes</span>
-						<span class="text-xs text-slate-400">{store.notes.length}</span>
+						<span>All Tasks</span>
+						<span class="text-xs text-slate-400">{todos.filter((t) => !t.isDraft && t.status !== 'done').length}</span>
 					</a>
 					{#each goalMenuItems as item (item.id)}
 						<a
@@ -1101,10 +1127,10 @@
 							allowCrossListMove={false}
 							enableGroupDrag={false}
 							searchText={searchText}
+							{targetTodoId}
+							{getPrimaryNoteForTodo}
 							{getLinkedNotesForTodo}
-							onUpsertLinkedNote={upsertLinkedNote}
-							onCreateLinkedNote={createLinkedNoteForTodo}
-							onRemoveNoteLink={removeLinkedNoteFromTodo}
+							onUpsertPrimaryNote={upsertPrimaryNoteForTodo}
 						/>
 					{:else}
 						<div class="space-y-3">
@@ -1151,18 +1177,10 @@
 							<a
 								href="/todo"
 								onclick={() => (mobileMenuOpen = false)}
-								class="flex items-center justify-between rounded-md border border-slate-700/70 px-3 py-2 text-sm transition hover:border-violet-500/50 hover:bg-violet-500/10"
-							>
-								<span>All Todos</span>
-								<span class="text-xs text-slate-400">{todos.filter((t) => t.status !== 'done').length}</span>
-							</a>
-							<a
-								href="/todo?view=notes"
-								onclick={() => (mobileMenuOpen = false)}
 								class="flex items-center justify-between rounded-md border border-slate-700/70 px-3 py-2 text-sm font-semibold transition hover:border-violet-500/50 hover:bg-violet-500/10"
 							>
-								<span>All Notes</span>
-								<span class="text-xs text-slate-400">{store.notes.length}</span>
+								<span>All Tasks</span>
+								<span class="text-xs text-slate-400">{todos.filter((t) => !t.isDraft && t.status !== 'done').length}</span>
 							</a>
 							{#each goalMenuItems as item (item.id)}
 								<a
@@ -1354,10 +1372,10 @@
 								allowCrossListMove={false}
 								enableGroupDrag={false}
 								searchText={searchText}
+								{targetTodoId}
+								{getPrimaryNoteForTodo}
 								{getLinkedNotesForTodo}
-								onUpsertLinkedNote={upsertLinkedNote}
-								onCreateLinkedNote={createLinkedNoteForTodo}
-								onRemoveNoteLink={removeLinkedNoteFromTodo}
+								onUpsertPrimaryNote={upsertPrimaryNoteForTodo}
 							/>
 						{:else}
 							<div class="space-y-3">

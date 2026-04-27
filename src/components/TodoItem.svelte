@@ -6,6 +6,7 @@
 		parseListSelection,
 		renderMarkdown
 	} from '$lib/todoUtils.js';
+	import { store } from '$stores/store.svelte.js';
 	import GoalSelect from './GoalSelect.svelte';
 	import { ArrowRightToLine, ArrowLeftFromLine, ChevronDown, Check, Pin } from 'lucide-svelte';
 
@@ -32,10 +33,9 @@
 		isFeedPinnedDuplicate = false,
 		/** 'top' = pinned strip under + New task; 'inline' = same task under its goal on /todo */
 		mainFeedPinStyle = null,
+		primaryNote = null,
 		linkedNotes = [],
-		onUpsertLinkedNote = null,
-		onCreateLinkedNote = null,
-		onRemoveNoteLink = null
+		onUpsertPrimaryNote = null
 	} = $props();
 
 	let isEditing = $state(false);
@@ -51,13 +51,14 @@
 	let markdownTextareaElement = $state(null);
 	let markdownPreviewElement = $state(null);
 	let isCreatingNext = $state(false);
+	let autoFocusedTodoId = $state(null);
 
-	const hasNotes = $derived(
-		linkedNotes.length > 0 || (typeof todo.markdown === 'string' && todo.markdown.trim().length > 0)
+	const hasPrimaryNote = $derived(
+		(primaryNote?.content || todo.markdown || '').trim().length > 0
 	);
+	const hasNotes = $derived(hasPrimaryNote || linkedNotes.length > 0);
 	const inlineNotePreview = $derived.by(() => {
-		const firstLinked = linkedNotes[0]?.content || '';
-		const raw = (firstLinked || todo.markdown || '').trim();
+		const raw = (primaryNote?.content || todo.markdown || linkedNotes[0]?.content || '').trim();
 		if (!raw) return '';
 		const firstNonEmptyLine = raw
 			.split(/\r?\n/)
@@ -87,7 +88,14 @@
 
 	// Auto-start editing if this is a new empty todo (unless auto-focus is disabled)
 	$effect(() => {
-		if (isNewEmptyTodo && !isEditingTitle && !isEditing && !disableAutoFocus) {
+		if (
+			isNewEmptyTodo &&
+			autoFocusedTodoId !== todo.id &&
+			!isEditingTitle &&
+			!isEditing &&
+			!disableAutoFocus
+		) {
+			autoFocusedTodoId = todo.id;
 			startEditingTitle();
 		}
 	});
@@ -206,10 +214,8 @@
 
 	function startEditingNotes() {
 		editTitle = todo.title || '';
-		editLinkedNotes = linkedNotes.length
-			? linkedNotes.map((note) => ({ id: note.id, content: note.content || '' }))
-			: [{ id: null, content: '' }];
-		editMarkdown = todo.markdown || '';
+		editLinkedNotes = linkedNotes.map((note) => ({ id: note.id, content: note.content || '' }));
+		editMarkdown = primaryNote?.content || todo.markdown || '';
 		if (todo.listType === 'custom') {
 			editListValue = NEW_LIST_OPTION_VALUE;
 			editNewListName = todo.listName || '';
@@ -248,36 +254,12 @@
 			title: editTitle,
 			...listMeta
 		});
-		if (onUpsertLinkedNote || onCreateLinkedNote) {
-			for (const note of editLinkedNotes) {
-				const content = (note?.content || '').trim();
-				if (note?.id && onUpsertLinkedNote) {
-					onUpsertLinkedNote(note.id, note.content || '');
-					continue;
-				}
-				if (!note?.id && content && onCreateLinkedNote) {
-					onCreateLinkedNote(content);
-				}
-			}
+		if (onUpsertPrimaryNote) {
+			onUpsertPrimaryNote(editMarkdown || '');
 		}
 		isEditing = false;
 		isEditingMarkdown = false;
 		showMobileEditor = false;
-	}
-
-	function addLinkedNoteDraft() {
-		editLinkedNotes = [...editLinkedNotes, { id: null, content: '' }];
-	}
-
-	function removeLinkedNoteDraft(index) {
-		const note = editLinkedNotes[index];
-		if (note?.id && onRemoveNoteLink) {
-			onRemoveNoteLink(note.id);
-		}
-		editLinkedNotes = editLinkedNotes.filter((_, i) => i !== index);
-		if (editLinkedNotes.length === 0) {
-			editLinkedNotes = [{ id: null, content: '' }];
-		}
 	}
 
 	const selectedGoalIndexForMap = $derived.by(() => {
@@ -376,7 +358,7 @@
 		{:else}
 			<button
 				type="button"
-				onclick={hasNotes ? startEditingNotes : startEditingTitle}
+				onclick={startEditingTitle}
 				class={`flex-1 text-left text-sm min-h-[1.5rem] py-1 transition ${
 					todo.status === 'done'
 						? 'line-through'
@@ -489,32 +471,44 @@
 			/>
 		</div>
 
-		<!-- Linked notes -->
+		<!-- Primary note -->
 		<div class="mb-3 space-y-2">
-			{#each editLinkedNotes as linkedNote, idx (linkedNote.id || `draft-${idx}`)}
-				<div class="space-y-1">
+			<div class="space-y-1">
+				{#if isEditingMarkdown || !editMarkdown.trim()}
 					<textarea
-						bind:value={editLinkedNotes[idx].content}
-						placeholder="Add note in markdown..."
+						bind:this={markdownTextareaElement}
+						bind:value={editMarkdown}
+						placeholder="Add a primary note in markdown..."
 					></textarea>
-					<div class="flex justify-end">
-						<button
-							type="button"
-							onclick={() => removeLinkedNoteDraft(idx)}
-							class="rounded-md px-2 py-1 text-xs text-rose-300 transition hover:bg-rose-900/40"
-						>
-							Remove note
-						</button>
+				{:else}
+					<div
+						bind:this={markdownPreviewElement}
+						role="button"
+						tabindex="0"
+						class="markdown cursor-text rounded-md border border-slate-700/70 bg-slate-950/20 p-3 text-sm transition hover:border-violet-500/40 hover:bg-violet-500/10"
+						onclick={enterMarkdownEdit}
+						onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && enterMarkdownEdit()}
+					>
+						{@html renderMarkdown(editMarkdown)}
 					</div>
+				{/if}
+			</div>
+			{#if editLinkedNotes.length > 0}
+				<div class="space-y-2">
+					<div class="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Linked notes</div>
+					{#each editLinkedNotes as linkedNote (linkedNote.id)}
+						{#if linkedNote.content.trim()}
+								<a
+									href="/notes"
+									onclick={() => (store.pendingSelectNoteId = linkedNote.id)}
+									class="linked-note-markdown markdown block rounded-md border p-3 text-sm transition"
+								>
+									{@html renderMarkdown(linkedNote.content)}
+								</a>
+						{/if}
+					{/each}
 				</div>
-			{/each}
-			<button
-				type="button"
-				onclick={addLinkedNoteDraft}
-				class="rounded-md px-2 py-1 text-xs text-violet-300 transition hover:bg-violet-900/40"
-			>
-				+ Add linked note
-			</button>
+			{/if}
 		</div>
 
 
@@ -604,33 +598,45 @@
 				/>
 			</div>
 
-			<!-- Linked notes -->
+			<!-- Primary note -->
 			<div class="mb-4 space-y-2">
-				{#each editLinkedNotes as linkedNote, idx (linkedNote.id || `mobile-draft-${idx}`)}
-					<div class="space-y-1">
+				<div class="space-y-1">
+					{#if isEditingMarkdown || !editMarkdown.trim()}
 						<textarea
-							bind:value={editLinkedNotes[idx].content}
-							placeholder=""
+							bind:this={markdownTextareaElement}
+							bind:value={editMarkdown}
+							placeholder="Add a primary note in markdown..."
 							class="composer-textarea"
 						></textarea>
-						<div class="flex justify-end">
-							<button
-								type="button"
-								onclick={() => removeLinkedNoteDraft(idx)}
-								class="rounded-md px-2 py-1 text-xs text-rose-300 transition hover:bg-rose-900/40"
-							>
-								Remove note
-							</button>
+					{:else}
+						<div
+							bind:this={markdownPreviewElement}
+							role="button"
+							tabindex="0"
+							class="markdown cursor-text rounded-md border border-slate-700/70 bg-slate-950/20 p-3 text-sm transition hover:border-violet-500/40 hover:bg-violet-500/10"
+							onclick={enterMarkdownEdit}
+							onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && enterMarkdownEdit()}
+						>
+							{@html renderMarkdown(editMarkdown)}
 						</div>
+					{/if}
+				</div>
+				{#if editLinkedNotes.length > 0}
+					<div class="space-y-2">
+						<div class="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Linked notes</div>
+						{#each editLinkedNotes as linkedNote (linkedNote.id)}
+							{#if linkedNote.content.trim()}
+								<a
+									href="/notes"
+									onclick={() => (store.pendingSelectNoteId = linkedNote.id)}
+									class="linked-note-markdown markdown block rounded-md border p-3 text-sm transition"
+								>
+									{@html renderMarkdown(linkedNote.content)}
+								</a>
+							{/if}
+						{/each}
 					</div>
-				{/each}
-				<button
-					type="button"
-					onclick={addLinkedNoteDraft}
-					class="rounded-md px-2 py-1 text-xs text-violet-300 transition hover:bg-violet-900/40"
-				>
-					+ Add linked note
-				</button>
+				{/if}
 			</div>
 
 			<!-- Actions -->
