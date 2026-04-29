@@ -2,8 +2,6 @@
 	import { cubicOut } from 'svelte/easing';
 	import {
 		indexToNomenclature,
-		NEW_LIST_OPTION_VALUE,
-		parseListSelection,
 		renderMarkdown
 	} from '$lib/todoUtils.js';
 	import { store } from '$stores/store.svelte.js';
@@ -20,7 +18,6 @@
 		onDeletePrevious = null,
 		onMakeSubtask = null,
 		onOutdent = null,
-		allTodos = [],
 		indentLevel = 0,
 		canIndent = false,
 		canOutdent = false,
@@ -35,7 +32,8 @@
 		mainFeedPinStyle = null,
 		primaryNote = null,
 		linkedNotes = [],
-		onUpsertPrimaryNote = null
+		onUpsertPrimaryNote = null,
+		linkedGoalIndices = []
 	} = $props();
 
 	let isEditing = $state(false);
@@ -44,9 +42,9 @@
 	let showMobileEditor = $state(false);
 	let editTitle = $state('');
 	let editMarkdown = $state('');
-	let editListValue = $state('');
-	let editNewListName = $state('');
 	let editLinkedNotes = $state([]);
+	let linkPanelOpen = $state(false);
+	let linkGoalValue = $state('');
 	let titleInputElement = $state(null);
 	let markdownTextareaElement = $state(null);
 	let markdownPreviewElement = $state(null);
@@ -71,7 +69,6 @@
 			.trim();
 	});
 	const isPinned = $derived(todo.pinned === true);
-	const showOutdentAction = $derived(!canIndent && canOutdent);
 	const isNewEmptyTodo = $derived(
 		(!todo.title || todo.title.trim() === '') && 
 		todo.createdAt && 
@@ -216,13 +213,8 @@
 		editTitle = todo.title || '';
 		editLinkedNotes = linkedNotes.map((note) => ({ id: note.id, content: note.content || '' }));
 		editMarkdown = primaryNote?.content || todo.markdown || '';
-		if (todo.listType === 'custom') {
-			editListValue = NEW_LIST_OPTION_VALUE;
-			editNewListName = todo.listName || '';
-		} else {
-			editListValue = typeof todo.goalIndex === 'number' ? String(todo.goalIndex) : '';
-			editNewListName = '';
-		}
+		linkPanelOpen = false;
+		linkGoalValue = '';
 
 		// Check if mobile (window width < 768px)
 		if (typeof window !== 'undefined' && window.innerWidth < 768) {
@@ -248,11 +240,8 @@
 	}
 
 	function saveChanges() {
-		const listMeta = parseListSelection(editListValue, editNewListName);
-		if (!listMeta) return;
 		onUpdate({
-			title: editTitle,
-			...listMeta
+			title: editTitle
 		});
 		if (onUpsertPrimaryNote) {
 			onUpsertPrimaryNote(editMarkdown || '');
@@ -262,11 +251,36 @@
 		showMobileEditor = false;
 	}
 
-	const selectedGoalIndexForMap = $derived.by(() => {
-		if (editListValue === '' || editListValue === NEW_LIST_OPTION_VALUE) return null;
-		const parsed = Number(editListValue);
-		return Number.isNaN(parsed) ? null : parsed;
+	function getGoalLabel(goalIndex) {
+		const goal = goalsWithTitles.find((item) => item.index === goalIndex);
+		return goal?.label || indexToNomenclature(goalIndex);
+	}
+
+	function openLinkPanel() {
+		linkGoalValue = '';
+		linkPanelOpen = true;
+	}
+
+	function addSelectedLink() {
+		const parsedGoal = linkGoalValue === '' ? null : Number(linkGoalValue);
+		if (typeof parsedGoal === 'number' && !Number.isNaN(parsedGoal)) {
+			store.linkTaskToGoal(todo.id, parsedGoal);
+		}
+		linkPanelOpen = false;
+		linkGoalValue = '';
+	}
+
+	$effect(() => {
+		if (!linkPanelOpen) return;
+		const parsedGoal = linkGoalValue === '' ? null : Number(linkGoalValue);
+		if (typeof parsedGoal === 'number' && !Number.isNaN(parsedGoal)) {
+			addSelectedLink();
+		}
 	});
+
+	const linkedGoalsForDisplay = $derived(
+		[...new Set(linkedGoalIndices)].filter((idx) => typeof idx === 'number')
+	);
 
 	function cancelEdit() {
 		isEditing = false;
@@ -289,6 +303,48 @@
 		};
 	}
 </script>
+
+{#snippet taskLinkControls()}
+	<div class="flex flex-wrap items-center gap-2">
+			{#each linkedGoalsForDisplay as linkedGoal}
+				<span class="inline-flex items-center gap-1 rounded-md border border-slate-400 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm dark:border-slate-600 dark:bg-slate-900/60 dark:text-slate-200">
+					<a
+						href={`/todo/${indexToNomenclature(linkedGoal)}`}
+						class="underline-offset-2 hover:text-violet-600 hover:underline dark:hover:text-violet-300"
+					>
+						{getGoalLabel(linkedGoal)}
+					</a>
+					<button
+						type="button"
+						class="text-rose-500 hover:text-rose-600 dark:text-rose-300 dark:hover:text-rose-200"
+						aria-label={`Unlink ${getGoalLabel(linkedGoal)}`}
+						onclick={() => store.unlinkTaskFromGoal(todo.id, linkedGoal)}
+					>
+						x
+					</button>
+				</span>
+			{/each}
+			{#if !linkPanelOpen}
+				<button
+					type="button"
+					class="rounded border border-violet-400/40 px-2.5 py-1 text-xs font-medium text-violet-400 transition hover:bg-violet-500/15"
+					onclick={openLinkPanel}
+				>
+					+ link
+				</button>
+			{:else}
+				<div class="inline-flex w-52 max-w-full">
+					<GoalSelect
+						allGoals={allGoals}
+						bind:value={linkGoalValue}
+						includeUnassigned={false}
+						includeNewList={false}
+						stringValues={true}
+					/>
+				</div>
+			{/if}
+	</div>
+{/snippet}
 
 <!-- Compact single-line view -->
 {#if !isEditing}
@@ -389,30 +445,28 @@
 			>
 				<Check class="w-4 h-4" />
 			</button>
-			<button
-				type="button"
-				onmousedown={(e) => e.preventDefault()}
-				onclick={() => {
-					if (!showOutdentAction && onMakeSubtask) {
-						onMakeSubtask();
-					} else if (onOutdent) {
-						onOutdent();
-					}
-				}}
-				disabled={!canIndent && !canOutdent}
-				class={`flex-shrink-0 p-1 rounded transition ${
-					canIndent || canOutdent
-						? 'todo-indent-button-enabled'
-						: 'todo-indent-button-disabled cursor-not-allowed'
-				}`}
-				title={showOutdentAction ? 'Outdent (Ctrl/Cmd+[)' : 'Indent (Ctrl/Cmd+])'}
-			>
-				{#if showOutdentAction}
+			{#if canOutdent}
+				<button
+					type="button"
+					onmousedown={(e) => e.preventDefault()}
+					onclick={() => onOutdent && onOutdent()}
+					class="flex-shrink-0 p-1 rounded transition todo-indent-button-enabled"
+					title="Outdent (Ctrl/Cmd+[)"
+				>
 					<ArrowLeftFromLine class="w-4 h-4" />
-				{:else}
+				</button>
+			{/if}
+			{#if canIndent}
+				<button
+					type="button"
+					onmousedown={(e) => e.preventDefault()}
+					onclick={() => onMakeSubtask && onMakeSubtask()}
+					class="flex-shrink-0 p-1 rounded transition todo-indent-button-enabled"
+					title="Indent (Ctrl/Cmd+])"
+				>
 					<ArrowRightToLine class="w-4 h-4" />
-				{/if}
-			</button>
+				</button>
+			{/if}
 		{/if}
 		<button
 			type="button"
@@ -458,17 +512,9 @@
 			placeholder="Task"
 		/>
 
-		<!-- Goal selection -->
-		<div class="mb-3 flex flex-col gap-1">
-			<GoalSelect
-				allGoals={allGoals}
-				bind:value={editListValue}
-				includeUnassigned={true}
-				includeNewList={false}
-				hideWhenNoGoals={true}
-				stringValues={true}
-				unassignedLabel="No goal assigned"
-			/>
+		<!-- Links -->
+		<div class="mb-3">
+			{@render taskLinkControls()}
 		</div>
 
 		<!-- Primary note -->
@@ -478,14 +524,14 @@
 					<textarea
 						bind:this={markdownTextareaElement}
 						bind:value={editMarkdown}
-						placeholder="Add a primary note in markdown..."
+						placeholder="Task note"
 					></textarea>
 				{:else}
 					<div
 						bind:this={markdownPreviewElement}
 						role="button"
 						tabindex="0"
-						class="markdown cursor-text rounded-md border border-slate-700/70 bg-slate-950/20 p-3 text-sm transition hover:border-violet-500/40 hover:bg-violet-500/10"
+						class="markdown cursor-text rounded-md border border-slate-700/70 p-3 text-sm transition hover:border-violet-500/40 hover:bg-violet-500/10"
 						onclick={enterMarkdownEdit}
 						onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && enterMarkdownEdit()}
 					>
@@ -532,7 +578,6 @@
 				<button
 					type="button"
 					onclick={saveChanges}
-					disabled={editListValue === NEW_LIST_OPTION_VALUE && !editNewListName.trim()}
 					class="rounded-md border border-violet-600/70 bg-violet-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-violet-500"
 				>
 					Save
@@ -545,7 +590,7 @@
 <!-- Mobile bottom sheet editor -->
 {#if showMobileEditor}
 	<div
-		class="composer-backdrop md:hidden"
+		class="md:hidden"
 		onclick={(e) => e.target === e.currentTarget && cancelEdit()}
 		onkeydown={(e) => e.key === 'Escape' && cancelEdit()}
 		role="button"
@@ -554,7 +599,7 @@
 	>
 		<div
 			transition:sheet3d
-			class="composer-panel"
+			class="composer-panel !rounded-2xl"
 		>
 			<!-- Header -->
 			<div class="mb-4 flex items-center justify-between">
@@ -581,21 +626,12 @@
 				/>
 			</div>
 
-			<!-- Goal selection -->
-			<div class="mb-4 flex flex-col gap-1">
-				<span class="todo-panel-label">
-					Goal
-				</span>
-				<GoalSelect
-					allGoals={allGoals}
-					bind:value={editListValue}
-					includeUnassigned={true}
-					includeNewList={false}
-					hideWhenNoGoals={true}
-					stringValues={true}
-					unassignedLabel="No goal assigned"
-					selectClass="w-full"
-				/>
+			<!-- Links -->
+			<div class="mb-4">
+				<span class="todo-panel-label">Links</span>
+				<div class="mt-2">
+					{@render taskLinkControls()}
+				</div>
 			</div>
 
 			<!-- Primary note -->
@@ -605,7 +641,7 @@
 						<textarea
 							bind:this={markdownTextareaElement}
 							bind:value={editMarkdown}
-							placeholder="Add a primary note in markdown..."
+							placeholder="Task note"
 							class="composer-textarea"
 						></textarea>
 					{:else}
@@ -644,7 +680,6 @@
 				<button
 					type="button"
 					onclick={saveChanges}
-					disabled={editListValue === NEW_LIST_OPTION_VALUE && !editNewListName.trim()}
 					class="w-full rounded-md border border-violet-600/70 bg-violet-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-violet-500"
 				>
 					Save

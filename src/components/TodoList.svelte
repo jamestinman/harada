@@ -30,7 +30,8 @@
 		resolveGroupForTodo = null,
 		getPrimaryNoteForTodo = null,
 		getLinkedNotesForTodo = null,
-		onUpsertPrimaryNote = null
+		onUpsertPrimaryNote = null,
+		getLinkedGoalIndicesForTodo = null
 	} = $props();
 
 	const LONG_PRESS_MS = 260;
@@ -765,6 +766,7 @@
 								mainFeedPinStyle="top"
 								primaryNote={getPrimaryNoteForTodo ? getPrimaryNoteForTodo(todo.id) : null}
 								linkedNotes={getLinkedNotesForTodo ? getLinkedNotesForTodo(todo.id) : []}
+								linkedGoalIndices={getLinkedGoalIndicesForTodo ? getLinkedGoalIndicesForTodo(todo.id) : []}
 								onUpsertPrimaryNote={(content) =>
 									onUpsertPrimaryNote && onUpsertPrimaryNote(todo.id, content, pinGroup)}
 							/>
@@ -845,6 +847,7 @@
 												mainFeedPinStyle={isMainTodoFeed && todo.pinned ? 'inline' : null}
 												primaryNote={getPrimaryNoteForTodo ? getPrimaryNoteForTodo(todo.id) : null}
 												linkedNotes={getLinkedNotesForTodo ? getLinkedNotesForTodo(todo.id) : []}
+												linkedGoalIndices={getLinkedGoalIndicesForTodo ? getLinkedGoalIndicesForTodo(todo.id) : []}
 												onUpsertPrimaryNote={(content) =>
 													onUpsertPrimaryNote && onUpsertPrimaryNote(todo.id, content, subGroup)}
 											/>
@@ -903,6 +906,7 @@
 								mainFeedPinStyle={isMainTodoFeed && todo.pinned ? 'inline' : null}
 								primaryNote={getPrimaryNoteForTodo ? getPrimaryNoteForTodo(todo.id) : null}
 								linkedNotes={getLinkedNotesForTodo ? getLinkedNotesForTodo(todo.id) : []}
+								linkedGoalIndices={getLinkedGoalIndicesForTodo ? getLinkedGoalIndicesForTodo(todo.id) : []}
 								onUpsertPrimaryNote={(content) =>
 									onUpsertPrimaryNote && onUpsertPrimaryNote(todo.id, content, group)}
 							/>

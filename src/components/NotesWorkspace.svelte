@@ -24,9 +24,7 @@
 
 	const grid = $derived(store.harada_chart.grid);
 	const notes = $derived(store.notes);
-	const noteTaskLinks = $derived(store.noteTaskLinks);
 	const noteGoalLinks = $derived(store.noteGoalLinks);
-	const todos = $derived(store.harada_chart.todos);
 	const dataLoaded = $derived(!store.isBootstrapping);
 	let mobileMenuOpen = $state(false);
 	let mobileSidebarHydrated = $state(false);
@@ -70,21 +68,6 @@
 		return parsed === null ? null : canonicalGoalIndex(parsed);
 	}
 
-	function getTaskLabel(taskId) {
-		const todo = todos.find((t) => t.id === taskId);
-		if (!todo) return 'Task';
-		return (todo.title || '').trim() || 'Untitled task';
-	}
-
-	function getTaskHref(taskId) {
-		const todo = todos.find((t) => t.id === taskId);
-		const taskParam = `task=${encodeURIComponent(taskId)}`;
-		if (typeof todo?.goalIndex === 'number') {
-			return `/todo/${indexToNomenclature(todo.goalIndex)}?${taskParam}`;
-		}
-		return `/todo?${taskParam}`;
-	}
-
 	const scopedGoalIndex = $derived.by(() => parseGoalIndexFromParam(goalParam));
 	const hasInvalidGoal = $derived(!!goalParam && scopedGoalIndex === null);
 
@@ -118,32 +101,11 @@
 
 	function noteMatchesScopedGoal(noteId, goalIdx) {
 		const canonical = canonicalGoalIndex(goalIdx);
-		if (noteGoalLinks.some((link) => link.noteId === noteId && link.goalIndex === canonical)) return true;
-		const taskIds = noteTaskLinks
-			.filter((link) => link.noteId === noteId && link.isPrimary !== true)
-			.map((link) => link.taskId);
-		for (const taskId of taskIds) {
-			const todo = todos.find((t) => t.id === taskId);
-			if (
-				todo &&
-				(todo.listType === 'goal' || !todo.listType) &&
-				todo.goalIndex === canonical &&
-				todo.status !== 'done'
-			) {
-				return true;
-			}
-		}
-		return false;
+		return noteGoalLinks.some((link) => link.noteId === noteId && link.goalIndex === canonical);
 	}
 
 	function getLinkedGoalIndices(noteId) {
 		return noteGoalLinks.filter((link) => link.noteId === noteId).map((link) => link.goalIndex);
-	}
-
-	function getLinkedTaskIds(noteId) {
-		return noteTaskLinks
-			.filter((link) => link.noteId === noteId && link.isPrimary !== true)
-			.map((link) => link.taskId);
 	}
 
 	let selectedNoteId = $state(null);
@@ -151,9 +113,8 @@
 	let isEditing = $state(false);
 	let editContent = $state('');
 	let linkPanelOpen = $state(false);
-	let linkKind = $state('goal');
 	let linkGoalValue = $state('');
-	let linkTaskValue = $state('');
+	let hasPendingNoteLinkSave = $state(false);
 	let editTextareaDesktop = $state(null);
 	let editTextareaMobile = $state(null);
 	/** Used so we refit height when the note changes, but not on every keystroke (preserves drag-resize). */
@@ -239,7 +200,6 @@
 		if (selectedNoteChanged) {
 			linkPanelOpen = false;
 			linkGoalValue = '';
-			linkTaskValue = '';
 		}
 
 		const content = selectedNote.content || '';
@@ -270,44 +230,39 @@ function isNoteEmpty(note) {
 	return ((note?.content || '').trim().length ?? 0) === 0;
 }
 
-	function getAvailableTasksForNote(noteId) {
-		const linked = new Set(getLinkedTaskIds(noteId));
-		return todos
-			.filter((todo) => todo?.id && !linked.has(todo.id))
-			.sort((a, b) =>
-				((a.title || '').trim() || 'Untitled task').localeCompare(
-					(b.title || '').trim() || 'Untitled task',
-					undefined,
-					{ sensitivity: 'base' }
-				)
-			);
-	}
-
-	function openLinkPanel(kind = 'goal') {
-		linkKind = kind;
+	function openLinkPanel() {
 		linkGoalValue = '';
-		linkTaskValue = '';
 		linkPanelOpen = true;
 	}
 
 	function addSelectedLink() {
 		if (!selectedNote) return;
-		if (linkKind === 'goal') {
-			const parsedGoal = linkGoalValue === '' ? null : canonicalGoalIndex(Number(linkGoalValue));
-			if (typeof parsedGoal === 'number' && !Number.isNaN(parsedGoal)) {
-				store.linkNoteToGoal(selectedNote.id, parsedGoal);
-			}
-		} else if (linkTaskValue) {
-			store.linkNoteToTask(selectedNote.id, linkTaskValue, { isPrimary: false });
+		const parsedGoal = linkGoalValue === '' ? null : canonicalGoalIndex(Number(linkGoalValue));
+		if (typeof parsedGoal === 'number' && !Number.isNaN(parsedGoal)) {
+			store.linkNoteToGoal(selectedNote.id, parsedGoal, { persist: false });
+			hasPendingNoteLinkSave = true;
 		}
 		linkPanelOpen = false;
 		linkGoalValue = '';
-		linkTaskValue = '';
 	}
+
+$effect(() => {
+	if (!linkPanelOpen) return;
+	const parsedGoal = linkGoalValue === '' ? null : canonicalGoalIndex(Number(linkGoalValue));
+	if (typeof parsedGoal === 'number' && !Number.isNaN(parsedGoal)) {
+		addSelectedLink();
+	}
+});
 
 	function noteHasUnsavedChanges() {
 		if (!selectedNote) return false;
 		return editContent !== lastSavedContent;
+	}
+
+	function flushPendingNoteLinkSave() {
+		if (!hasPendingNoteLinkSave) return;
+		store.saveNow();
+		hasPendingNoteLinkSave = false;
 	}
 
 	function persistCurrentNoteEdits() {
@@ -322,13 +277,16 @@ function isNoteEmpty(note) {
 	function saveNote() {
 		if (!selectedNote) return;
 		persistCurrentNoteEdits();
+		flushPendingNoteLinkSave();
 		const noteIsEmpty = editContent.trim().length === 0;
 		isEditing = noteIsEmpty;
 	}
 
 	function flushNoteEditsIfNeeded() {
-		if (!noteHasUnsavedChanges()) return;
-		persistCurrentNoteEdits();
+		if (noteHasUnsavedChanges()) {
+			persistCurrentNoteEdits();
+		}
+		flushPendingNoteLinkSave();
 		const noteIsEmpty = editContent.trim().length === 0;
 		isEditing = noteIsEmpty;
 	}
@@ -455,68 +413,26 @@ function isNoteEmpty(note) {
 					</button>
 				</span>
 			{/each}
-			{#each getLinkedTaskIds(selectedNote.id) as linkedTaskId}
-				<span class="inline-flex items-center gap-1 rounded-md border border-slate-400 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm dark:border-slate-600 dark:bg-slate-900/60 dark:text-slate-200">
-					<a
-						href={getTaskHref(linkedTaskId)}
-						class="underline-offset-2 hover:text-violet-600 hover:underline dark:hover:text-violet-300"
-					>
-						{getTaskLabel(linkedTaskId)}
-					</a>
-					<button
-						type="button"
-						class="text-rose-500 hover:text-rose-600 dark:text-rose-300 dark:hover:text-rose-200"
-						aria-label={`Unlink ${getTaskLabel(linkedTaskId)}`}
-						onclick={() => store.unlinkNoteFromTask(selectedNote.id, linkedTaskId)}
-					>
-						x
-					</button>
-				</span>
-			{/each}
-			<button
-				type="button"
-				class="rounded border border-violet-400/40 px-2.5 py-1 text-xs font-medium text-violet-400 transition hover:bg-violet-500/15"
-				onclick={() => openLinkPanel('goal')}
-			>
-				+ link
-			</button>
-		</div>
-		{#if linkPanelOpen}
-			<div class="mt-3 flex flex-wrap items-end gap-2 rounded-md border border-slate-700/70 p-3">
-				<select bind:value={linkKind} class="rounded-md border border-slate-600 bg-transparent px-2 py-1.5 text-sm">
-					<option value="goal">Goal</option>
-					<option value="task">Task</option>
-				</select>
-				{#if linkKind === 'goal'}
-					<div class="min-w-0 flex-1">
-						<GoalSelect
-							allGoals={allGoals}
-							bind:value={linkGoalValue}
-							includeUnassigned={false}
-							includeNewList={false}
-							stringValues={true}
-						/>
-					</div>
-				{:else}
-					<select bind:value={linkTaskValue} class="min-w-0 flex-1 rounded-md border border-slate-600 bg-transparent px-2 py-1.5 text-sm">
-						<option value="">Choose a task</option>
-						{#each getAvailableTasksForNote(selectedNote.id) as todo (todo.id)}
-							<option value={todo.id}>{(todo.title || '').trim() || 'Untitled task'}</option>
-						{/each}
-					</select>
-				{/if}
+			{#if !linkPanelOpen}
 				<button
 					type="button"
-					onclick={addSelectedLink}
-					class="rounded-md border border-violet-600/70 bg-violet-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-violet-500"
+					class="rounded border border-violet-400/40 px-2.5 py-1 text-xs font-medium text-violet-400 transition hover:bg-violet-500/15"
+					onclick={openLinkPanel}
 				>
-					Add
+					+ link
 				</button>
-				<button type="button" onclick={() => (linkPanelOpen = false)} class="rounded-md px-2 py-1.5 text-sm text-slate-400">
-					Cancel
-				</button>
-			</div>
-		{/if}
+			{:else}
+				<div class="inline-flex w-52 max-w-full">
+					<GoalSelect
+						allGoals={allGoals}
+						bind:value={linkGoalValue}
+						includeUnassigned={false}
+						includeNewList={false}
+						stringValues={true}
+					/>
+				</div>
+			{/if}
+		</div>
 	{/if}
 {/snippet}
 
@@ -604,7 +520,7 @@ function isNoteEmpty(note) {
 							<textarea
 								bind:this={editTextareaDesktop}
 								bind:value={editContent}
-								class="composer-textarea !min-h-0 resize-y"
+								class="composer-textarea notes-markdown-editor !min-h-0 resize-y"
 								placeholder="Write in markdown. First line becomes the title."
 								oninput={() => resizeTextarea({ force: false })}
 							></textarea>
@@ -713,7 +629,7 @@ function isNoteEmpty(note) {
 						<textarea
 							bind:this={editTextareaMobile}
 							bind:value={editContent}
-							class="composer-textarea !min-h-0 resize-y"
+							class="composer-textarea notes-markdown-editor !min-h-0 resize-y"
 							placeholder="Write in markdown. First line becomes the title."
 							oninput={() => resizeTextarea({ force: false })}
 						></textarea>

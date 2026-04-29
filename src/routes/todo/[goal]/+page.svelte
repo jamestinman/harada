@@ -36,6 +36,12 @@
 	const notes = $derived(store.notes);
 	const noteTaskLinks = $derived(store.noteTaskLinks);
 	const noteGoalLinks = $derived(store.noteGoalLinks);
+	const taskGoalLinks = $derived(store.taskGoalLinks);
+	const taskGoalKeySet = $derived.by(() => {
+		const keys = new Set();
+		for (const link of taskGoalLinks) keys.add(`${link.taskId}:${link.goalIndex}`);
+		return keys;
+	});
 	const dataLoaded = $derived(!store.isBootstrapping);
 	const targetTodoId = $derived(page.url.searchParams.get('task') || null);
 	let activeGoalTab = $state('tasks');
@@ -302,8 +308,9 @@
 	// Helper function to organize todos with hierarchy
 	function organizeTodosWithHierarchy(todosList) {
 		const byParent = new Map();
+		const ids = new Set(todosList.map((todo) => todo.id));
 		for (const todo of todosList) {
-			const parentKey = todo.parentId ?? '__root__';
+			const parentKey = todo.parentId && ids.has(todo.parentId) ? todo.parentId : '__root__';
 			if (!byParent.has(parentKey)) byParent.set(parentKey, []);
 			byParent.get(parentKey).push(todo);
 		}
@@ -328,7 +335,10 @@
 
 	function getVisibleGoalTodos(targetGoalIndex) {
 		const filtered = todos.filter((t) => {
-			const matchesGoal = (t.listType === 'goal' || !t.listType) && t.goalIndex === targetGoalIndex;
+			const matchesGoal =
+				(t.listType === 'goal' || !t.listType) &&
+				(t.goalIndex === targetGoalIndex ||
+					taskGoalKeySet.has(`${t.id}:${targetGoalIndex}`));
 			const isCompleted = t.status === 'done';
 			return matchesGoal && (showCompleted || !isCompleted);
 		});
@@ -412,7 +422,12 @@
 		if (typeof goalIndex !== 'number') return [];
 		const goalTaskIds = new Set(
 			todos
-				.filter((todo) => (todo.listType === 'goal' || !todo.listType) && todo.goalIndex === goalIndex)
+				.filter(
+					(todo) =>
+						(todo.listType === 'goal' || !todo.listType) &&
+						(todo.goalIndex === goalIndex ||
+							taskGoalKeySet.has(`${todo.id}:${goalIndex}`))
+				)
 				.map((todo) => todo.id)
 		);
 		const linkedIds = new Set(
@@ -590,6 +605,10 @@
 
 	function getPrimaryNoteForTodo(todoId) {
 		return store.getPrimaryNoteForTask(todoId);
+	}
+
+	function getLinkedGoalIndicesForTodo(todoId) {
+		return store.getLinkedGoalIndicesForTask(todoId);
 	}
 
 	function upsertPrimaryNoteForTodo(todoId, content) {
@@ -1130,6 +1149,7 @@
 							{targetTodoId}
 							{getPrimaryNoteForTodo}
 							{getLinkedNotesForTodo}
+							{getLinkedGoalIndicesForTodo}
 							onUpsertPrimaryNote={upsertPrimaryNoteForTodo}
 						/>
 					{:else}
@@ -1375,6 +1395,7 @@
 								{targetTodoId}
 								{getPrimaryNoteForTodo}
 								{getLinkedNotesForTodo}
+								{getLinkedGoalIndicesForTodo}
 								onUpsertPrimaryNote={upsertPrimaryNoteForTodo}
 							/>
 						{:else}

@@ -98,9 +98,22 @@ h4 {
 }
 
 .composer-panel {
-  @apply mx-auto w-full max-w-3xl overflow-y-auto rounded-t-2xl p-4 shadow-2xl will-change-transform;
+  @apply mx-auto w-full max-w-3xl overflow-x-hidden overflow-y-auto rounded-t-2xl p-4 shadow-2xl will-change-transform;
   /* Prefer the full visible viewport on mobile so long task forms remain scrollable. */
   max-height: calc(100vh - 0.5rem);
+  max-height: calc(100dvh - 0.5rem);
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  .dark & {
+    @apply bg-slate-900 text-slate-100;
+  }
+  .light & {
+    @apply bg-white/95 text-slate-900;
+  }
+}
+
+/* Mobile todo-item editor panel: fixed bottom sheet, separate from the flex backdrop */
+.todo-mobile-panel {
+  @apply fixed bottom-0 left-0 right-0 z-50 overflow-x-hidden overflow-y-auto rounded-t-2xl p-4 shadow-2xl;
   max-height: calc(100dvh - 0.5rem);
   padding-bottom: max(1rem, env(safe-area-inset-bottom));
   .dark & {
@@ -396,6 +409,16 @@ h4 {
 
 .composer-textarea {
   @apply min-h-[140px] w-full resize-y;
+}
+
+.notes-markdown-editor {
+  @apply rounded-md border p-3 text-sm;
+  .dark & {
+    @apply border-slate-700/50 bg-slate-950/40 text-slate-100;
+  }
+  .light & {
+    @apply border-slate-300 bg-white text-slate-900;
+  }
 }
 
 .composer-input {
@@ -970,7 +993,7 @@ input:not([type="checkbox"]):not([type="radio"]), textarea {
 
 /* select arrows (v) naturally style too far to right so we use a transparent padded border to give extra space, then apply an outline to gift a "border" back */
 select {
-  @apply p-2 rounded border-r-8 border-transparent;
+  @apply p-2 rounded border-r-8 border-transparent text-xs;
   .dark & {
     @apply outline outline-slate-700/50;
   }
@@ -987,10 +1010,20 @@ select {
   @apply list-decimal pl-5 my-2 space-y-0.5;
 }
 .markdown li {
-  @apply text-slate-300;
+  .dark & {
+    @apply text-slate-300;
+  }
+  .light & {
+    @apply text-slate-700;
+  }
 }
 .markdown li::marker {
-  @apply text-slate-500;
+  .dark & {
+    @apply text-slate-500;
+  }
+  .light & {
+    @apply text-slate-500;
+  }
 }
 .markdown p + ul,
 .markdown p + ol {
@@ -999,6 +1032,17 @@ select {
 .markdown ul + p,
 .markdown ol + p {
   @apply mt-2;
+}
+
+.markdown,
+.linked-note-markdown {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.markdown pre {
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .notes-markdown-display {
@@ -1069,7 +1113,7 @@ select {
 .linked-note-markdown {
   @apply no-underline;
   .dark & {
-    @apply border-slate-700/60 bg-slate-950/20 text-slate-100 hover:border-violet-400/50 hover:bg-violet-500/10;
+    @apply border-slate-600/70 bg-slate-800/60 text-slate-100 hover:border-violet-400/50 hover:bg-violet-500/10;
   }
   .light & {
     @apply border-slate-300 bg-white text-slate-900 shadow-sm hover:border-violet-400 hover:bg-violet-50;
@@ -1079,7 +1123,7 @@ select {
 .linked-note-markdown li,
 .linked-note-markdown p {
   .dark & {
-    @apply text-slate-200;
+    @apply !text-slate-100;
   }
   .light & {
     @apply !text-slate-800;
@@ -1088,10 +1132,10 @@ select {
 
 .linked-note-markdown li::marker {
   .dark & {
-    @apply text-slate-500;
+    @apply !text-slate-400;
   }
   .light & {
-    @apply !text-slate-600;
+    @apply !text-slate-500;
   }
 }
 
