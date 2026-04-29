@@ -42,7 +42,6 @@
 	let showMobileEditor = $state(false);
 	let editTitle = $state('');
 	let editMarkdown = $state('');
-	let editLinkedNotes = $state([]);
 	let linkPanelOpen = $state(false);
 	let linkGoalValue = $state('');
 	let titleInputElement = $state(null);
@@ -211,7 +210,6 @@
 
 	function startEditingNotes() {
 		editTitle = todo.title || '';
-		editLinkedNotes = linkedNotes.map((note) => ({ id: note.id, content: note.content || '' }));
 		editMarkdown = primaryNote?.content || todo.markdown || '';
 		linkPanelOpen = false;
 		linkGoalValue = '';
@@ -539,22 +537,6 @@
 					</div>
 				{/if}
 			</div>
-			{#if editLinkedNotes.length > 0}
-				<div class="space-y-2">
-					<div class="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Linked notes</div>
-					{#each editLinkedNotes as linkedNote (linkedNote.id)}
-						{#if linkedNote.content.trim()}
-								<a
-									href="/notes"
-									onclick={() => (store.pendingSelectNoteId = linkedNote.id)}
-									class="linked-note-markdown markdown block rounded-md border p-3 text-sm transition"
-								>
-									{@html renderMarkdown(linkedNote.content)}
-								</a>
-						{/if}
-					{/each}
-				</div>
-			{/if}
 		</div>
 
 
@@ -657,22 +639,6 @@
 						</div>
 					{/if}
 				</div>
-				{#if editLinkedNotes.length > 0}
-					<div class="space-y-2">
-						<div class="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Linked notes</div>
-						{#each editLinkedNotes as linkedNote (linkedNote.id)}
-							{#if linkedNote.content.trim()}
-								<a
-									href="/notes"
-									onclick={() => (store.pendingSelectNoteId = linkedNote.id)}
-									class="linked-note-markdown markdown block rounded-md border p-3 text-sm transition"
-								>
-									{@html renderMarkdown(linkedNote.content)}
-								</a>
-							{/if}
-						{/each}
-					</div>
-				{/if}
 			</div>
 
 			<!-- Actions -->
