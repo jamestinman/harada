@@ -958,7 +958,7 @@
 							href={item.href}
 							class={`flex items-center justify-between rounded-md border px-3 py-2 text-sm transition ${
 								item.goalIndex === goalIndex
-									? 'border-violet-500/40 bg-violet-500/15 text-violet-100'
+									? 'border-violet-500/40 bg-violet-500/15'
 									: 'border-slate-700/70 hover:border-violet-500/50 hover:bg-violet-500/10'
 							}`}
 							aria-current={item.goalIndex === goalIndex ? 'page' : undefined}
@@ -1208,7 +1208,7 @@
 									onclick={() => (mobileMenuOpen = false)}
 									class={`flex items-center justify-between rounded-md border px-3 py-2 text-sm transition ${
 										item.goalIndex === goalIndex
-											? 'border-violet-500/40 bg-violet-500/15 text-violet-100'
+											? 'border-violet-500/40 bg-violet-500/15'
 											: 'border-slate-700/70 hover:border-violet-500/50 hover:bg-violet-500/10'
 									}`}
 									aria-current={item.goalIndex === goalIndex ? 'page' : undefined}

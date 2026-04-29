@@ -50,12 +50,13 @@
 	let isCreatingNext = $state(false);
 	let autoFocusedTodoId = $state(null);
 
-	const hasPrimaryNote = $derived(
-		(primaryNote?.content || todo.markdown || '').trim().length > 0
+	const taskNoteContent = $derived(
+		(primaryNote?.content || todo.markdown || linkedNotes[0]?.content || '')
 	);
-	const hasNotes = $derived(hasPrimaryNote || linkedNotes.length > 0);
+	const hasPrimaryNote = $derived(taskNoteContent.trim().length > 0);
+	const hasNotes = $derived(hasPrimaryNote);
 	const inlineNotePreview = $derived.by(() => {
-		const raw = (primaryNote?.content || todo.markdown || linkedNotes[0]?.content || '').trim();
+		const raw = taskNoteContent.trim();
 		if (!raw) return '';
 		const firstNonEmptyLine = raw
 			.split(/\r?\n/)
@@ -210,7 +211,7 @@
 
 	function startEditingNotes() {
 		editTitle = todo.title || '';
-		editMarkdown = primaryNote?.content || todo.markdown || '';
+		editMarkdown = taskNoteContent;
 		linkPanelOpen = false;
 		linkGoalValue = '';
 
