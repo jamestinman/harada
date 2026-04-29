@@ -515,7 +515,7 @@ $effect(() => {
 							<p class="todo-empty-section-text">No notes yet for this view.</p>
 						</div>
 					{:else}
-					<div class={`p-4 ${isEditing ? 'rounded-lg bg-white' : 'todo-panel'}`}>
+					<div class={`p-4 ${isEditing ? 'rounded-lg bg-white dark:bg-slate-900/70 dark:ring-1 dark:ring-slate-700/70' : 'todo-panel'}`}>
 							{#if isEditing || isNoteEmpty(selectedNote)}
 							<textarea
 								bind:this={editTextareaDesktop}

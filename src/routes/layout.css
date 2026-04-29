@@ -414,7 +414,7 @@ h4 {
 .notes-markdown-editor {
   @apply rounded-md border p-3 text-sm;
   .dark & {
-    @apply border-slate-700/50 bg-slate-950/40 text-slate-100;
+    @apply border-slate-600/70 bg-slate-900/90 text-slate-50 placeholder:text-slate-300;
   }
   .light & {
     @apply border-slate-300 bg-white text-slate-900;
