@@ -55,6 +55,8 @@
 	let goalTitleInputElement = $state(null);
 	let goalDescriptionTextareaElement = $state(null);
 	let selectedColor = $state('default');
+	/** URL param of the last goal this page considered "navigated to" (avoids auto-edit on grid flicker from sync). */
+	let lastAutoEditGoalParam = $state(/** @type {string | null} */ (null));
 
 	// Get goal param reactively
 	const goalParam = $derived(page.params.goal);
@@ -247,12 +249,19 @@
 		return !text || text === indexToNomenclature(goalIndex);
 	});
 
-	// Auto-start editing goal title if it has no custom title
+	// Auto-start editing goal title only when landing on this goal via navigation.
+	// Background refresh (tab focus / visibility) can temporarily change merged grid
+	// cells and make hasNoCustomTitle true; re-running startEditingGoal(true) then
+	// clears editedGoalTitle and looks like the title "disappeared".
 	$effect(() => {
 		if (!dataLoaded || goalIndex === null || isEditingGoal) return;
-		if (hasNoCustomTitle) {
-			startEditingGoal(true);
-		}
+		if (store.isRefreshing) return;
+		const param = goalParam ?? null;
+		if (param === null) return;
+		const justNavigatedHere = param !== lastAutoEditGoalParam;
+		if (justNavigatedHere) lastAutoEditGoalParam = param;
+		if (!justNavigatedHere || !hasNoCustomTitle) return;
+		startEditingGoal(true);
 	});
 
 	// Get all goals for dropdown
@@ -446,11 +455,25 @@
 	let mobileMenuOpen = $state(false);
 	let mobileSidebarHydrated = $state(false);
 
+	/** Tailwind `md` (768px): only one of desktop vs mobile goal/todo trees mounts — duplicate inputs + TodoList caused goal title / focus bugs. */
+	let todoDesktopLayout = $state(
+		browser ? window.matchMedia('(min-width: 768px)').matches : false
+	);
+
 	onMount(() => {
+		const mq = window.matchMedia('(min-width: 768px)');
+		const syncTodoLayout = () => {
+			todoDesktopLayout = mq.matches;
+		};
+		syncTodoLayout();
+		mq.addEventListener('change', syncTodoLayout);
+
 		if (isWorkspaceNarrowLayout() && readTodoMobileSidebarOpen()) {
 			mobileMenuOpen = true;
 		}
 		mobileSidebarHydrated = true;
+
+		return () => mq.removeEventListener('change', syncTodoLayout);
 	});
 
 	$effect(() => {
@@ -980,6 +1003,7 @@
 						<div class="goal-loading-message">Invalid goal. Redirecting...</div>
 					</div>
 				{:else}
+					{#if todoDesktopLayout}
 					<div class="mb-6 hidden md:block">
 						<WorkspaceToolbar mode="desktop" bind:searchText composeTabDefault="task" />
 					</div>
@@ -1181,6 +1205,7 @@
 							{/if}
 						</div>
 					{/if}
+					{/if}
 				{/if}
 			</div>
 		</div>
@@ -1231,6 +1256,7 @@
 							<div class="goal-loading-message">Invalid goal. Redirecting...</div>
 						</div>
 					{:else}
+						{#if !todoDesktopLayout}
 						<div class="mb-6">
 							<div class="mb-4 flex items-start justify-between gap-4">
 								<div class="flex-1">
@@ -1426,6 +1452,7 @@
 									{/each}
 								{/if}
 							</div>
+						{/if}
 						{/if}
 					{/if}
 				</div>

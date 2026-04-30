@@ -1,6 +1,7 @@
 <script>
 	import { authStore } from '$stores/auth.svelte.js';
 	import { store } from '$stores/store.svelte.js';
+	import { supabase } from '$lib/supabaseClient.js';
 
 	let { isOpen = $bindable(false) } = $props();
 
@@ -8,6 +9,113 @@ let displayName = $state('');
 let saveError = $state(null);
 let isSaving = $state(false);
 let isEditingName = $state(false);
+
+let agentEnabled = $state(false);
+/** @type {Array<{ id: string; agent_dumbname: string; status: string; created_at?: string }>} */
+let agentRequests = $state([]);
+let agentLoadError = $state(/** @type {string | null} */ (null));
+let agentBusy = $state(false);
+
+	const userId = $derived(authStore.user?.id);
+	const agentPending = $derived(agentRequests.filter((r) => r.status === 'pending'));
+	const agentApproved = $derived(agentRequests.filter((r) => r.status === 'approved'));
+
+	async function refreshAgentAccess() {
+		agentLoadError = null;
+		if (!supabase || !userId) {
+			agentRequests = [];
+			return;
+		}
+		const { data: st, error: e1 } = await supabase
+			.from('user_agent_api_settings')
+			.select('enabled')
+			.eq('user_id', userId)
+			.maybeSingle();
+		if (e1) {
+			agentLoadError = e1.message;
+			return;
+		}
+		agentEnabled = st?.enabled ?? false;
+
+		const { data: rows, error: e2 } = await supabase
+			.from('agent_access_requests')
+			.select('id, agent_dumbname, status, created_at')
+			.eq('user_id', userId)
+			.order('created_at', { ascending: true });
+		if (e2) {
+			agentLoadError = e2.message;
+			return;
+		}
+		agentRequests = rows ?? [];
+	}
+
+	async function toggleAgentApi() {
+		if (!supabase || !userId) return;
+		agentBusy = true;
+		agentLoadError = null;
+		const next = !agentEnabled;
+		const { error } = await supabase.from('user_agent_api_settings').upsert(
+			{ user_id: userId, enabled: next, updated_at: new Date().toISOString() },
+			{ onConflict: 'user_id' }
+		);
+		agentBusy = false;
+		if (error) {
+			agentLoadError = error.message;
+			return;
+		}
+		agentEnabled = next;
+	}
+
+	async function approveAgentRequest(row) {
+		if (!supabase) return;
+		agentBusy = true;
+		agentLoadError = null;
+		const { error } = await supabase
+			.from('agent_access_requests')
+			.update({ status: 'approved', updated_at: new Date().toISOString() })
+			.eq('id', row.id);
+		agentBusy = false;
+		if (error) {
+			agentLoadError = error.message;
+			return;
+		}
+		await refreshAgentAccess();
+	}
+
+	async function denyAgentRequest(row) {
+		if (!supabase) return;
+		agentBusy = true;
+		agentLoadError = null;
+		const { error } = await supabase
+			.from('agent_access_requests')
+			.update({ status: 'denied', updated_at: new Date().toISOString() })
+			.eq('id', row.id);
+		agentBusy = false;
+		if (error) {
+			agentLoadError = error.message;
+			return;
+		}
+		await refreshAgentAccess();
+	}
+
+	async function cancelApprovedAgent(row) {
+		if (!supabase) return;
+		agentBusy = true;
+		agentLoadError = null;
+		const { error } = await supabase.from('agent_access_requests').delete().eq('id', row.id);
+		agentBusy = false;
+		if (error) {
+			agentLoadError = error.message;
+			return;
+		}
+		await refreshAgentAccess();
+	}
+
+	$effect(() => {
+		if (isOpen && userId && supabase) {
+			refreshAgentAccess();
+		}
+	});
 
 	function closeModal() {
 		isOpen = false;
@@ -149,6 +257,124 @@ function startEditingName() {
 					</button>
 				{/if}
 			</div>
+
+			{#if supabase && userId}
+				<div class="settings-section-divider mb-4 text-left">
+					<div class="mb-2">
+						<div class="settings-appearance-label">AI agent access (MLAuth)</div>
+						<p class="settings-appearance-help mb-2">
+							Let verified MLAuth agents call Haradato APIs on your behalf after you approve each identity.
+						</p>
+						<details class="mb-3 text-sm text-slate-600 dark:text-slate-400">
+							<summary
+								class="cursor-pointer select-none text-violet-600 dark:text-violet-400"
+							>
+								How this works
+							</summary>
+							<ul class="mt-2 list-disc space-y-1 pl-5">
+								<li>
+									Agents authenticate with
+									<a
+										class="underline"
+										href="https://mlauth.ai/skill.md"
+										target="_blank"
+										rel="noopener noreferrer"
+									>MLAuth</a> (ECDSA-signed identity, no shared passwords).
+								</li>
+								<li>An agent requests access using your Haradato sign-in email; you approve or deny here.</li>
+								<li>
+									Turn on access with the button below, then tap <strong>Approve</strong> for each pending
+									<span class="font-mono">dumbname</span>.
+								</li>
+							</ul>
+						</details>
+						<button
+							type="button"
+							disabled={agentBusy}
+							onclick={toggleAgentApi}
+							class={`inline-flex rounded-md px-3 py-2 text-sm font-semibold transition ${
+								agentEnabled
+									? 'border border-violet-600 bg-violet-600 text-white hover:bg-violet-500'
+									: 'border border-slate-300 bg-white text-slate-800 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
+							} disabled:opacity-50`}
+						>
+							{#if agentEnabled}
+								Allow AI agent access: on
+							{:else}
+								Allow AI agent access: off
+							{/if}
+						</button>
+						{#if agentLoadError}
+							<p class="mt-2 text-xs text-red-500">{agentLoadError}</p>
+						{/if}
+					</div>
+
+					{#if agentPending.length > 0}
+						<div class="mb-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+							Pending requests
+						</div>
+						<ul class="mb-3 space-y-2">
+							{#each agentPending as row (row.id)}
+								<li
+									class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-900/40"
+								>
+									<span class="font-mono text-sm text-slate-800 dark:text-slate-200">
+										{row.agent_dumbname}
+									</span>
+									<div class="flex gap-2">
+										<button
+											type="button"
+											disabled={agentBusy || !agentEnabled}
+											onclick={() => approveAgentRequest(row)}
+											class="rounded-md bg-violet-600 px-2 py-1 text-xs font-semibold text-white hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40"
+										>
+											Approve
+										</button>
+										<button
+											type="button"
+											disabled={agentBusy}
+											onclick={() => denyAgentRequest(row)}
+											class="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+										>
+											Deny
+										</button>
+									</div>
+								</li>
+							{/each}
+						</ul>
+						{#if !agentEnabled}
+							<p class="mb-3 text-xs text-amber-600 dark:text-amber-400">
+								Turn on “Allow AI agent access” before you can approve.
+							</p>
+						{/if}
+					{/if}
+
+					{#if agentApproved.length > 0}
+						<div class="mb-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+							Approved agents
+						</div>
+						<ul class="space-y-2">
+							{#each agentApproved as row (row.id)}
+								<li
+									class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 px-3 py-2 dark:border-slate-700"
+								>
+									<span class="font-mono text-sm text-slate-800 dark:text-slate-200">
+										{row.agent_dumbname}
+									</span>
+									<button
+										type="button"
+										disabled={agentBusy}
+										onclick={() => cancelApprovedAgent(row)}
+										class="text-xs font-semibold text-red-600 hover:text-red-500 dark:text-red-400"
+									>
+										Cancel access
+									</button>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</div>
+			{/if}
 
 			<div class="settings-section-divider">
 				<div class="flex items-center justify-between">
