@@ -53,7 +53,7 @@
 	type="button"
 	class={`squaremap-button ${store.isLoading ? 'border-purple-500' : store.saveStatus == 'dirty' ? 'border-amber-500' : store.saveStatus == 'saving' ? 'border-red-500' : 'border-transparent'} ${interactive ? '' : 'cursor-default active:scale-100'} ${className}`}
 	onclick={() => {
-		if (interactive) goto('/');
+		if (interactive) goto('/home');
 	}}
 	title="View full Harada Chart"
 	aria-label="View full Harada Chart"

@@ -13,7 +13,7 @@ class AuthStore {
 	session = $state(null);
 	loading = $state(true);
 	error = $state(null);
-	// Persisted across offline periods — used for display only, not for API auth
+	// Persisted across offline periods - used for display only, not for API auth
 	lastKnownUser = $state(null);
 
 	constructor() {
@@ -52,7 +52,7 @@ class AuthStore {
 					if (isOnline) {
 						this._clearLastKnownUser();
 					}
-					// Always clear live session/user — saves won't try to push to Supabase
+					// Always clear live session/user - saves won't try to push to Supabase
 					this.session = null;
 					this.user = null;
 				} else {

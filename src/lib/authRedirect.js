@@ -10,7 +10,7 @@ function trimOrigin(url) {
 /**
  * Base URL (https://…) for Supabase auth redirects. Must match entries under
  * Authentication → URL Configuration → Redirect URLs in Supabase.
- * Do not use `window.location.origin` on Capacitor — it is `capacitor://localhost`
+ * Do not use `window.location.origin` on Capacitor - it is `capacitor://localhost`
  * and breaks confirmation links, password recovery, and OAuth.
  */
 export function getAuthRedirectOrigin() {

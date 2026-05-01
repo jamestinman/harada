@@ -1,13 +1,13 @@
 ---
 name: haradato
-description: Help a human use Haradato — Harada-chart life goals, tasks (incl. todo lists), and markdown notes — via the browser app plus the MLAuth-signed agent HTTP API.
+description: Help a human use Haradato - Harada-chart life goals, tasks (incl. todo lists), and markdown notes - via the browser app plus the MLAuth-signed agent HTTP API.
 version: 1.0.0
 website: https://www.haradato.com
 ---
 
 # Haradato agent skill
 
-Haradato is a **goals + tasks + notes** workspace for humans: a **9×9 Harada chart** (life-goal cells), **tasks** (goal-linked or custom lists), and **markdown notes**. Your job is to help a **human** get value from these in the way they want — whether they care about one surface (e.g. todos only) or all three.
+Haradato is a **goals + tasks + notes** workspace for humans: a **9×9 Harada chart** (life-goal cells), **tasks** (goal-linked or custom lists), and **markdown notes**. Your job is to help a **human** get value from these in the way they want - whether they care about one surface (e.g. todos only) or all three.
 
 This skill covers **(1) human onboarding** in the app and **(2) optional programmatic access** once the human approves your MLAuth identity.
 
@@ -19,18 +19,18 @@ This skill covers **(1) human onboarding** in the app and **(2) optional program
 | **Todo list** | Tasks on a goal or a **custom list** (named list, not tied to the chart). | `GET/POST /api/agent/tasks`, `GET/PATCH/DELETE /api/agent/tasks/[taskId]` |
 | **Markdown notes** | Standalone notes; content is markdown. Optional link to a goal index when creating. | `GET/POST /api/agent/notes`, `GET/PATCH/DELETE /api/agent/notes/[noteId]` |
 
-Humans use the **same account** for all three; there is no separate “modes” switch — you align with what they ask for.
+Humans use the **same account** for all three; there is no separate “modes” switch - you align with what they ask for.
 
 ## Human setup (always do this first)
 
-1. **Account** — The human signs up / signs in at **https://www.haradato.com** with the email they treat as their primary Haradato identity (email + password or whatever the app offers).
-2. **Clarify intent** — Ask whether they care about:
+1. **Account** - The human signs up / signs in at **https://www.haradato.com** with the email they treat as their primary Haradato identity (email + password or whatever the app offers).
+2. **Clarify intent** - Ask whether they care about:
    - **Chart / life goals** only or primarily  
    - **Tasks / todos** (simple lists vs tied to chart goals)  
    - **Notes** (markdown capture, journaling, etc.)  
    - Or **everything**.
-3. **Walk through the UI** — They work in the web app (or native app if they installed it). Encourage them to create at least one goal cell, task, or note so data exists before you rely on the API.
-4. **Agent access (optional)** — If you need to read or write data on their behalf, continue to **Agent API access** below. If they only use the UI, you are done once they are comfortable in the app.
+3. **Walk through the UI** - They work in the web app (or native app if they installed it). Encourage them to create at least one goal cell, task, or note so data exists before you rely on the API.
+4. **Agent access (optional)** - If you need to read or write data on their behalf, continue to **Agent API access** below. If they only use the UI, you are done once they are comfortable in the app.
 
 ## Agent API access (MLAuth)
 
@@ -81,16 +81,16 @@ After `request-access`, tell the human to open **Settings → AI agent access**,
 |----------|------------|------------------|
 | **Goals** | List / read grid | `GOALS_GET:{human_email}` or `GOALS_GET:{human_email}:{goal_ref}` (`goal_ref` = same as query or path, e.g. `40` or `E5`) |
 | | Create / update cell | `GOALS_POST:{human_email}:{stable}` where `stable` is sorted JSON of `goal_index`, `text`, `readme`, `status`, `color` (nulls allowed for unused fields) |
-| | Patch cell | `GOALS_PATCH:{human_email}:{goal_ref}:{stable}` — `stable` = sorted JSON of only fields present (`text`, `readme`, `status`, `color`) |
+| | Patch cell | `GOALS_PATCH:{human_email}:{goal_ref}:{stable}` - `stable` = sorted JSON of only fields present (`text`, `readme`, `status`, `color`) |
 | | Clear cell | `GOALS_DELETE:{human_email}:{goal_ref}` (query) |
 | **Tasks** | List | `TASKS_GET:{human_email}` |
 | | Read one | `TASKS_GET:{human_email}:{task_id}` |
-| | Create / upsert | `TASKS_POST:{human_email}:{stable}` — `stable` from task fields (`id`, `title`, `markdown`, `status`, `list_type`, `list_id`, `list_name`, `goal_index`, `parent_id`, `ordering`, `pinned`) |
+| | Create / upsert | `TASKS_POST:{human_email}:{stable}` - `stable` from task fields (`id`, `title`, `markdown`, `status`, `list_type`, `list_id`, `list_name`, `goal_index`, `parent_id`, `ordering`, `pinned`) |
 | | Patch | `TASKS_PATCH:{human_email}:{task_id}:{stable}` |
 | | Soft-delete | `TASKS_DELETE:{human_email}:{task_id}` (query) |
 | **Notes** | List | `NOTES_GET:{human_email}` |
 | | Read one | `NOTES_GET:{human_email}:{note_id}` |
-| | Create / upsert | `NOTES_POST:{human_email}:{stable}` — `stable` from `id`, `content`, `goal_index` |
+| | Create / upsert | `NOTES_POST:{human_email}:{stable}` - `stable` from `id`, `content`, `goal_index` |
 | | Patch | `NOTES_PATCH:{human_email}:{note_id}:{stable}` |
 | | Soft-delete | `NOTES_DELETE:{human_email}:{note_id}` (query) |
 
@@ -102,10 +102,10 @@ Paths (relative to base):
 
 ### Matching setup to human intent
 
-- **Todos only** — Prefer **tasks** with `list_type: "custom"` and a friendly `list_name`, or attach to a single goal index if they already care about one chart cell.
-- **Notes only** — Use **notes**; store markdown in `content`. First line is often treated as a title in the UI.
-- **Life goals** — Use **goals**; set `text` (title), `readme` (longer description), `status` (`todo` | `done`), `color` as supported by the app.
-- **All three** — Combine calls; **goal_index** links tasks and optional note metadata to chart cells.
+- **Todos only** - Prefer **tasks** with `list_type: "custom"` and a friendly `list_name`, or attach to a single goal index if they already care about one chart cell.
+- **Notes only** - Use **notes**; store markdown in `content`. First line is often treated as a title in the UI.
+- **Life goals** - Use **goals**; set `text` (title), `readme` (longer description), `status` (`todo` | `done`), `color` as supported by the app.
+- **All three** - Combine calls; **goal_index** links tasks and optional note metadata to chart cells.
 
 ### Errors worth explaining to the human
 

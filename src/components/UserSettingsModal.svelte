@@ -258,6 +258,40 @@ function startEditingName() {
 				{/if}
 			</div>
 
+      <div class="settings-section-divider">
+				<div class="flex items-center justify-between">
+					<div>
+						<div class="settings-appearance-label">Appearance</div>
+						<div class="settings-appearance-help">Light or dark mode for this account</div>
+					</div>
+					<div class="settings-appearance-toggle">
+						<button
+							type="button"
+							onclick={() => store.setTheme('light')}
+							class={`settings-theme-option ${
+								store.theme == 'light'
+									? 'settings-theme-option-active'
+									: 'settings-theme-option-inactive'
+							}`}
+						>
+							Light
+						</button>
+						<button
+							type="button"
+							onclick={() => store.setTheme('dark')}
+							class={`settings-theme-option ${
+								store.theme == 'dark'
+									? 'settings-theme-option-active'
+									: 'settings-theme-option-inactive'
+							}`}
+						>
+							Dark
+						</button>
+					</div>
+				</div>
+
+			</div>
+
 			{#if supabase && userId}
 				<div class="settings-section-divider mb-4 text-left">
 					<div class="mb-2">
@@ -265,29 +299,6 @@ function startEditingName() {
 						<p class="settings-appearance-help mb-2">
 							Let verified MLAuth agents call Haradato APIs on your behalf after you approve each identity.
 						</p>
-						<details class="mb-3 text-sm text-slate-600 dark:text-slate-400">
-							<summary
-								class="cursor-pointer select-none text-violet-600 dark:text-violet-400"
-							>
-								How this works
-							</summary>
-							<ul class="mt-2 list-disc space-y-1 pl-5">
-								<li>
-									Agents authenticate with
-									<a
-										class="underline"
-										href="https://mlauth.ai/skill.md"
-										target="_blank"
-										rel="noopener noreferrer"
-									>MLAuth</a> (ECDSA-signed identity, no shared passwords).
-								</li>
-								<li>An agent requests access using your Haradato sign-in email; you approve or deny here.</li>
-								<li>
-									Turn on access with the button below, then tap <strong>Approve</strong> for each pending
-									<span class="font-mono">dumbname</span>.
-								</li>
-							</ul>
-						</details>
 						<button
 							type="button"
 							disabled={agentBusy}
@@ -307,6 +318,20 @@ function startEditingName() {
 						{#if agentLoadError}
 							<p class="mt-2 text-xs text-red-500">{agentLoadError}</p>
 						{/if}
+						<details class="my-3 text-sm text-slate-600 dark:text-slate-400">
+							<summary
+								class="cursor-pointer select-none text-violet-600 dark:text-violet-400"
+							>
+								How this works
+							</summary>
+							<ul class="mt-2 list-disc space-y-1 pl-5">
+								<li>
+									Point your AI agent at <a href="https://www.haradato.com/skill.md" target="_blank" rel="noopener noreferrer">haradato.com/skill.md</a>
+								</li>
+                <li>Your agent uses their MLAuth identity and your email to request access (access requests appear here)</li>
+								<li>Works with Cursor, OpenClaw, Claude, etc.</li>
+							</ul>
+						</details>
 					</div>
 
 					{#if agentPending.length > 0}
@@ -376,48 +401,15 @@ function startEditingName() {
 				</div>
 			{/if}
 
-			<div class="settings-section-divider">
-				<div class="flex items-center justify-between">
-					<div>
-						<div class="settings-appearance-label">Appearance</div>
-						<div class="settings-appearance-help">Light or dark mode for this account</div>
-					</div>
-					<div class="settings-appearance-toggle">
-						<button
-							type="button"
-							onclick={() => store.setTheme('light')}
-							class={`settings-theme-option ${
-								store.theme == 'light'
-									? 'settings-theme-option-active'
-									: 'settings-theme-option-inactive'
-							}`}
-						>
-							Light
-						</button>
-						<button
-							type="button"
-							onclick={() => store.setTheme('dark')}
-							class={`settings-theme-option ${
-								store.theme == 'dark'
-									? 'settings-theme-option-active'
-									: 'settings-theme-option-inactive'
-							}`}
-						>
-							Dark
-						</button>
-					</div>
-				</div>
-
-				<div class="settings-logout-section">
-					<button
-						type="button"
-						onclick={handleLogout}
-						class="settings-logout-button"
-					>
-						Logout
-					</button>
-				</div>
-			</div>
+      <div class="settings-logout-section">
+        <button
+          type="button"
+          onclick={handleLogout}
+          class="settings-logout-button"
+        >
+          Logout
+        </button>
+      </div>
 
 			<div class="settings-footer">
         <a href="/about" class="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 underline-offset-2 hover:underline">

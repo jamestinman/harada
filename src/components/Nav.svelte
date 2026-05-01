@@ -21,7 +21,7 @@
 	const showFixedMobileNavButton = $derived.by(() => {
 		const path = page?.url?.pathname ?? '/';
 		const normalized = path.replace(/\/+$/, '') || '/';
-		return normalized === '/';
+		return normalized === '/home';
 	});
 
 	// Get save status for visual indicator
@@ -287,7 +287,7 @@ const clearAll = () => {
 				How it works
 			</button>
 
-      <button onclick={() => { goto('/'); store.mobileNavMenuOpen = false;}} class="mobile-menu-item">Goals</button>
+      <button onclick={() => { goto('/home'); store.mobileNavMenuOpen = false;}} class="mobile-menu-item">Goals</button>
 			<button onclick={() => { goto(resumePathTodo()); store.mobileNavMenuOpen = false;}} class="mobile-menu-item">Tasks</button>
 			<button onclick={() => { goto('/notes'); store.mobileNavMenuOpen = false;}} class="mobile-menu-item">Notes</button>
 
@@ -323,7 +323,7 @@ const clearAll = () => {
 			</button>
 		</div>
 		<div class="mobile-bottom-nav-links">
-			<a href="/" class="mobile-bottom-nav-link">Goals</a>
+			<a href="/home" class="mobile-bottom-nav-link">Goals</a>
 			<a href={todoResumeHref} class="mobile-bottom-nav-link" onclick={handleMobileTodoNav}>Tasks</a>
 			<a href="/notes" class="mobile-bottom-nav-link">Notes</a>
 		</div>
@@ -343,7 +343,7 @@ const clearAll = () => {
 			{userName}
 		</button>
 	{:else if !isOnline}
-		<div class="nav-desktop-link flex flex-col items-center gap-0.5 cursor-default" title={userName ? `Offline — signed in as ${userName}` : 'Offline'}>
+		<div class="nav-desktop-link flex flex-col items-center gap-0.5 cursor-default" title={userName ? `Offline - signed in as ${userName}` : 'Offline'}>
 			<span class="text-amber-500 dark:text-amber-400 font-bold text-xs tracking-wide">OFFLINE</span>
 			{#if userName}
 				<span class="text-slate-500 dark:text-slate-400 text-xs">{userName}</span>
@@ -361,7 +361,7 @@ const clearAll = () => {
 	{/if}
   <hr class="w-full border-slate-300 dark:border-slate-700" />
   <a
-		href="/"
+		href="/home"
 		class="nav-desktop-link"
 	>
 		Goals

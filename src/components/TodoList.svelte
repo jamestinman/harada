@@ -707,7 +707,7 @@
 		{:else}
 			<div class="flex items-center gap-2">
 				<div class="todo-drag-ghost-dot"></div>
-				<span class="todo-drag-ghost-title">{dragGhost.label || '—'}</span>
+				<span class="todo-drag-ghost-title">{dragGhost.label || '-'}</span>
 			</div>
 		{/if}
 	</div>

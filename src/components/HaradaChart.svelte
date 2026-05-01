@@ -213,7 +213,7 @@
 		return isBlockCenter(row, col) || isSubGoal(row, col);
 	}
 
-	// True for the 64 task cells — non-goal, non-center-block cells in outer blocks
+	// True for the 64 task cells - non-goal, non-center-block cells in outer blocks
 	function isTaskCell(index) {
 		const row = Math.floor(index / 9);
 		const col = index % 9;

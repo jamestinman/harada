@@ -732,7 +732,7 @@ class Store {
 			const remoteUpdatedAt = remoteTodo.updatedAt;
 			const localUpdatedAt = localTodo?.updatedAt ?? 0;
 
-			// Only apply if remote is strictly newer — protects in-progress local edits
+			// Only apply if remote is strictly newer - protects in-progress local edits
 			if (remoteUpdatedAt > localUpdatedAt) {
 				this.harada_chart = {
 					...this.harada_chart,
@@ -920,7 +920,7 @@ class Store {
 			await this._saveLocally();
 
 			if (!authStore.user || !supabase) {
-				// Not authenticated — nothing to save to the cloud
+				// Not authenticated - nothing to save to the cloud
 				this.saveStatus = 'idle';
 				return;
 			}
@@ -1956,12 +1956,12 @@ class Store {
 		if (!authStore.user) {
 			// If we're offline, the session may have expired and Supabase fired SIGNED_OUT
 			// even though the user hasn't intentionally logged out. Keep local data intact
-			// so nothing is lost — it will sync when connectivity and session are restored.
+			// so nothing is lost - it will sync when connectivity and session are restored.
 			if (!this.isOnline) {
 				this._setBootstrapping(false);
 				return;
 			}
-			// Logged out online — show a helpful seeded board for new/pre-login users
+			// Logged out online - show a helpful seeded board for new/pre-login users
 			if ((this.harada_chart.todos || []).length === 0 && isGridBlank(this.harada_chart.grid)) {
 				this.harada_chart = {
 					grid: createSeededGrid(),
@@ -1976,7 +1976,7 @@ class Store {
 			return;
 		}
 
-		// Logged in — fetch fresh data and re-subscribe
+		// Logged in - fetch fresh data and re-subscribe
 		this.initialize();
 	}
 

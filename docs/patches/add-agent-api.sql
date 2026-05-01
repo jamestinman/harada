@@ -2,7 +2,7 @@
 -- Run in Supabase SQL Editor after main schema.
 
 -- ---------------------------------------------------------------------------
--- Lookup auth user by email (service role only — used by server agent API)
+-- Lookup auth user by email (service role only - used by server agent API)
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.lookup_user_id_by_email(lookup_email text)
 RETURNS uuid
