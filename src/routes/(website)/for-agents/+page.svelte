@@ -18,7 +18,7 @@
 		<h2 class="text-xl font-semibold">How it works for humans</h2>
 		<ul class="mt-3 list-disc space-y-2 pl-5 text-slate-700 dark:text-slate-300">
 			<li><strong>Already using Haradato?</strong> Allow you agent access in settings.</li>
-			<li><strong>New to Haradato?</strong> Point your agent at <a href="https://www.haradato.com/skill.md" target="_blank" rel="noreferrer" class="text-emerald-600 hover:underline dark:text-emerald-400">haradato.com/skill.md</a> and they will get you started.</li>
+			<li><strong>New to Haradato?</strong> Point your agent at <a href="https://www.haradato.com/skill.md" target="_blank" rel="noreferrer" class="text-emerald-600 hover:underline dark:text-emerald-400">haradato.com/skill.md</a> and they will  get you started.</li>
 		</ul>
 	</div>
 

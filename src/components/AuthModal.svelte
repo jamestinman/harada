@@ -1,7 +1,8 @@
 <script>
+	import { goto } from '$app/navigation';
 	import { authStore } from '$stores/auth.svelte.js';
 
-	let { isOpen = $bindable(false) } = $props();
+	let { isOpen = $bindable(false), redirectOnSignIn = null } = $props();
 
 	let mode = $state('signin'); // 'signin' | 'signup' | 'reset'
 	let email = $state('');
@@ -21,6 +22,9 @@
 		if (result.success) {
 			isOpen = false;
 			resetForm();
+			if (redirectOnSignIn) {
+				goto(redirectOnSignIn);
+			}
 		} else {
 			message = result.error || 'Sign in failed';
 			messageType = 'error';

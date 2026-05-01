@@ -1,5 +1,8 @@
 <script>
+	import AuthModal from '$components/AuthModal.svelte';
+
 	let { children } = $props();
+	let showAuthModal = $state(false);
 </script>
 
 <div class="min-h-dvh bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
@@ -19,12 +22,13 @@
 				>
 					Get Started
 				</a>
-				<a
-					href="/home"
+				<button
+					type="button"
+					onclick={() => (showAuthModal = true)}
 					class="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
 				>
-					Login
-				</a>
+					Sign In
+				</button>
 			</div>
 		</div>
 	</header>
@@ -45,6 +49,8 @@
 		</div>
 	</footer>
 </div>
+
+<AuthModal bind:isOpen={showAuthModal} redirectOnSignIn="/home" />
 
 <style>
 	:global(.content-page ul) {
