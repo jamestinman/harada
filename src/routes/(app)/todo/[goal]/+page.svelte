@@ -538,6 +538,21 @@
 		return todo;
 	}
 
+	function navigateToNewTask(todo) {
+		if (!todo?.id) return;
+		const meta = normalizeTodoListMeta(todo);
+		const q = new URLSearchParams({ task: todo.id }).toString();
+		if (meta.listType === 'custom') {
+			goto(`/todo?${q}`);
+			return;
+		}
+		if (typeof meta.goalIndex === 'number') {
+			goto(`/todo/${indexToNomenclature(meta.goalIndex)}?${q}`);
+			return;
+		}
+		goto(`/todo?${q}`);
+	}
+
 	function createTodoFromComposer({ title, markdown, goalIndex: selectedGoalIndex, listType, listName } = {}) {
 		// Handle case when called without parameters (from "+ New Task" button)
 		// Add to current goal when on a goal page
@@ -554,6 +569,7 @@
 				store.bumpGoalAfterTodoActivity(goalIndex);
 				activeTodoId = todo.id;
 				store.saveNow();
+				navigateToNewTask(todo);
 			}
 			return;
 		}
@@ -573,6 +589,7 @@
 				store.setPrimaryNoteForTask(todo.id, { content: markdown.trim() });
 			}
 			store.saveNow();
+			navigateToNewTask(todo);
 			return;
 		}
 		const targetGoalIndex =
@@ -595,19 +612,19 @@
 			store.bumpGoalAfterTodoActivity(targetGoalIndex);
 		}
 
-		// Set active todo ID so it gets focused (if title is empty, it will auto-focus)
-		if (!title || title.trim() === '') {
-			activeTodoId = todo.id;
-		}
 		store.saveNow();
+		navigateToNewTask(todo);
 	}
 
 	function createNoteFromComposer(content = '') {
 		if (goalIndex === null) {
+			const note = store.createNote({ content });
+			store.pendingSelectNoteId = note.id;
 			goto('/notes');
 			return;
 		}
 		const note = store.createNote({ content });
+		store.pendingSelectNoteId = note.id;
 		store.linkNoteToGoal(note.id, goalIndex);
 		goto(`/notes/${indexToNomenclature(goalIndex)}`);
 	}

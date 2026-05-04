@@ -419,21 +419,45 @@
 		updateGoalTimestamp(newGrid, sourceCanonical);
 		updateGoalTimestamp(newGrid, targetCanonical);
 
-		// Swap todos that belong to these goals
+		// Remap every goal key touched by the block swap: all 9 outer cells pair-wise, plus
+		// the two linked center-block "shadow" cells (notes/task links and per-cell todos).
+		const goalIndexSwapMap = new Map();
+		const addSwapPair = (a, b) => {
+			if (a !== b) {
+				goalIndexSwapMap.set(a, b);
+				goalIndexSwapMap.set(b, a);
+			}
+		};
+		for (let i = 0; i < sourceCells.length; i++) {
+			addSwapPair(sourceCells[i], targetCells[i]);
+		}
+		if (sourceLinked !== null && targetLinked !== null) {
+			addSwapPair(sourceLinked, targetLinked);
+		}
+
+		const now = Date.now();
 		const currentTodos = store.harada_chart.todos || [];
 		const nextTodos = currentTodos.map((todo) => {
 			if (todo?.listType && todo.listType !== 'goal') return todo;
-			const goalIndex = typeof todo?.goalIndex === 'number' ? todo.goalIndex : null;
-			if (goalIndex === sourceCanonical) {
-				return { ...todo, goalIndex: targetCanonical, listType: 'goal', listId: `goal:${targetCanonical}` };
-			}
-			if (goalIndex === targetCanonical) {
-				return { ...todo, goalIndex: sourceCanonical, listType: 'goal', listId: `goal:${sourceCanonical}` };
-			}
-			return todo;
+			const gIdx = typeof todo?.goalIndex === 'number' ? todo.goalIndex : null;
+			if (gIdx === null) return todo;
+			const mapped = goalIndexSwapMap.get(gIdx);
+			if (mapped === undefined) return todo;
+			return { ...todo, goalIndex: mapped, listType: 'goal', listId: `goal:${mapped}` };
 		});
 
 		store.harada_chart.todos = nextTodos;
+		store.noteGoalLinks = store.noteGoalLinks.map((link) => {
+			const mapped = goalIndexSwapMap.get(link.goalIndex);
+			if (mapped === undefined) return link;
+			return { ...link, goalIndex: mapped, updatedAt: now };
+		});
+		store.taskGoalLinks = store.taskGoalLinks.map((link) => {
+			const mapped = goalIndexSwapMap.get(link.goalIndex);
+			if (mapped === undefined) return link;
+			return { ...link, goalIndex: mapped, updatedAt: now };
+		});
+
 		onUpdateGrid(newGrid);
 	}
 

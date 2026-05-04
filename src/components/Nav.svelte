@@ -6,14 +6,14 @@
 	import { page } from '$app/state';
 	import { browser } from '$app/environment';
 	import { NEW_LIST_OPTION_VALUE, parseListSelection } from '$lib/todoUtils.js';
-	import { resumePathTodo } from '$lib/workspaceNavResume.js';
+	import { resumePathTodo, workspaceNavActiveSection } from '$lib/workspaceNavResume.js';
 	import { store } from '$stores/store.svelte.js';
 	import { navComposerHandlers } from '$stores/navComposerHandlers.svelte.js';
 	import { authStore } from '$stores/auth.svelte.js';
 	import { synthStore } from '$stores/synth.svelte.js';
 	import { localGet, localSet } from '$lib/PersistentStorage.mjs';
 	import GoalSelect from './GoalSelect.svelte';
-	import SquareMap from './SquareMap.svelte';
+	import DesktopTopNav from './DesktopTopNav.svelte';
 	import UserSettingsModal from './UserSettingsModal.svelte';
 	import AuthModal from './AuthModal.svelte';
 	import HowItWorksModal from './HowItWorksModal.svelte';
@@ -21,7 +21,7 @@
 	const showFixedMobileNavButton = $derived.by(() => {
 		const path = page?.url?.pathname ?? '/';
 		const normalized = path.replace(/\/+$/, '') || '/';
-		return normalized === '/home';
+		return normalized === '/harada';
 	});
 
 	// Get save status for visual indicator
@@ -200,6 +200,22 @@ const clearAll = () => {
 		return resumePathTodo();
 	});
 
+	const activeWorkspace = $derived(workspaceNavActiveSection(page.url.pathname));
+
+	const mobileNavLinkClass = (section) => {
+		const active = activeWorkspace === section;
+		return active
+			? 'mobile-bottom-nav-link font-semibold text-orange-500 dark:text-orange-400'
+			: 'mobile-bottom-nav-link';
+	};
+
+	const mobileMenuItemClass = (section) => {
+		const active = activeWorkspace === section;
+		return active
+			? 'mobile-menu-item font-semibold text-orange-600 dark:text-orange-400'
+			: 'mobile-menu-item';
+	};
+
 
 	function normalizePathname(path) {
 		const p = (path ?? '/').replace(/\/+$/, '') || '/';
@@ -287,9 +303,33 @@ const clearAll = () => {
 				How it works
 			</button>
 
-      <button onclick={() => { goto('/home'); store.mobileNavMenuOpen = false;}} class="mobile-menu-item">Goals</button>
-			<button onclick={() => { goto(resumePathTodo()); store.mobileNavMenuOpen = false;}} class="mobile-menu-item">Tasks</button>
-			<button onclick={() => { goto('/notes'); store.mobileNavMenuOpen = false;}} class="mobile-menu-item">Notes</button>
+			<button
+				onclick={() => {
+					goto('/harada');
+					store.mobileNavMenuOpen = false;
+				}}
+				class={mobileMenuItemClass('goals')}
+			>
+				Goals
+			</button>
+			<button
+				onclick={() => {
+					goto(resumePathTodo());
+					store.mobileNavMenuOpen = false;
+				}}
+				class={mobileMenuItemClass('tasks')}
+			>
+				Tasks
+			</button>
+			<button
+				onclick={() => {
+					goto('/notes');
+					store.mobileNavMenuOpen = false;
+				}}
+				class={mobileMenuItemClass('notes')}
+			>
+				Notes
+			</button>
 
 			{#if authStore.user}
 				<button type="button" onclick={handleLogout} class="mobile-menu-item-logout">Logout</button>
@@ -323,53 +363,37 @@ const clearAll = () => {
 			</button>
 		</div>
 		<div class="mobile-bottom-nav-links">
-			<a href="/home" class="mobile-bottom-nav-link">Goals</a>
-			<a href={todoResumeHref} class="mobile-bottom-nav-link" onclick={handleMobileTodoNav}>Tasks</a>
-			<a href="/notes" class="mobile-bottom-nav-link">Notes</a>
+			<a
+				href="/harada"
+				class={mobileNavLinkClass('goals')}
+				aria-current={activeWorkspace === 'goals' ? 'page' : undefined}
+			>
+				Goals
+			</a>
+			<a
+				href={todoResumeHref}
+				class={mobileNavLinkClass('tasks')}
+				onclick={handleMobileTodoNav}
+				aria-current={activeWorkspace === 'tasks' ? 'page' : undefined}
+			>
+				Tasks
+			</a>
+			<a
+				href="/notes"
+				class={mobileNavLinkClass('notes')}
+				aria-current={activeWorkspace === 'notes' ? 'page' : undefined}
+			>
+				Notes
+			</a>
 		</div>
 	</div>
 </div>
 
-<!-- Desktop top-right nav -->
-<nav class="fixed right-4 top-4 z-40 hidden lg:flex flex-col lg:items-center lg:gap-2" aria-label="Main navigation">
-  <SquareMap />
-	{#if authStore?.user}
-		<button
-			type="button"
-			onclick={() => (showSettingsModal = true)}
-			class="nav-desktop-link"
-			title="Settings"
-		>
-			{userName}
-		</button>
-	{:else if !isOnline}
-		<div class="nav-desktop-link flex flex-col items-center gap-0.5 cursor-default" title={userName ? `Offline - signed in as ${userName}` : 'Offline'}>
-			<span class="text-amber-500 dark:text-amber-400 font-bold text-xs tracking-wide">OFFLINE</span>
-			{#if userName}
-				<span class="text-slate-500 dark:text-slate-400 text-xs">{userName}</span>
-			{/if}
-		</div>
-	{:else}
-		<button
-			type="button"
-			onclick={() => (showAuthModal = true)}
-			class="nav-desktop-link !text-red-600 !font-bold"
-			title="Sign In"
-		>
-			Sign In
-		</button>
-	{/if}
-  <hr class="w-full border-slate-300 dark:border-slate-700" />
-  <a
-		href="/home"
-		class="nav-desktop-link"
-	>
-		Goals
-	</a>
-	<a href={todoResumeHref} class="nav-desktop-link">Tasks</a>
-	<a href="/notes" class="nav-desktop-link">Notes</a>
-  <!-- <button onclick={clearAll}>Clear</button> -->
-</nav>
+<DesktopTopNav
+	variant="app"
+	onSignIn={() => (showAuthModal = true)}
+	onOpenSettings={() => (showSettingsModal = true)}
+/>
 
 {#if store.composerPanelOpen}
 	<div
@@ -488,7 +512,7 @@ const clearAll = () => {
 {#if authStore.user}
 	<UserSettingsModal bind:isOpen={showSettingsModal} />
 {:else}
-	<AuthModal bind:isOpen={showAuthModal} />
+	<AuthModal bind:isOpen={showAuthModal} redirectOnSignIn="/harada" />
 {/if}
 
 <HowItWorksModal bind:isOpen={store.showHowItWorksModal} />

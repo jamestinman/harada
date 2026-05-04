@@ -158,6 +158,12 @@
 			store.bumpGoalAfterTodoActivity(normalizedGoalIndex);
 		}
 		store.saveNow();
+		const taskQ = new URLSearchParams({ task: todo.id }).toString();
+		if (typeof normalizedGoalIndex === 'number') {
+			goto(`/todo/${indexToNomenclature(normalizedGoalIndex)}?${taskQ}`);
+		} else {
+			goto(`/todo?${taskQ}`);
+		}
 	}
 
 	function createNoteFromComposer(content = '') {
@@ -166,6 +172,7 @@
 				? canonicalGoalIndex(store.currentGoalIndex)
 				: null;
 		const note = store.createNote({ content });
+		store.pendingSelectNoteId = note.id;
 		if (typeof normalizedGoalIndex === 'number') {
 			store.linkNoteToGoal(note.id, normalizedGoalIndex);
 		}
@@ -210,11 +217,8 @@
 
 <div
   id="root-container"
-	class="{store.theme} min-h-dvh overflow-x-hidden lg:pr-28"
-	style="
-		padding-top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
-		padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem);
-	"
+	class="{store.theme} min-h-dvh overflow-x-hidden pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] lg:pt-[6.5rem]"
+	style="padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem);"
 >
 	{@render children()}
 

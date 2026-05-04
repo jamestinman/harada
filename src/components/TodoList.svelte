@@ -758,6 +758,7 @@
 								canOutdent={canOutdent ? canOutdent(todo.id, pinGroup) : false}
 								{allGoals}
 								allTodos={pinGroup.todos}
+								pageTaskId={targetTodoId}
 								{disableAutoFocus}
 								hasChildren={parentTodoIds.has(todo.id)}
 								isCollapsed={collapsedTodos.has(todo.id)}
@@ -840,6 +841,7 @@
 												canOutdent={canOutdent ? canOutdent(todo.id, subGroup) : false}
 												{allGoals}
 												allTodos={subGroup.todos}
+												pageTaskId={targetTodoId}
 												{disableAutoFocus}
 												hasChildren={parentTodoIds.has(todo.id)}
 												isCollapsed={collapsedTodos.has(todo.id)}
@@ -899,6 +901,7 @@
 								canOutdent={canOutdent ? canOutdent(todo.id, group) : false}
 								{allGoals}
 								allTodos={group.todos}
+								pageTaskId={targetTodoId}
 								{disableAutoFocus}
 								hasChildren={parentTodoIds.has(todo.id)}
 								isCollapsed={collapsedTodos.has(todo.id)}

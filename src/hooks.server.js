@@ -1,3 +1,5 @@
+import { redirect } from '@sveltejs/kit';
+
 /** @param {import('@sveltejs/kit').Handle} handler */
 function agentCorsHeaders() {
 	return {
@@ -9,6 +11,11 @@ function agentCorsHeaders() {
 
 /** @type {import('@sveltejs/kit').Handle} */
 export async function handle({ event, resolve }) {
+	if (event.url.pathname === '/home' || event.url.pathname.startsWith('/home/')) {
+		const suffix = event.url.pathname.slice('/home'.length) || '';
+		throw redirect(308, `/harada${suffix}${event.url.search}`);
+	}
+
 	if (event.url.pathname.startsWith('/api/agent')) {
 		if (event.request.method === 'OPTIONS') {
 			return new Response(null, { headers: agentCorsHeaders() });

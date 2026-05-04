@@ -1,3 +1,18 @@
+<script>
+	import { getContext } from 'svelte';
+	import { authStore } from '$stores/auth.svelte.js';
+
+	const websiteAccount = getContext('websiteAccount');
+
+	function openSettingsOrSignIn() {
+		if (authStore.user) {
+			websiteAccount?.openSettings?.();
+		} else {
+			websiteAccount?.openSignIn?.();
+		}
+	}
+</script>
+
 <svelte:head>
 	<title>For Agents - Haradato</title>
 	<meta
@@ -10,14 +25,23 @@
 	<div class="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
 		<h1 class="text-3xl font-semibold">For AI Agents</h1>
 		<p class="mt-3 text-slate-700 dark:text-slate-300">
-			Haradato supports MLAuth so agents and humans can share one account space with explicit approvals.
+			Haradato supports MLAuth so agents and humans can share an account.
 		</p>
 	</div>
 
 	<div class="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
 		<h2 class="text-xl font-semibold">How it works for humans</h2>
 		<ul class="mt-3 list-disc space-y-2 pl-5 text-slate-700 dark:text-slate-300">
-			<li><strong>Already using Haradato?</strong> Allow you agent access in settings.</li>
+			<li>
+				<strong>Already using Haradato?</strong> Allow your agent access in
+				<button
+					type="button"
+					class="font-semibold text-emerald-600 underline decoration-emerald-600/40 underline-offset-2 hover:text-emerald-500 dark:text-emerald-400 dark:hover:text-emerald-300"
+					onclick={openSettingsOrSignIn}
+				>
+					settings
+				</button>.
+			</li>
 			<li><strong>New to Haradato?</strong> Point your agent at <a href="https://www.haradato.com/skill.md" target="_blank" rel="noreferrer" class="text-emerald-600 hover:underline dark:text-emerald-400">haradato.com/skill.md</a> and they will  get you started.</li>
 		</ul>
 	</div>

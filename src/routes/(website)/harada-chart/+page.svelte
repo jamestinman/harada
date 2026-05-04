@@ -15,7 +15,7 @@
 			A 64-square sheet of paper that turned the worst sports team in Osaka into national champions, and later guided a teenager named Shohei Ohtani to the top of world baseball.
 		</p>
     <img src="/onboarding/ohtani-chart.webp" alt="Shohei Ohtani's Harada Chart" class="w-full h-auto rounded-lg" />
-    <div class="w-full mx-auto text-center mt-3"><a href="/home" class="salesBtn">Make your own Harada Chart</a></div>
+    <div class="w-full mx-auto text-center mt-3"><a href="/harada" class="salesBtn">Make your own Harada Chart</a></div>
 	</section>
 
 	<!-- Origins -->
@@ -147,7 +147,7 @@
 				Download the app
 			</a>
 			<a
-				href="/home"
+				href="/harada"
 				class="rounded-lg border border-slate-300 dark:border-slate-600 px-4 py-2 text-sm font-medium hover:bg-white dark:hover:bg-slate-800"
 			>
 				Use on the web

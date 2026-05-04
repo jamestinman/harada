@@ -51,7 +51,7 @@ Focus on onboarding and sign-up conversion.
 			Sign in to begin creating lists, attach markdown notes to tasks, and build a workflow that supports both humans and agents.
 		</p>
 		<div class="mt-4 flex gap-3">
-			<a href="/home" class="salesBtn">
+			<a href="/harada" class="salesBtn">
 				Sign up or login
 			</a>
 			<a href="/" class="salesBtn secondary">

@@ -56,3 +56,33 @@ export function isWorkspaceNarrowLayout() {
 		window.matchMedia('(max-width: 1023px)').matches
 	);
 }
+
+/** @param {string} [path] */
+export function normalizeWorkspacePathname(path) {
+	return (typeof path === 'string' ? path : '/').replace(/\/+$/, '') || '/';
+}
+
+/**
+ * Primary app nav (Goals / Tasks / Notes).
+ * @returns {'goals' | 'tasks' | 'notes' | null}
+ */
+export function workspaceNavActiveSection(pathname) {
+	const p = normalizeWorkspacePathname(pathname);
+	if (p === '/harada' || p.startsWith('/harada/')) return 'goals';
+	if (p.startsWith('/todo')) return 'tasks';
+	if (p.startsWith('/notes')) return 'notes';
+	return null;
+}
+
+/**
+ * Marketing site centre nav.
+ * @returns {'harada' | 'todo' | 'notes' | 'chart' | null}
+ */
+export function websiteNavActiveSection(pathname) {
+	const p = normalizeWorkspacePathname(pathname);
+	if (p === '/harada-chart' || p.startsWith('/harada-chart/')) return 'chart';
+	if (p === '/harada' || p.startsWith('/harada/')) return 'harada';
+	if (p.startsWith('/todo')) return 'todo';
+	if (p.startsWith('/notes')) return 'notes';
+	return null;
+}

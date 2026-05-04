@@ -33,7 +33,9 @@
 		primaryNote = null,
 		linkedNotes = [],
 		onUpsertPrimaryNote = null,
-		linkedGoalIndices = []
+		linkedGoalIndices = [],
+		/** When set (from `?task=` query), empty tasks focus even if `disableAutoFocus` is true */
+		pageTaskId = null
 	} = $props();
 
 	let isEditing = $state(false);
@@ -69,10 +71,12 @@
 			.trim();
 	});
 	const isPinned = $derived(todo.pinned === true);
+	const isEmptyTitle = $derived(!todo.title || todo.title.trim() === '');
 	const isNewEmptyTodo = $derived(
-		(!todo.title || todo.title.trim() === '') && 
-		todo.createdAt && 
-		Date.now() - todo.createdAt < 1000 // Created within last second
+		isEmptyTitle && todo.createdAt && Date.now() - todo.createdAt < 1000
+	);
+	const isUrlTargetEmptyTodo = $derived(
+		pageTaskId === todo.id && isEmptyTitle && !isFeedPinnedDuplicate
 	);
 
 	// Filter to only show goals with custom titles (not just the default nomenclature)
@@ -83,14 +87,17 @@
 		});
 	});
 
-	// Auto-start editing if this is a new empty todo (unless auto-focus is disabled)
+	// Auto-start editing for a fresh empty todo, or when ?task= points at this empty row (e.g. + New task)
 	$effect(() => {
+		const allowRecentEmpty =
+			isNewEmptyTodo && !disableAutoFocus && !isFeedPinnedDuplicate;
+		const allowLinkedEmpty = isUrlTargetEmptyTodo;
+
 		if (
-			isNewEmptyTodo &&
+			(allowRecentEmpty || allowLinkedEmpty) &&
 			autoFocusedTodoId !== todo.id &&
 			!isEditingTitle &&
-			!isEditing &&
-			!disableAutoFocus
+			!isEditing
 		) {
 			autoFocusedTodoId = todo.id;
 			startEditingTitle();
@@ -110,7 +117,8 @@
 		editTitle = todo.title || '';
 		isEditingTitle = true;
 		if (onTitleFocus) onTitleFocus(todo.id);
-		// Focus the input after it renders
+		// Defer focus slightly when opened via ?task= so scroll-into-view doesn’t win the race
+		const delayMs = pageTaskId === todo.id ? 120 : 0;
 		setTimeout(() => {
 			if (titleInputElement) {
 				titleInputElement.focus();
@@ -121,7 +129,7 @@
 					titleInputElement.setSelectionRange(len, len);
 				}
 			}
-		}, 0);
+		}, delayMs);
 	}
 
 	function saveTitle() {

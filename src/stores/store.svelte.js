@@ -1089,18 +1089,23 @@ class Store {
 			const taskRows = (todosSnapshot || [])
 				.map((todo) => this._todoToTaskRow(todo, authStore.user.id))
 				.filter(Boolean);
+			// Draft tasks are omitted from taskRows; links must not reference them or Postgres
+			// raises FK violations on task_goal_links / note_task_links (23503).
+			const persistedTaskIds = new Set(taskRows.map((row) => row.id));
 			const noteRows = (notesSnapshot || [])
 				.map((note) => this._noteToRow(note, authStore.user.id))
 				.filter(Boolean);
 			const noteTaskLinkRows = (noteTaskLinksSnapshot || [])
 				.map((link) => this._noteTaskLinkToRow(link, authStore.user.id))
-				.filter(Boolean);
+				.filter(Boolean)
+				.filter((row) => persistedTaskIds.has(row.task_id));
 			const noteGoalLinkRows = (noteGoalLinksSnapshot || [])
 				.map((link) => this._noteGoalLinkToRow(link, authStore.user.id))
 				.filter(Boolean);
 			const taskGoalLinkRows = (taskGoalLinksSnapshot || [])
 				.map((link) => this._taskGoalLinkToRow(link, authStore.user.id))
-				.filter(Boolean);
+				.filter(Boolean)
+				.filter((row) => persistedTaskIds.has(row.task_id));
 
 			if (taskRows.length > 0) {
 				const { error: tasksError } = await supabase.rpc('upsert_tasks_if_newer', {

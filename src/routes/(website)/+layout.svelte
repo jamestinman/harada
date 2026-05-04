@@ -1,37 +1,26 @@
 <script>
+	import { setContext } from 'svelte';
+	import DesktopTopNav from '$components/DesktopTopNav.svelte';
 	import AuthModal from '$components/AuthModal.svelte';
+	import UserSettingsModal from '$components/UserSettingsModal.svelte';
+	import { authStore } from '$stores/auth.svelte.js';
 
 	let { children } = $props();
 	let showAuthModal = $state(false);
+	let showSettingsModal = $state(false);
+
+	setContext('websiteAccount', {
+		openSignIn: () => (showAuthModal = true),
+		openSettings: () => (showSettingsModal = true)
+	});
 </script>
 
 <div class="min-h-dvh bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-	<header class="border-b border-slate-200/80 bg-white/90 backdrop-blur dark:border-slate-800 dark:bg-slate-950/90">
-		<div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
-			<a href="/" class="text-lg font-semibold tracking-tight">Haradato</a>
-			<nav class="hidden items-center gap-5 text-sm md:flex">
-				<a href="/to-do-lists" class="hover:text-emerald-600 dark:hover:text-emerald-400">To-do Lists</a>
-				<a href="/harada-chart" class="hover:text-emerald-600 dark:hover:text-emerald-400">What is a Harada Chart?</a>
-				<a href="/for-agents" class="hover:text-emerald-600 dark:hover:text-emerald-400">Agent Usage</a>
-				<a href="/articles" class="hover:text-emerald-600 dark:hover:text-emerald-400">Articles</a>
-			</nav>
-			<div class="flex items-center gap-2">
-				<a
-					href="/home"
-					class="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500"
-				>
-					Get Started
-				</a>
-				<button
-					type="button"
-					onclick={() => (showAuthModal = true)}
-					class="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
-				>
-					Sign In
-				</button>
-			</div>
-		</div>
-	</header>
+	<DesktopTopNav
+		variant="website"
+		onSignIn={() => (showAuthModal = true)}
+		onOpenSettings={() => (showSettingsModal = true)}
+	/>
 
 	<main class="content-page mx-auto max-w-6xl px-4 py-8">
 		{@render children()}
@@ -50,7 +39,11 @@
 	</footer>
 </div>
 
-<AuthModal bind:isOpen={showAuthModal} redirectOnSignIn="/home" />
+{#if authStore.user}
+	<UserSettingsModal bind:isOpen={showSettingsModal} />
+{:else}
+	<AuthModal bind:isOpen={showAuthModal} redirectOnSignIn="/harada" />
+{/if}
 
 <style>
 	:global(.content-page ul) {

@@ -786,51 +786,37 @@ h4 {
 
 .squaremap-button {
   @apply inline-flex flex-col gap-[1px] rounded p-1 border-2 transition-all active:scale-95 cursor-pointer;
+  @apply border-slate-300 bg-slate-100/80 hover:bg-slate-200/70;
   .dark & {
-    @apply hover:bg-slate-800/50 border-slate-700 bg-slate-900/40;
-  }
-  .light & {
-    @apply hover:bg-slate-200/70 border-slate-300 bg-white/70;
+    @apply border-slate-700 bg-slate-900/40 hover:bg-slate-800/50;
   }
 }
 
 .squaremap-main-dot {
-  @apply h-1.5 w-1.5 rounded-full transition-all;
+  @apply h-1.5 w-1.5 rounded-full transition-all bg-slate-500;
   .dark & {
     @apply bg-slate-400;
-  }
-  .light & {
-    @apply bg-slate-500;
   }
 }
 
 .squaremap-sub-dot {
-  @apply h-1.5 w-1.5 rounded-full transition-all;
+  @apply h-1.5 w-1.5 rounded-full transition-all bg-slate-400/80;
   .dark & {
     @apply bg-slate-600/80;
-  }
-  .light & {
-    @apply bg-slate-400/80;
   }
 }
 
 .squaremap-outer-dot {
-  @apply h-1.5 w-1.5 rounded-full transition-all;
+  @apply h-1.5 w-1.5 rounded-full transition-all bg-slate-300/90;
   .dark & {
     @apply bg-slate-600/60;
-  }
-  .light & {
-    @apply bg-slate-300/70;
   }
 }
 
 .squaremap-inner-dot {
-  @apply h-1.5 w-1.5 rounded-full transition-all;
+  @apply h-1.5 w-1.5 rounded-full transition-all bg-slate-300/60;
   .dark & {
     @apply bg-slate-600/40;
-  }
-  .light & {
-    @apply bg-slate-300/50;
   }
 }
 
