@@ -121,7 +121,7 @@
 
 {#if isOpen}
 	<div
-		class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+		class="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4"
 		onclick={handleBackdropClick}
 		onkeydown={handleBackdropKeydown}
 		role="button"

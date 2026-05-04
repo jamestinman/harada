@@ -125,7 +125,8 @@ h4 {
 }
 
 .settings-backdrop {
-  @apply fixed inset-0 z-50 flex items-center justify-center p-4;
+  /* Above z-50 nav/menus and page content that may share the same layer (z-50 ties break on tree order). */
+  @apply fixed inset-0 z-[200] flex items-center justify-center p-4;
   .dark & {
     @apply bg-slate-950/70;
   }

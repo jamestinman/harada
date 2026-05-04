@@ -337,7 +337,7 @@
 					class="rounded border border-violet-400/40 px-2.5 py-1 text-xs font-medium text-violet-400 transition hover:bg-violet-500/15"
 					onclick={openLinkPanel}
 				>
-					+ link
+					+ to goal
 				</button>
 			{:else}
 				<div class="inline-flex w-52 max-w-full">

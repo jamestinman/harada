@@ -310,7 +310,7 @@ const clearAll = () => {
 				}}
 				class={mobileMenuItemClass('goals')}
 			>
-				Goals
+				Harada
 			</button>
 			<button
 				onclick={() => {
@@ -319,7 +319,7 @@ const clearAll = () => {
 				}}
 				class={mobileMenuItemClass('tasks')}
 			>
-				Tasks
+				To-do
 			</button>
 			<button
 				onclick={() => {
@@ -368,7 +368,7 @@ const clearAll = () => {
 				class={mobileNavLinkClass('goals')}
 				aria-current={activeWorkspace === 'goals' ? 'page' : undefined}
 			>
-				Goals
+				Harada
 			</a>
 			<a
 				href={todoResumeHref}
@@ -376,7 +376,7 @@ const clearAll = () => {
 				onclick={handleMobileTodoNav}
 				aria-current={activeWorkspace === 'tasks' ? 'page' : undefined}
 			>
-				Tasks
+				To-do
 			</a>
 			<a
 				href="/notes"

@@ -99,14 +99,14 @@
 					class={activeWorkspace === 'goals' ? appNavActive : navLinkBase}
 					aria-current={activeWorkspace === 'goals' ? 'page' : undefined}
 				>
-					Goals
+					Harada
 				</a>
 				<a
 					href={todoResumeHref}
 					class={activeWorkspace === 'tasks' ? appNavActive : navLinkBase}
 					aria-current={activeWorkspace === 'tasks' ? 'page' : undefined}
 				>
-					Tasks
+					To-do
 				</a>
 				<a
 					href="/notes"
