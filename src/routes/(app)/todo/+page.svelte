@@ -2,7 +2,7 @@
 	import { onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { browser } from '$app/environment';
+	import { browser, dev } from '$app/environment';
 	import { store } from '$stores/store.svelte.js';
 	import { authStore } from '$stores/auth.svelte.js';
 	import {
@@ -25,21 +25,44 @@
 
 	let searchText = $state('');
 	let activeMainFeed = $state('todos');
+	let initialTodoListReady = $state(false);
+	let isNarrowLayout = $state(false);
+
+	function shouldLogPerf() {
+		return browser && (dev || localStorage.getItem('harada_perf') === '1');
+	}
+
+	function logPerf(label, start, data = {}) {
+		if (!shouldLogPerf()) return;
+		const ms = performance.now() - start;
+		console.log(`[Harada perf] ${label}: ${ms.toFixed(1)}ms`, data);
+	}
+
+	function measureDerived(label, fn) {
+		const start = browser ? performance.now() : 0;
+		const result = fn();
+		logPerf(label, start, {
+			todos: store.harada_chart.todos?.length ?? 0,
+			notes: store.notes?.length ?? 0,
+			links: store.taskGoalLinks?.length ?? 0
+		});
+		return result;
+	}
 
   // Use store.harada_chart directly - it's reactive
 	const grid = $derived(store.harada_chart.grid);
 	const todos = $derived(store.harada_chart.todos.map((todo) => normalizeTodoListMeta(todo)));
 	const taskGoalLinks = $derived(store.taskGoalLinks);
-	const taskGoalKeySet = $derived.by(() => {
+	const taskGoalKeySet = $derived.by(() => measureDerived('todo taskGoalKeySet derive', () => {
 		const keys = new Set();
 		for (const link of taskGoalLinks) keys.add(`${link.taskId}:${link.goalIndex}`);
 		return keys;
-	});
-	const linkedTaskIdSet = $derived.by(() => {
+	}));
+	const linkedTaskIdSet = $derived.by(() => measureDerived('todo linkedTaskIdSet derive', () => {
 		const ids = new Set();
 		for (const link of taskGoalLinks) ids.add(link.taskId);
 		return ids;
-	});
+	}));
 	const dataLoaded = $derived(!store.isBootstrapping);
 	const targetTodoId = $derived(page.url.searchParams.get('task') || null);
 	let activeTodoId = $state(null);
@@ -322,7 +345,7 @@
 
 	// Get all goals for dropdown
 	const goalIndices = [...new Set(getGoalIndices().map((idx) => canonicalGoalIndex(idx)))];
-	const allGoals = $derived.by(() => {
+	const allGoals = $derived.by(() => measureDerived('todo allGoals derive', () => {
 		return goalIndices.map((idx) => {
 			const cell = grid[idx];
 			const text = (cell?.text ?? '').trim();
@@ -348,10 +371,10 @@
 			// Fallback to index order if timestamps are equal or both null
 			return a.index - b.index;
 		});
-	});
+	}));
 
 	// Build render groups (unassigned first, then goals with todos)
-	const todoGroups = $derived.by(() => {
+	const todoGroups = $derived.by(() => measureDerived('todoGroups derive', () => {
 		const unassignedTodos = getVisibleGoalTodos(null);
 		const customListMap = new Map();
 		todos.forEach((todo) => {
@@ -385,16 +408,16 @@
 			});
 		}
 		return [...groups, ...customGroups];
-	});
+	}));
 
-	const allTodos = $derived(
+	const allTodos = $derived.by(() => measureDerived('allTodos derive', () =>
 		[...todos]
 			.filter((t) => !t.isDraft)
 			.filter((t) => t.status !== 'done')
 			.sort((a, b) => getTodoOrdering(a) - getTodoOrdering(b))
-	);
+	));
 
-	const allNotes = $derived.by(() => {
+	const allNotes = $derived.by(() => measureDerived('allNotes derive', () => {
 		const query = searchText.trim().toLowerCase();
 		const sorted = store.notes
 			.filter((note) => !store.isPrimaryTaskNote(note.id))
@@ -405,25 +428,43 @@
 			const title = getNoteTitle(note?.content ?? '').toLowerCase();
 			return title.includes(query) || content.includes(query);
 		});
-	});
+	}));
 
 	const feedPinnedTodos = $derived.by(() =>
-		todos
+		measureDerived('feedPinnedTodos derive', () => todos
 			.filter((t) => t.pinned === true && t.status !== 'done')
 			.sort((a, b) => getTodoOrdering(a) - getTodoOrdering(b))
+		)
 	);
 
 	let mobileMenuOpen = $state(false);
 	let mobileSidebarHydrated = $state(false);
 
 	onMount(() => {
+		const mountStart = performance.now();
+		console.log('[Harada perf] /todo mounted', {
+			todos: store.harada_chart.todos?.length ?? 0,
+			notes: store.notes?.length ?? 0,
+			bootstrapping: store.isBootstrapping
+		});
 		const requestedView = page.url.searchParams.get('view');
 		if (requestedView === 'notes') activeMainFeed = 'notes';
 
-		if (isWorkspaceNarrowLayout() && readTodoMobileSidebarOpen()) {
+		const syncNarrowLayout = () => {
+			isNarrowLayout = isWorkspaceNarrowLayout();
+		};
+		syncNarrowLayout();
+		window.addEventListener('resize', syncNarrowLayout);
+
+		if (isNarrowLayout && readTodoMobileSidebarOpen()) {
 			mobileMenuOpen = true;
 		}
 		mobileSidebarHydrated = true;
+		requestAnimationFrame(() => {
+			initialTodoListReady = true;
+			logPerf('/todo first frame before TodoList lazy mount', mountStart);
+		});
+		return () => window.removeEventListener('resize', syncNarrowLayout);
 	});
 
 	$effect(() => {
@@ -783,7 +824,8 @@
 			/>
 		</div>
 
-		<div class="hidden gap-8 md:grid md:grid-cols-[18rem_minmax(0,1fr)]">
+		{#if !isNarrowLayout}
+		<div class="grid gap-8 grid-cols-[18rem_minmax(0,1fr)]">
 			<aside class="todo-panel h-[calc(100vh-5.5rem)] overflow-y-auto p-3">
 				<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">TASKS</h2>
 				<div class="space-y-1.5">
@@ -820,35 +862,40 @@
 					<p class="page-subtitle mb-6">
 						{allTodos.length} todo{allTodos.length !== 1 ? 's' : ''} across {todoGroups.filter((g) => g.id !== 'no-goal').length} goal{todoGroups.filter((g) => g.id !== 'no-goal').length !== 1 ? 's' : ''}
 					</p>
-					<TodoList
-						groups={todoGroups}
-						isMainTodoFeed={true}
-						feedPinnedTodos={feedPinnedTodos}
-						{resolveGroupForTodo}
-						{allGoals}
-						onUpdate={updateTodo}
-						onDelete={deleteTodo}
-						onToggleStatus={cycleTodoStatus}
-						onCreateNext={createNextTodo}
-						onDeletePrevious={deleteAndFocusPrevious}
-						onMakeSubtask={makeSubtask}
-						onOutdent={(todoId) => outdentTodo(todoId)}
-						onTitleFocus={(id) => (activeTodoId = id)}
-						getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
-						canIndent={canIndentTodo}
-						canOutdent={(todoId) => canOutdentTodo(todoId)}
-						onCreateTodo={createTodoFromComposer}
-						onMoveTodo={moveTodo}
-						allowCrossListMove={true}
-						enableGroupDrag={true}
-						onMoveGroup={moveGoalGroup}
-						searchText={searchText}
-						{targetTodoId}
-						{getPrimaryNoteForTodo}
-						{getLinkedNotesForTodo}
-						{getLinkedGoalIndicesForTodo}
-						onUpsertPrimaryNote={upsertPrimaryNoteForTodo}
-					/>
+					{#if initialTodoListReady}
+						<TodoList
+							groups={todoGroups}
+							isMainTodoFeed={true}
+							feedPinnedTodos={feedPinnedTodos}
+							{resolveGroupForTodo}
+							{allGoals}
+							onUpdate={updateTodo}
+							onDelete={deleteTodo}
+							onToggleStatus={cycleTodoStatus}
+							onCreateNext={createNextTodo}
+							onDeletePrevious={deleteAndFocusPrevious}
+							onMakeSubtask={makeSubtask}
+							onOutdent={(todoId) => outdentTodo(todoId)}
+							onTitleFocus={(id) => (activeTodoId = id)}
+							getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
+							canIndent={canIndentTodo}
+							canOutdent={(todoId) => canOutdentTodo(todoId)}
+							onCreateTodo={createTodoFromComposer}
+							onMoveTodo={moveTodo}
+							allowCrossListMove={true}
+							enableGroupDrag={true}
+							onMoveGroup={moveGoalGroup}
+							searchText={searchText}
+							{targetTodoId}
+							activeTodoId={activeTodoId}
+							{getPrimaryNoteForTodo}
+							{getLinkedNotesForTodo}
+							{getLinkedGoalIndicesForTodo}
+							onUpsertPrimaryNote={upsertPrimaryNoteForTodo}
+						/>
+					{:else}
+						<div class="todo-panel p-6 text-sm text-slate-700 dark:text-slate-300">Preparing task list...</div>
+					{/if}
 				{:else}
 					<p class="page-subtitle mb-6">
 						{allNotes.length} note{allNotes.length !== 1 ? 's' : ''}, newest first
@@ -878,7 +925,8 @@
 			</div>
 		</div>
 
-		<div class="md:hidden overflow-hidden">
+		{:else}
+		<div class="overflow-hidden">
 			<div
 				class="flex w-[200%] transition-transform duration-300 ease-out"
 				style={`transform: translateX(${mobileMenuOpen ? '0%' : '-50%'});`}
@@ -921,35 +969,40 @@
 						<p class="page-subtitle mb-4">
 							{allTodos.length} todo{allTodos.length !== 1 ? 's' : ''} across {todoGroups.filter((g) => g.id !== 'no-goal').length} goal{todoGroups.filter((g) => g.id !== 'no-goal').length !== 1 ? 's' : ''}
 						</p>
-						<TodoList
-							groups={todoGroups}
-							isMainTodoFeed={true}
-							feedPinnedTodos={feedPinnedTodos}
-							{resolveGroupForTodo}
-							{allGoals}
-							onUpdate={updateTodo}
-							onDelete={deleteTodo}
-							onToggleStatus={cycleTodoStatus}
-							onCreateNext={createNextTodo}
-							onDeletePrevious={deleteAndFocusPrevious}
-							onMakeSubtask={makeSubtask}
-							onOutdent={(todoId) => outdentTodo(todoId)}
-							onTitleFocus={(id) => (activeTodoId = id)}
-							getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
-							canIndent={canIndentTodo}
-							canOutdent={(todoId) => canOutdentTodo(todoId)}
-							onCreateTodo={createTodoFromComposer}
-							onMoveTodo={moveTodo}
-							allowCrossListMove={true}
-							enableGroupDrag={true}
-							onMoveGroup={moveGoalGroup}
-							searchText={searchText}
-							{targetTodoId}
-							{getPrimaryNoteForTodo}
-							{getLinkedNotesForTodo}
-							{getLinkedGoalIndicesForTodo}
-							onUpsertPrimaryNote={upsertPrimaryNoteForTodo}
-						/>
+						{#if initialTodoListReady}
+							<TodoList
+								groups={todoGroups}
+								isMainTodoFeed={true}
+								feedPinnedTodos={feedPinnedTodos}
+								{resolveGroupForTodo}
+								{allGoals}
+								onUpdate={updateTodo}
+								onDelete={deleteTodo}
+								onToggleStatus={cycleTodoStatus}
+								onCreateNext={createNextTodo}
+								onDeletePrevious={deleteAndFocusPrevious}
+								onMakeSubtask={makeSubtask}
+								onOutdent={(todoId) => outdentTodo(todoId)}
+								onTitleFocus={(id) => (activeTodoId = id)}
+								getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
+								canIndent={canIndentTodo}
+								canOutdent={(todoId) => canOutdentTodo(todoId)}
+								onCreateTodo={createTodoFromComposer}
+								onMoveTodo={moveTodo}
+								allowCrossListMove={true}
+								enableGroupDrag={true}
+								onMoveGroup={moveGoalGroup}
+								searchText={searchText}
+								{targetTodoId}
+								activeTodoId={activeTodoId}
+								{getPrimaryNoteForTodo}
+								{getLinkedNotesForTodo}
+								{getLinkedGoalIndicesForTodo}
+								onUpsertPrimaryNote={upsertPrimaryNoteForTodo}
+							/>
+						{:else}
+							<div class="todo-panel p-4 text-sm text-slate-700 dark:text-slate-300">Preparing task list...</div>
+						{/if}
 					{:else}
 						<p class="page-subtitle mb-4">
 							{allNotes.length} note{allNotes.length !== 1 ? 's' : ''}, newest first
@@ -979,5 +1032,6 @@
 				</div>
 			</div>
 		</div>
+		{/if}
 	</div>
 </div>

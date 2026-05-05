@@ -1,6 +1,7 @@
 import { browser } from '$app/environment';
 import { Capacitor } from '@capacitor/core';
 import { localGet, localSet, prefGet, prefSet } from '$lib/PersistentStorage.mjs';
+import { loadLocalHaradaSnapshot, saveLocalHaradaSnapshot } from '$lib/LocalHaradaDb.js';
 import { supabase } from '$lib/supabaseClient.js';
 import { synthStore } from './synth.svelte.js';
 import {
@@ -269,6 +270,81 @@ class Store {
 		this.initialize();
 	}
 
+	_applyLocalSnapshot(local) {
+		if (!local || typeof local !== 'object') return false;
+
+		const localGrid = Array.isArray(local.grid) ? local.grid : [];
+		const normalizedLocalGrid = Array.from(
+			{ length: 81 },
+			(_, i) => (localGrid[i] ? { ...defaultCell(), ...localGrid[i] } : defaultCell())
+		);
+
+		const todos = Array.isArray(local.tasks)
+			? local.tasks.map((row) => this._taskRowToTodo(row)).filter(Boolean)
+			: Array.isArray(local.todos)
+				? local.todos.map((todo) => normalizeTodoListMeta(todo))
+				: [];
+
+		const notes = Array.isArray(local.notes)
+			? local.notes
+					.map((note) =>
+						note?.updated_at ? this._noteRowToNote(note) : normalizeNote(note)
+					)
+					.filter(Boolean)
+			: [];
+
+		const noteTaskLinks = Array.isArray(local.noteTaskLinks)
+			? local.noteTaskLinks
+					.map((link) =>
+						link?.note_id ? this._noteTaskLinkRowToLink(link) : normalizeNoteTaskLink(link)
+					)
+					.filter(Boolean)
+			: [];
+		const noteGoalLinks = Array.isArray(local.noteGoalLinks)
+			? local.noteGoalLinks
+					.map((link) =>
+						link?.note_id ? this._noteGoalLinkRowToLink(link) : normalizeNoteGoalLink(link)
+					)
+					.filter(Boolean)
+			: [];
+		const taskGoalLinks = Array.isArray(local.taskGoalLinks)
+			? local.taskGoalLinks
+					.map((link) =>
+						link?.task_id ? this._taskGoalLinkRowToLink(link) : normalizeTaskGoalLink(link)
+					)
+					.filter(Boolean)
+			: [];
+
+		this.harada_chart = {
+			grid: normalizedLocalGrid,
+			todos
+		};
+		this.notes = notes;
+		this.noteTaskLinks = noteTaskLinks;
+		this.noteGoalLinks = noteGoalLinks;
+		this.taskGoalLinks = taskGoalLinks;
+		return true;
+	}
+
+	async _loadLocalSnapshot() {
+		const userId = authStore.user?.id ?? null;
+		try {
+			const indexedDbSnapshot = await loadLocalHaradaSnapshot(userId);
+			if (indexedDbSnapshot) return indexedDbSnapshot;
+		} catch (err) {
+			console.warn('Failed to load Harada IndexedDB mirror:', err);
+		}
+
+		try {
+			const legacy = await prefGet('harada_chart_local', null);
+			if (legacy && typeof legacy === 'object') return legacy;
+		} catch (err) {
+			console.error('Failed to load local Harada chart:', err);
+		}
+
+		return null;
+	}
+
 	async initialize() {
 		if (!browser || this._isInitialized) return;
 
@@ -276,38 +352,12 @@ class Store {
 
 		try {
 			// 1) Bootstrap from local persistent storage so the app works offline
-			try {
-				const local = await prefGet('harada_chart_local', null);
-				if (local && typeof local === 'object') {
-					const localGrid = Array.isArray(local.grid) ? local.grid : [];
-					const normalizedLocalGrid = Array.from(
-						{ length: 81 },
-						(_, i) => (localGrid[i] ? { ...defaultCell(), ...localGrid[i] } : defaultCell())
-					);
-					this.harada_chart = {
-						grid: normalizedLocalGrid,
-						todos: Array.isArray(local.todos)
-							? local.todos.map((todo) => normalizeTodoListMeta(todo))
-							: []
-					};
-					this.notes = Array.isArray(local.notes)
-						? local.notes.map((note) => normalizeNote(note))
-						: [];
-					this.noteTaskLinks = Array.isArray(local.noteTaskLinks)
-						? local.noteTaskLinks.map((link) => normalizeNoteTaskLink(link)).filter(Boolean)
-						: [];
-					this.noteGoalLinks = Array.isArray(local.noteGoalLinks)
-						? local.noteGoalLinks.map((link) => normalizeNoteGoalLink(link)).filter(Boolean)
-						: [];
-					this.taskGoalLinks = Array.isArray(local.taskGoalLinks)
-						? local.taskGoalLinks.map((link) => normalizeTaskGoalLink(link)).filter(Boolean)
-						: [];
-					this._migrateLegacyTaskMarkdownInMemory();
-					this._migratePrimaryTaskNotesInMemory();
-					this._migrateLegacyTaskLinksInMemory();
-				}
-			} catch (err) {
-				console.error('Failed to load local Harada chart:', err);
+			const local = await this._loadLocalSnapshot();
+			if (local) {
+				this._applyLocalSnapshot(local);
+				this._migrateLegacyTaskMarkdownInMemory();
+				this._migratePrimaryTaskNotesInMemory();
+				this._migrateLegacyTaskLinksInMemory();
 			}
 
 			// 2) If not authenticated or Supabase is unavailable, we stay in offline/local-only mode
@@ -962,15 +1012,52 @@ class Store {
 			const plainTaskGoalLinks = Array.isArray(this.taskGoalLinks)
 				? this.taskGoalLinks.map((link) => (link && typeof link === 'object' ? { ...link } : link))
 				: [];
-			await prefSet('harada_chart_local', {
-				grid: plainGrid,
-				todos: plainTodos,
-				notes: plainNotes,
-				noteTaskLinks: plainNoteTaskLinks,
-				noteGoalLinks: plainNoteGoalLinks,
-				taskGoalLinks: plainTaskGoalLinks,
-				savedAt: new Date().toISOString()
-			});
+
+			const userId = authStore.user?.id ?? null;
+			const taskRows = plainTodos
+				.map((todo) => this._todoToTaskRow(todo, userId))
+				.filter(Boolean);
+			const persistedTaskIds = new Set(taskRows.map((row) => row.id));
+			const noteRows = plainNotes.map((note) => this._noteToRow(note, userId)).filter(Boolean);
+			const noteTaskLinkRows = plainNoteTaskLinks
+				.map((link) => this._noteTaskLinkToRow(link, userId))
+				.filter(Boolean)
+				.filter((row) => persistedTaskIds.has(row.task_id));
+			const noteGoalLinkRows = plainNoteGoalLinks
+				.map((link) => this._noteGoalLinkToRow(link, userId))
+				.filter(Boolean);
+			const taskGoalLinkRows = plainTaskGoalLinks
+				.map((link) => this._taskGoalLinkToRow(link, userId))
+				.filter(Boolean)
+				.filter((row) => persistedTaskIds.has(row.task_id));
+
+			let savedToIndexedDb = false;
+			try {
+				savedToIndexedDb = await saveLocalHaradaSnapshot({
+					userId,
+					grid: plainGrid,
+					tasks: taskRows,
+					notes: noteRows,
+					noteTaskLinks: noteTaskLinkRows,
+					noteGoalLinks: noteGoalLinkRows,
+					taskGoalLinks: taskGoalLinkRows,
+					title: 'My Harada Chart'
+				});
+			} catch (err) {
+				console.warn('Failed to save Harada IndexedDB mirror:', err);
+			}
+
+			if (!savedToIndexedDb) {
+				await prefSet('harada_chart_local', {
+					grid: plainGrid,
+					todos: plainTodos,
+					notes: plainNotes,
+					noteTaskLinks: plainNoteTaskLinks,
+					noteGoalLinks: plainNoteGoalLinks,
+					taskGoalLinks: plainTaskGoalLinks,
+					savedAt: new Date().toISOString()
+				});
+			}
 		} catch (err) {
 			console.error('Failed to save Harada chart locally:', err);
 		}

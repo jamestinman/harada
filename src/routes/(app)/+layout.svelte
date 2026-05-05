@@ -188,11 +188,6 @@
 	onNavigate((navigation) => {
 		if (!document.startViewTransition) return;
 
-		// Flush any pending changes to localStorage/Supabase before navigating away.
-		if (browser && store._isInitialized) {
-			store.saveNow();
-		}
-
 		return new Promise((resolve) => {
 			document.startViewTransition(async () => {
 				resolve();

@@ -1188,6 +1188,7 @@
 							enableGroupDrag={false}
 							searchText={searchText}
 							{targetTodoId}
+							activeTodoId={activeTodoId}
 							{getPrimaryNoteForTodo}
 							{getLinkedNotesForTodo}
 							{getLinkedGoalIndicesForTodo}
@@ -1436,6 +1437,7 @@
 								enableGroupDrag={false}
 								searchText={searchText}
 								{targetTodoId}
+								activeTodoId={activeTodoId}
 								{getPrimaryNoteForTodo}
 								{getLinkedNotesForTodo}
 								{getLinkedGoalIndicesForTodo}

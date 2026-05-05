@@ -1,4 +1,5 @@
 <script>
+	import { tick } from 'svelte';
 	import { cubicOut } from 'svelte/easing';
 	import {
 		indexToNomenclature,
@@ -113,14 +114,17 @@
 		onUpdate({ pinned: !isPinned });
 	}
 
-	function startEditingTitle() {
+	async function startEditingTitle() {
 		editTitle = todo.title || '';
 		isEditingTitle = true;
 		if (onTitleFocus) onTitleFocus(todo.id);
-		// Defer focus slightly when opened via ?task= so scroll-into-view doesn’t win the race
-		const delayMs = pageTaskId === todo.id ? 120 : 0;
+		await tick();
+		// URL/deep-link + freshly inserted rows need a beat so the input mounts and scroll settles
+		const delayMs =
+			pageTaskId === todo.id ? 120 : isNewEmptyTodo ? 64 : 0;
 		setTimeout(() => {
-			if (titleInputElement) {
+			const applyFocus = () => {
+				if (!titleInputElement) return;
 				titleInputElement.focus();
 				if (titleInputElement.value === '') {
 					titleInputElement.select();
@@ -128,6 +132,10 @@
 					const len = titleInputElement.value.length;
 					titleInputElement.setSelectionRange(len, len);
 				}
+			};
+			applyFocus();
+			if (document.activeElement !== titleInputElement) {
+				requestAnimationFrame(() => applyFocus());
 			}
 		}, delayMs);
 	}

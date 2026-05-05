@@ -1,4 +1,6 @@
 <script>
+	import { browser, dev } from '$app/environment';
+	import { onMount, tick } from 'svelte';
 	import TodoItem from '$components/TodoItem.svelte';
 
 	let {
@@ -24,6 +26,8 @@
 		onMoveGroup = null,
 		searchText = '',
 		targetTodoId = null,
+		/** Immediately-updated focused task id (beats async `goto` updating `?task=`) */
+		activeTodoId = null,
 		/** When true, pinned tasks show pink chrome; top duplicate strip uses feedPinnedTodos + resolveGroupForTodo */
 		isMainTodoFeed = false,
 		feedPinnedTodos = null,
@@ -72,6 +76,41 @@
 	let justDidGroupDrag = false;
 	let collapsedTodos = $state(new Set());
 
+	const highlightTaskId = $derived(activeTodoId ?? targetTodoId);
+
+	function shouldLogPerf() {
+		return browser && (dev || localStorage.getItem('harada_perf') === '1');
+	}
+
+	function countGroupTodos(listGroups) {
+		let count = 0;
+		for (const group of listGroups || []) {
+			if (group.subGroups) {
+				for (const subGroup of group.subGroups) count += subGroup.todos?.length ?? 0;
+			} else {
+				count += group.todos?.length ?? 0;
+			}
+		}
+		return count;
+	}
+
+	onMount(() => {
+		if (!shouldLogPerf()) return;
+		const start = performance.now();
+		console.log('[Harada perf] TodoList mounted', {
+			groups: groups.length,
+			rows: countGroupTodos(groups),
+			pinned: feedPinnedTodos?.length ?? 0,
+			search: searchText
+		});
+		tick().then(() => {
+			console.log(`[Harada perf] TodoList first DOM flush: ${(performance.now() - start).toFixed(1)}ms`, {
+				groups: groups.length,
+				rows: countGroupTodos(groups)
+			});
+		});
+	});
+
 	$effect(() => {
 		if (!targetTodoId) return;
 		const target = getTodoById(targetTodoId);
@@ -100,6 +139,7 @@
 	});
 
 	const flatTodos = $derived.by(() => {
+		const start = browser ? performance.now() : 0;
 		const all = [];
 		for (const group of groups) {
 			if (group.subGroups) {
@@ -113,6 +153,12 @@
 					all.push(todo);
 				}
 			}
+		}
+		if (shouldLogPerf()) {
+			console.log(`[Harada perf] TodoList flatTodos derive: ${(performance.now() - start).toFixed(1)}ms`, {
+				groups: groups.length,
+				rows: all.length
+			});
 		}
 		return all;
 	});
@@ -664,7 +710,7 @@
 	}
 
 	function targetTodoClass(todoId) {
-		return targetTodoId === todoId
+		return highlightTaskId === todoId
 			? 'ring-2 ring-violet-400/80 ring-offset-2 ring-offset-transparent'
 			: '';
 	}
@@ -758,7 +804,7 @@
 								canOutdent={canOutdent ? canOutdent(todo.id, pinGroup) : false}
 								{allGoals}
 								allTodos={pinGroup.todos}
-								pageTaskId={targetTodoId}
+								pageTaskId={highlightTaskId}
 								{disableAutoFocus}
 								hasChildren={parentTodoIds.has(todo.id)}
 								isCollapsed={collapsedTodos.has(todo.id)}
@@ -841,7 +887,7 @@
 												canOutdent={canOutdent ? canOutdent(todo.id, subGroup) : false}
 												{allGoals}
 												allTodos={subGroup.todos}
-												pageTaskId={targetTodoId}
+												pageTaskId={highlightTaskId}
 												{disableAutoFocus}
 												hasChildren={parentTodoIds.has(todo.id)}
 												isCollapsed={collapsedTodos.has(todo.id)}
@@ -901,7 +947,7 @@
 								canOutdent={canOutdent ? canOutdent(todo.id, group) : false}
 								{allGoals}
 								allTodos={group.todos}
-								pageTaskId={targetTodoId}
+								pageTaskId={highlightTaskId}
 								{disableAutoFocus}
 								hasChildren={parentTodoIds.has(todo.id)}
 								isCollapsed={collapsedTodos.has(todo.id)}
