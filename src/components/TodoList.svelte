@@ -1,6 +1,6 @@
 <script>
 	import { browser, dev } from '$app/environment';
-	import { onMount, tick } from 'svelte';
+	import { onDestroy, onMount, tick } from 'svelte';
 	import TodoItem from '$components/TodoItem.svelte';
 
 	let {
@@ -44,9 +44,12 @@
 	const CHILD_ZONE_BOTTOM = 0.75;
 	const SCROLL_ZONE_PX = 80;
 	const MAX_SCROLL_SPEED = 14;
+	const INITIAL_RENDERED_TODOS = 25;
+	const RENDER_CHUNK_SIZE = 25;
 	let pressTimer = null;
 	let pendingDrag = null;
 	let autoScrollRAF = null;
+	let progressiveRenderRAF = null;
 	let currentDragY = 0;
 	let taskDrag = $state({
 		active: false,
@@ -75,6 +78,8 @@
 	});
 	let justDidGroupDrag = false;
 	let collapsedTodos = $state(new Set());
+	let renderedTodoLimit = $state(INITIAL_RENDERED_TODOS);
+	let renderResetKey = '';
 
 	const highlightTaskId = $derived(activeTodoId ?? targetTodoId);
 
@@ -94,21 +99,53 @@
 		return count;
 	}
 
+	function cancelProgressiveRender() {
+		if (progressiveRenderRAF !== null) {
+			cancelAnimationFrame(progressiveRenderRAF);
+			progressiveRenderRAF = null;
+		}
+	}
+
+	function scheduleProgressiveRender() {
+		if (!browser) return;
+		cancelProgressiveRender();
+		const step = () => {
+			progressiveRenderRAF = null;
+			if (renderedTodoLimit >= visibleFlatTodos.length) return;
+			renderedTodoLimit = Math.min(renderedTodoLimit + RENDER_CHUNK_SIZE, visibleFlatTodos.length);
+			if (renderedTodoLimit < visibleFlatTodos.length) {
+				progressiveRenderRAF = requestAnimationFrame(step);
+			}
+		};
+		progressiveRenderRAF = requestAnimationFrame(step);
+	}
+
 	onMount(() => {
-		if (!shouldLogPerf()) return;
 		const start = performance.now();
-		console.log('[Harada perf] TodoList mounted', {
-			groups: groups.length,
-			rows: countGroupTodos(groups),
-			pinned: feedPinnedTodos?.length ?? 0,
-			search: searchText
-		});
-		tick().then(() => {
-			console.log(`[Harada perf] TodoList first DOM flush: ${(performance.now() - start).toFixed(1)}ms`, {
+		if (shouldLogPerf()) {
+			console.log('[Harada perf] TodoList mounted', {
 				groups: groups.length,
-				rows: countGroupTodos(groups)
+				rows: countGroupTodos(groups),
+				pinned: feedPinnedTodos?.length ?? 0,
+				search: searchText,
+				initialRenderedRows: Math.min(renderedTodoLimit, visibleFlatTodos.length),
+				totalVisibleRows: visibleFlatTodos.length
 			});
+		}
+		tick().then(() => {
+			if (shouldLogPerf()) {
+				console.log(`[Harada perf] TodoList first DOM flush: ${(performance.now() - start).toFixed(1)}ms`, {
+					groups: groups.length,
+					rows: countGroupTodos(groups),
+					renderedRows: Math.min(renderedTodoLimit, visibleFlatTodos.length)
+				});
+			}
+			scheduleProgressiveRender();
 		});
+	});
+
+	onDestroy(() => {
+		cancelProgressiveRender();
 	});
 
 	$effect(() => {
@@ -170,6 +207,56 @@
 		}
 		return ids;
 	});
+
+	function getVisibleTodosForGroup(group, todosList) {
+		return (todosList || []).filter(
+			(t) => !isHiddenByCollapse(t.id) && (groupMatchesSearch(group) || matchesSearch(t))
+		);
+	}
+
+	const visibleFlatTodos = $derived.by(() => {
+		const all = [];
+		for (const group of groups) {
+			if (group.subGroups) {
+				for (const subGroup of group.subGroups) {
+					all.push(...getVisibleTodosForGroup(group, subGroup.todos));
+				}
+			} else {
+				all.push(...getVisibleTodosForGroup(group, group.todos));
+			}
+		}
+		return all;
+	});
+
+	const effectiveRenderedTodoLimit = $derived.by(() => {
+		if (!highlightTaskId) return renderedTodoLimit;
+		const targetIndex = visibleFlatTodos.findIndex((todo) => todo.id === highlightTaskId);
+		return targetIndex >= 0 ? Math.max(renderedTodoLimit, targetIndex + 1) : renderedTodoLimit;
+	});
+
+	const renderedTodoIdSet = $derived.by(() => {
+		return new Set(visibleFlatTodos.slice(0, effectiveRenderedTodoLimit).map((todo) => todo.id));
+	});
+
+	$effect(() => {
+		const nextKey = `${searchText}|${highlightTaskId ?? ''}|${flatTodos.map((todo) => todo.id).join(',')}`;
+		if (nextKey === renderResetKey) return;
+		renderResetKey = nextKey;
+		renderedTodoLimit = INITIAL_RENDERED_TODOS;
+		scheduleProgressiveRender();
+	});
+
+	function getRenderedTodosForGroup(group, todosList) {
+		return getVisibleTodosForGroup(group, todosList).filter((todo) => renderedTodoIdSet.has(todo.id));
+	}
+
+	function hasRenderedTodosInGroup(group) {
+		if (!group) return false;
+		if (group.subGroups && group.subGroups.length > 0) {
+			return group.subGroups.some((subGroup) => getRenderedTodosForGroup(group, subGroup.todos).length > 0);
+		}
+		return getRenderedTodosForGroup(group, group.todos).length > 0;
+	}
 
 	function getTodoById(todoId) {
 		return flatTodos.find((todo) => todo.id === todoId) || null;
@@ -825,7 +912,7 @@
 	{/if}
 	
 	{#each groups as group}
-		{#if !searchText || hasVisibleTodosInGroup(group)}
+		{#if hasRenderedTodosInGroup(group) || showHeaderTopPlaceholder(group.id)}
 			<div
 				data-dnd-group-id={group.groupType === 'goal' ? group.id : null}
 				class={`${group.groupType === 'goal' ? `rounded-lg transition ${groupDragClass(group.id)}` : ''}`}
@@ -855,10 +942,10 @@
 				<!-- Render nested sub-groups -->
 				<div class="todo-subgroup-container">
 					{#each group.subGroups as subGroup}
-						{#if groupMatchesSearch(group) || subGroup.todos.some((t) => !isHiddenByCollapse(t.id) && matchesSearch(t))}
+						{#if getRenderedTodosForGroup(group, subGroup.todos).length > 0}
 							<div>
 								<div class="space-y-2">
-									{#each subGroup.todos.filter(t => !isHiddenByCollapse(t.id) && (groupMatchesSearch(group) || matchesSearch(t))) as todo (todo.id)}
+									{#each getRenderedTodosForGroup(group, subGroup.todos) as todo (todo.id)}
 										{#if showPlaceholderBefore(todo.id)}
 											<div class="h-12 rounded-lg border-2 border-dashed border-violet-400/80 bg-violet-500/10"></div>
 										{/if}
@@ -918,7 +1005,7 @@
 					{#if showHeaderTopPlaceholder(group.id)}
 						<div class="h-12 rounded-lg border-2 border-dashed border-violet-400/80 bg-violet-500/10"></div>
 					{/if}
-					{#each group.todos.filter(t => !isHiddenByCollapse(t.id) && (groupMatchesSearch(group) || matchesSearch(t))) as todo (todo.id)}
+					{#each getRenderedTodosForGroup(group, group.todos) as todo (todo.id)}
 						{#if showPlaceholderBefore(todo.id)}
 							<div class="h-12 rounded-lg border-2 border-dashed border-violet-400/80 bg-violet-500/10"></div>
 						{/if}
