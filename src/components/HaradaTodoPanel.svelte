@@ -1,7 +1,7 @@
 <script>
 	import { goto } from '$app/navigation';
 	import { store } from '$stores/store.svelte.js';
-	import { renderMarkdown, continueMarkdownListOnEnter } from '$lib/todoUtils.js';
+	import { renderMarkdown, handleMarkdownEditorKeydown } from '$lib/todoUtils.js';
 
 	let {
 		todos,
@@ -148,7 +148,7 @@
 								class="todo-panel-textarea"
 								placeholder="Write detailed notes, checklists or context for this to-do using Markdown…"
 								value={todo.markdown}
-								onkeydown={continueMarkdownListOnEnter}
+								onkeydown={handleMarkdownEditorKeydown}
 								onblur={(e) => updateTodo(todo.id, { markdown: e.target.value })}
 							></textarea>
 						</div>

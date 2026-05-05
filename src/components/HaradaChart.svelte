@@ -41,18 +41,30 @@
 	// Get color class based on block
 	function getBlockColor(row, col) {
 		const blockIndex = getBlockIndex(row, col);
-		const colors = [
-			'bg-rose-950/40 border-rose-800/30',
-			'bg-amber-950/40 border-amber-800/30',
-			'bg-lime-950/40 border-lime-800/30',
-			'bg-cyan-950/40 border-cyan-800/30',
-			'bg-violet-950/60 border-violet-700/50',
-			'bg-sky-950/40 border-sky-800/30',
-			'bg-fuchsia-950/40 border-fuchsia-800/30',
-			'bg-teal-950/40 border-teal-800/30',
-			'bg-orange-950/40 border-orange-800/30'
+		const isDark = store.theme === 'dark';
+		const darkColors = [
+			'bg-rose-900/60 border-rose-600/50',
+			'bg-amber-900/60 border-amber-600/50',
+			'bg-lime-900/60 border-lime-600/50',
+			'bg-cyan-900/60 border-cyan-600/50',
+			'bg-violet-900/70 border-violet-600/60',
+			'bg-sky-900/60 border-sky-600/50',
+			'bg-fuchsia-900/60 border-fuchsia-600/50',
+			'bg-teal-900/60 border-teal-600/50',
+			'bg-orange-900/60 border-orange-600/50'
 		];
-		return colors[blockIndex];
+		const lightColors = [
+			'bg-rose-100/80 border-rose-300/70',
+			'bg-amber-100/80 border-amber-300/70',
+			'bg-lime-100/80 border-lime-300/70',
+			'bg-cyan-100/80 border-cyan-300/70',
+			'bg-violet-100/80 border-violet-300/70',
+			'bg-sky-100/80 border-sky-300/70',
+			'bg-fuchsia-100/80 border-fuchsia-300/70',
+			'bg-teal-100/80 border-teal-300/70',
+			'bg-orange-100/80 border-orange-300/70'
+		];
+		return isDark ? darkColors[blockIndex] : lightColors[blockIndex];
 	}
 
 	function getCellClasses(row, col, index) {
@@ -591,7 +603,7 @@
 									<div class="absolute bottom-0.5 left-0.5 text-[8px] sm:text-[10px]" title="Done">✓</div>
 								{/if}
 							{:else}
-								<span class="text-[8px] text-white/30 sm:text-[10px]">{i == 40 ? 'Central Goal' : store.getDefaultCell(i).text}</span>
+								<span class={`text-[8px] sm:text-[10px] ${store.theme === 'dark' ? 'text-white/40' : 'text-slate-400/70'}`}>{i == 40 ? 'Central Goal' : store.getDefaultCell(i).text}</span>
 							{/if}
 						</div>
 					</button>

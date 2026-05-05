@@ -10,7 +10,7 @@
 		nomenclatureToIndex,
 		getNoteTitle,
 		renderNoteBodyMarkdown,
-		continueMarkdownListOnEnter
+		handleMarkdownEditorKeydown
 	} from '$lib/todoUtils.js';
 	import GoalSelect from './GoalSelect.svelte';
 	import WorkspaceToolbar from './WorkspaceToolbar.svelte';
@@ -524,7 +524,7 @@ $effect(() => {
 								class="composer-textarea notes-markdown-editor !min-h-0 resize-y"
 								placeholder="Write in markdown. First line becomes the title."
 								oninput={() => resizeTextarea({ force: false })}
-								onkeydown={continueMarkdownListOnEnter}
+								onkeydown={handleMarkdownEditorKeydown}
 							></textarea>
 						{:else}
 						<h1 class="mb-3 text-lg font-semibold leading-tight text-slate-900 dark:text-slate-100">
@@ -634,7 +634,7 @@ $effect(() => {
 							class="composer-textarea notes-markdown-editor !min-h-0 resize-y"
 							placeholder="Write in markdown. First line becomes the title."
 							oninput={() => resizeTextarea({ force: false })}
-							onkeydown={continueMarkdownListOnEnter}
+							onkeydown={handleMarkdownEditorKeydown}
 						></textarea>
 						{:else}
 						<h1 class="mb-3 text-lg font-semibold leading-tight text-slate-900 dark:text-slate-100">

@@ -5,7 +5,7 @@
 	import { cubicOut } from 'svelte/easing';
 	import { page } from '$app/state';
 	import { browser } from '$app/environment';
-	import { NEW_LIST_OPTION_VALUE, parseListSelection, continueMarkdownListOnEnter } from '$lib/todoUtils.js';
+	import { NEW_LIST_OPTION_VALUE, parseListSelection, handleMarkdownEditorKeydown } from '$lib/todoUtils.js';
 	import { resumePathTodo, workspaceNavActiveSection } from '$lib/workspaceNavResume.js';
 	import { store } from '$stores/store.svelte.js';
 	import { navComposerHandlers } from '$stores/navComposerHandlers.svelte.js';
@@ -455,7 +455,7 @@ const clearAll = () => {
 				</div>
 
 				<div class="mb-4">
-					<textarea bind:value={composerMarkdown} placeholder="" class="composer-textarea" onkeydown={continueMarkdownListOnEnter}></textarea>
+					<textarea bind:value={composerMarkdown} placeholder="" class="composer-textarea" onkeydown={handleMarkdownEditorKeydown}></textarea>
 				</div>
 
 				<div class="mb-4 flex items-center gap-2">
@@ -495,7 +495,7 @@ const clearAll = () => {
 					bind:value={composerNoteContent}
 					placeholder="Write your note…"
 					class="composer-textarea mb-4 min-h-[12rem]"
-					onkeydown={continueMarkdownListOnEnter}
+					onkeydown={handleMarkdownEditorKeydown}
 					autofocus
 				></textarea>
 				<button

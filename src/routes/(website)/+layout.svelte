@@ -15,7 +15,7 @@
 	});
 </script>
 
-<div class="min-h-dvh bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+<div class="min-h-dvh bg-slate-50 text-slate-900">
 	<DesktopTopNav
 		variant="website"
 		onSignIn={() => (showAuthModal = true)}
@@ -26,14 +26,14 @@
 		{@render children()}
 	</main>
 
-	<footer class="border-t border-slate-200 py-8 text-sm text-slate-600 dark:border-slate-800 dark:text-slate-400">
+	<footer class="border-t border-slate-200 py-8 text-sm text-slate-600">
 		<div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4">
 			<p>Haradato - your AI-accessible brain extension.</p>
 			<div class="flex items-center gap-4">
-				<a href="/privacy" class="hover:text-emerald-600 dark:hover:text-emerald-400">Privacy</a>
-				<a href="/to-do-lists" class="hover:text-emerald-600 dark:hover:text-emerald-400">To-do Lists</a>
-				<a href="/articles" class="hover:text-emerald-600 dark:hover:text-emerald-400">Articles</a>
-				<a href="/for-agents" class="hover:text-emerald-600 dark:hover:text-emerald-400">For Agents</a>
+				<a href="/privacy" class="hover:text-emerald-600">Privacy</a>
+				<a href="/to-do-lists" class="hover:text-emerald-600">To-do Lists</a>
+				<a href="/articles" class="hover:text-emerald-600">Articles</a>
+				<a href="/for-agents" class="hover:text-emerald-600">For Agents</a>
 			</div>
 		</div>
 	</footer>
@@ -82,11 +82,4 @@
 		background: rgb(241 245 249);
 	}
 
-	:global(.dark .content-page .salesBtn.secondary) {
-		border-color: rgb(51 65 85);
-	}
-
-	:global(.dark .content-page .salesBtn.secondary:hover) {
-		background: rgb(30 41 59);
-	}
 </style>

@@ -307,7 +307,6 @@ export function continueMarkdownListOnEnter(event) {
 	const lineStart = value.lastIndexOf('\n', start - 1) + 1;
 	const lineEnd = value.indexOf('\n', start);
 	const safeLineEnd = lineEnd === -1 ? value.length : lineEnd;
-	if (start !== safeLineEnd) return false;
 
 	const line = value.slice(lineStart, safeLineEnd);
 	const match = line.match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
@@ -334,6 +333,75 @@ export function continueMarkdownListOnEnter(event) {
 	el.value = newValue;
 	el.selectionStart = newCursor;
 	el.selectionEnd = newCursor;
+	el.dispatchEvent(new Event('input', { bubbles: true }));
+	return true;
+}
+
+function getCurrentLineBounds(value, cursor) {
+	const lineStart = value.lastIndexOf('\n', cursor - 1) + 1;
+	const lineEnd = value.indexOf('\n', cursor);
+	return {
+		lineStart,
+		lineEnd: lineEnd === -1 ? value.length : lineEnd
+	};
+}
+
+function listLineParts(line) {
+	return line.match(/^(\s*)([-*+]|\d+[.)])(\s+.*)?$/);
+}
+
+/**
+ * Handle markdown editor keyboard behavior for lists:
+ * - Enter: continue/exit list
+ * - Tab / Shift+Tab: indent/outdent list item
+ */
+export function handleMarkdownEditorKeydown(event) {
+	if (continueMarkdownListOnEnter(event)) return true;
+	if (!event) return false;
+
+	const el = event.target;
+	if (!(el instanceof HTMLTextAreaElement)) return false;
+	const start = el.selectionStart;
+	const end = el.selectionEnd;
+	if (typeof start !== 'number' || typeof end !== 'number') return false;
+
+	const value = el.value ?? '';
+	const { lineStart, lineEnd } = getCurrentLineBounds(value, start);
+	const line = value.slice(lineStart, lineEnd);
+	const parts = listLineParts(line);
+	if (!parts) return false;
+
+	const [, indent, marker] = parts;
+	const shouldIndent = event.key === 'Tab' && !event.shiftKey;
+	const shouldOutdent = event.key === 'Tab' && event.shiftKey;
+	if (!shouldIndent && !shouldOutdent) return false;
+
+	event.preventDefault();
+	const indentStep = '  ';
+	let nextIndent = indent;
+	if (shouldIndent) {
+		nextIndent = `${indent}${indentStep}`;
+	} else if (shouldOutdent) {
+		nextIndent = indent.startsWith(indentStep)
+			? indent.slice(indentStep.length)
+			: indent.startsWith(' ')
+				? indent.slice(1)
+				: indent;
+	}
+	if (nextIndent === indent) return true;
+
+	const contentStart = lineStart + indent.length;
+	const newLine = `${nextIndent}${marker}${line.slice(indent.length + marker.length)}`;
+	const newValue = `${value.slice(0, lineStart)}${newLine}${value.slice(lineEnd)}`;
+	const delta = nextIndent.length - indent.length;
+
+	el.value = newValue;
+	el.selectionStart = Math.max(lineStart, start + delta);
+	el.selectionEnd = Math.max(lineStart, end + delta);
+	if (start > contentStart && end > contentStart && delta !== 0) {
+		el.selectionStart = start + delta;
+		el.selectionEnd = end + delta;
+	}
 	el.dispatchEvent(new Event('input', { bubbles: true }));
 	return true;
 }

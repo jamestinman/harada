@@ -4,7 +4,7 @@
 	import {
 		indexToNomenclature,
 		renderMarkdown,
-		continueMarkdownListOnEnter
+		handleMarkdownEditorKeydown
 	} from '$lib/todoUtils.js';
 	import { store } from '$stores/store.svelte.js';
 	import GoalSelect from './GoalSelect.svelte';
@@ -541,7 +541,7 @@
 						bind:this={markdownTextareaElement}
 						bind:value={editMarkdown}
 						placeholder="Task note"
-						onkeydown={continueMarkdownListOnEnter}
+						onkeydown={handleMarkdownEditorKeydown}
 					></textarea>
 				{:else}
 					<div
@@ -644,7 +644,7 @@
 							bind:value={editMarkdown}
 							placeholder="Task note"
 							class="composer-textarea"
-							onkeydown={continueMarkdownListOnEnter}
+							onkeydown={handleMarkdownEditorKeydown}
 						></textarea>
 					{:else}
 						<div
