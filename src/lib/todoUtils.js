@@ -282,6 +282,62 @@ export function renderMarkdown(md) {
 	return marked.parse(md);
 }
 
+function nextOrderedMarker(marker) {
+	const match = marker.match(/^(\d+)([.)])$/);
+	if (!match) return marker;
+	const next = Number(match[1]) + 1;
+	return `${next}${match[2]}`;
+}
+
+/**
+ * Continue markdown list markers on Enter in a textarea.
+ * Returns true when custom handling occurred.
+ */
+export function continueMarkdownListOnEnter(event) {
+	if (!event || event.key !== 'Enter') return false;
+	if (event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) return false;
+	const el = event.target;
+	if (!(el instanceof HTMLTextAreaElement)) return false;
+
+	const start = el.selectionStart;
+	const end = el.selectionEnd;
+	if (typeof start !== 'number' || typeof end !== 'number' || start !== end) return false;
+
+	const value = el.value ?? '';
+	const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+	const lineEnd = value.indexOf('\n', start);
+	const safeLineEnd = lineEnd === -1 ? value.length : lineEnd;
+	if (start !== safeLineEnd) return false;
+
+	const line = value.slice(lineStart, safeLineEnd);
+	const match = line.match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
+	if (!match) return false;
+
+	const [, indent, marker, content] = match;
+	event.preventDefault();
+
+	// If current list item is empty, pressing Enter exits the list.
+	if (content.trim() === '') {
+		const newValue = `${value.slice(0, lineStart)}${value.slice(safeLineEnd)}`;
+		el.value = newValue;
+		el.selectionStart = lineStart;
+		el.selectionEnd = lineStart;
+		el.dispatchEvent(new Event('input', { bubbles: true }));
+		return true;
+	}
+
+	const nextMarker = /^\d+[.)]$/.test(marker) ? nextOrderedMarker(marker) : marker;
+	const insertion = `\n${indent}${nextMarker} `;
+	const newCursor = start + insertion.length;
+	const newValue = `${value.slice(0, start)}${insertion}${value.slice(start)}`;
+
+	el.value = newValue;
+	el.selectionStart = newCursor;
+	el.selectionEnd = newCursor;
+	el.dispatchEvent(new Event('input', { bubbles: true }));
+	return true;
+}
+
 export function getNoteTitle(markdown, fallback = 'Untitled') {
 	if (typeof markdown !== 'string') return fallback;
 	const firstLine = markdown.split(/\r?\n/, 1)[0]?.trim() || '';

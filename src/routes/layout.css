@@ -1032,6 +1032,26 @@ select {
   overflow-x: auto;
 }
 
+.markdown a,
+.notes-markdown-display a {
+  @apply underline underline-offset-2 decoration-violet-500/70 text-violet-700;
+}
+
+.dark .markdown a,
+.dark .notes-markdown-display a {
+  @apply text-violet-300 decoration-violet-300/70;
+}
+
+.markdown a:visited,
+.notes-markdown-display a:visited {
+  @apply text-purple-700 decoration-purple-600/70;
+}
+
+.dark .markdown a:visited,
+.dark .notes-markdown-display a:visited {
+  @apply text-purple-300 decoration-purple-300/70;
+}
+
 .notes-markdown-display {
   @apply cursor-text text-left rounded-md border p-4 outline-none;
   .dark & {
