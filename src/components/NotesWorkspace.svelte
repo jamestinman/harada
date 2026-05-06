@@ -14,7 +14,7 @@
 	} from '$lib/todoUtils.js';
 	import GoalSelect from './GoalSelect.svelte';
 	import WorkspaceToolbar from './WorkspaceToolbar.svelte';
-	import { ChevronLeft, Trash2 } from 'lucide-svelte';
+	import { ChevronLeft, Trash2, Maximize2 } from 'lucide-svelte';
 	import {
 		persistNotesMobileSidebar,
 		readNotesMobileSidebarOpen,
@@ -378,7 +378,96 @@ $effect(() => {
 
 	const notesDeleteToolbarButtonClass =
 		'shrink-0 inline-flex h-9 w-9 items-center justify-center rounded-md border border-rose-600/80 bg-rose-600 text-white transition hover:bg-rose-500';
+
+	let presentationMode = $state(false);
+
+	function enterPresentation() {
+		if (!selectedNote || isEditing) return;
+		presentationMode = true;
+	}
+
+	function exitPresentation() {
+		presentationMode = false;
+	}
+
+	function presentationPrev() {
+		const idx = filteredNotes.findIndex((n) => n.id === selectedNote?.id);
+		if (idx > 0) selectNote(filteredNotes[idx - 1].id);
+	}
+
+	function presentationNext() {
+		const idx = filteredNotes.findIndex((n) => n.id === selectedNote?.id);
+		if (idx !== -1 && idx < filteredNotes.length - 1) selectNote(filteredNotes[idx + 1].id);
+	}
+
+	$effect(() => {
+		if (!browser) return;
+		function onKeydown(e) {
+			if (!presentationMode) return;
+			if (e.key === 'Escape') exitPresentation();
+			else if (e.key === 'ArrowLeft') presentationPrev();
+			else if (e.key === 'ArrowRight') presentationNext();
+		}
+		window.addEventListener('keydown', onKeydown);
+		return () => window.removeEventListener('keydown', onKeydown);
+	});
 </script>
+
+{#snippet presentationOverlay()}
+	{#if presentationMode && selectedNote}
+		{@const currentIdx = filteredNotes.findIndex((n) => n.id === selectedNote?.id)}
+		{@const hasPrev = currentIdx > 0}
+		{@const hasNext = currentIdx !== -1 && currentIdx < filteredNotes.length - 1}
+		<div
+			class="fixed inset-0 z-50 flex overflow-hidden bg-white dark:bg-slate-950"
+			role="dialog"
+			aria-modal="true"
+		>
+			<!-- Left click zone: previous note -->
+			<button
+				type="button"
+				class="absolute inset-y-0 left-0 z-10 w-1/4 cursor-w-resize opacity-0"
+				aria-label="Previous note"
+				onclick={(e) => { e.stopPropagation(); presentationPrev(); }}
+				disabled={!hasPrev}
+			></button>
+
+			<!-- Right click zone: next note -->
+			<button
+				type="button"
+				class="absolute inset-y-0 right-0 z-10 w-1/4 cursor-e-resize opacity-0"
+				aria-label="Next note"
+				onclick={(e) => { e.stopPropagation(); presentationNext(); }}
+				disabled={!hasNext}
+			></button>
+
+			<!-- Content: click to exit -->
+			<div
+				class="relative z-0 mx-auto w-full max-w-3xl cursor-pointer overflow-auto px-8 py-16 md:px-16 md:py-24"
+				role="button"
+				tabindex="0"
+				aria-label="Exit presentation"
+				onclick={exitPresentation}
+				onkeydown={(e) => e.key === 'Enter' && exitPresentation()}
+			>
+				<h1 class="mb-8 text-3xl font-bold leading-tight tracking-tight text-slate-900 dark:text-slate-50 md:text-4xl">
+					{getNoteTitle(selectedNote.content)}
+				</h1>
+				<div class="presentation-markdown markdown prose prose-lg max-w-none dark:prose-invert">
+					{@html renderNoteBodyMarkdown(selectedNote.content)}
+				</div>
+			</div>
+
+			<!-- Subtle nav hints at edges -->
+			{#if hasPrev}
+				<div class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 dark:text-slate-700 text-3xl select-none">‹</div>
+			{/if}
+			{#if hasNext}
+				<div class="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 dark:text-slate-700 text-3xl select-none">›</div>
+			{/if}
+		</div>
+	{/if}
+{/snippet}
 
 {#snippet notesDeleteToolbarTrailing()}
 	{#if selectedNote}
@@ -436,6 +525,8 @@ $effect(() => {
 		</div>
 	{/if}
 {/snippet}
+
+{@render presentationOverlay()}
 
 <div class="p-4 pb-24 md:p-8 md:pb-8">
 	<div class="mx-auto max-w-7xl">
@@ -526,8 +617,9 @@ $effect(() => {
 								oninput={() => resizeTextarea({ force: false })}
 								onkeydown={handleMarkdownEditorKeydown}
 							></textarea>
-						{:else}
-						<h1 class="mb-3 text-lg font-semibold leading-tight text-slate-900 dark:text-slate-100">
+					{:else}
+					<div class="mb-3 flex items-start justify-between gap-2">
+						<h1 class="flex-1 text-lg font-semibold leading-tight text-slate-900 dark:text-slate-100">
 							<button
 								type="button"
 								class="inline-block w-full cursor-text border-0 bg-transparent p-0 text-left font-semibold tracking-tight text-inherit outline-none focus-visible:rounded focus-visible:ring-2 focus-visible:ring-violet-500/50 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900"
@@ -536,15 +628,25 @@ $effect(() => {
 								{getNoteTitle(selectedNote.content)}
 							</button>
 						</h1>
-						<div
-							role="button"
-							tabindex="0"
-							class="notes-markdown-display markdown min-h-[22rem] !bg-transparent !border-transparent"
-							onclick={enterEditMode}
-							onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && enterEditMode()}
+						<button
+							type="button"
+							onclick={enterPresentation}
+							class="shrink-0 inline-flex items-center justify-center rounded-md border border-slate-300 bg-white p-1.5 text-slate-500 shadow-sm transition hover:border-violet-400 hover:text-violet-600 hover:shadow dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-violet-500 dark:hover:text-violet-400"
+							aria-label="Enter presentation mode"
+							title="Presentation mode"
 						>
-							{@html renderNoteBodyMarkdown(selectedNote.content)}
-						</div>
+							<Maximize2 class="h-4 w-4" strokeWidth={1.75} />
+						</button>
+					</div>
+					<div
+						role="button"
+						tabindex="0"
+						class="notes-markdown-display markdown min-h-[22rem] !bg-transparent !border-transparent"
+						onclick={enterEditMode}
+						onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && enterEditMode()}
+					>
+						{@html renderNoteBodyMarkdown(selectedNote.content)}
+					</div>
 						{/if}
 
 						<div class="mt-4 pt-4">

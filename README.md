@@ -138,19 +138,6 @@ Notes:
 
 - Version metadata is bumped by `tools/updateVersion.sh` before release builds.
 - To enable desktop macOS release, first add the platform: `npx cap add macos`
-- Google Play requires signed Android bundles. Before `./buildRelease.sh prod android`, create `android/keystore.properties`:
-  ```properties
-  storeFile=../release.jks
-  storePassword=your_store_password
-  keyAlias=your_key_alias
-  keyPassword=your_key_password
-  ```
-  You can generate a key if needed:
-  ```bash
-  keytool -genkeypair -v -keystore release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
-  ```
-  Keep the `.jks` file and passwords safe. Losing them prevents updating the app on Play.
-
 
 ## TODO / Roadmap
 - Desktop Electron version(s)
