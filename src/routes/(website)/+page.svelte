@@ -36,7 +36,7 @@
 <section class="content-page space-y-10">
 	<div class="rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900">
 		<h1 class="text-3xl font-bold tracking-tight sm:text-4xl">
-			Your free, all-in-one AI-accessible brain extension
+			To-do Lists for Life Goals
 		</h1>
 		<div class="mt-4 grid gap-6 text-base text-slate-600 dark:text-slate-300 md:grid-cols-[1fr_16rem] md:items-start md:justify-items-center">
 			<div class="flex w-full max-w-xl flex-col items-center">
