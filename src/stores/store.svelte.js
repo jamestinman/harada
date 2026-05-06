@@ -143,6 +143,7 @@ class Store {
 	sidebarOpen = $state(false);
 	currentGoalIndex = $state(null);
 	theme = $state(localGet('theme', 'light'));
+	ttsVoiceName = $state(localGet('tts_voice_name', 'Kore'));
 	saveStatus = $state('idle');
 	isBootstrapping = $state(true);
 	isLoading = $state(true);
@@ -211,6 +212,12 @@ class Store {
     this.theme = value;
     localSet('theme', value);
   }
+
+	setTtsVoiceName(value) {
+		const next = typeof value === 'string' && value.trim() ? value.trim() : 'Kore';
+		this.ttsVoiceName = next;
+		localSet('tts_voice_name', next);
+	}
 
 	harada_chart = $state({
 		grid: Array.from({ length: 81 }, () => defaultCell()),

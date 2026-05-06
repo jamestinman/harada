@@ -1,5 +1,5 @@
 <script>
-	import { onMount, tick } from 'svelte';
+	import { onMount, onDestroy, tick } from 'svelte';
 	import { beforeNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { browser } from '$app/environment';
@@ -14,7 +14,7 @@
 	} from '$lib/todoUtils.js';
 	import GoalSelect from './GoalSelect.svelte';
 	import WorkspaceToolbar from './WorkspaceToolbar.svelte';
-	import { ChevronLeft, Trash2, Maximize2 } from 'lucide-svelte';
+	import { ChevronLeft, Trash2, Maximize2, Volume2 } from 'lucide-svelte';
 	import {
 		persistNotesMobileSidebar,
 		readNotesMobileSidebarOpen,
@@ -188,6 +188,7 @@
 
 	$effect(() => {
 		if (!selectedNote) {
+			stopReadAloud();
 			selectedNoteId = null;
 			editContent = '';
 			lastSavedContent = '';
@@ -199,6 +200,7 @@
 		const selectedNoteChanged = selectedNote.id !== previousSelectedNoteId;
 		previousSelectedNoteId = selectedNote.id;
 		if (selectedNoteChanged) {
+			stopReadAloud();
 			linkPanelOpen = false;
 			linkGoalValue = '';
 		}
@@ -293,6 +295,7 @@ $effect(() => {
 	}
 
 	beforeNavigate(() => {
+		stopReadAloud();
 		flushNoteEditsIfNeeded();
 	});
 
@@ -380,6 +383,135 @@ $effect(() => {
 		'shrink-0 inline-flex h-9 w-9 items-center justify-center rounded-md border border-rose-600/80 bg-rose-600 text-white transition hover:bg-rose-500';
 
 	let presentationMode = $state(false);
+	let isReadingAloud = $state(false);
+	let ttsAudioEl = null;
+	let ttsObjectUrl = null;
+	let ttsAbortController = null;
+
+	function stopReadAloud() {
+		console.log('[notes][tts] stopReadAloud called', {
+			hadAbortController: !!ttsAbortController,
+			hadAudioEl: !!ttsAudioEl,
+			hadObjectUrl: !!ttsObjectUrl
+		});
+		if (ttsAbortController) {
+			ttsAbortController.abort();
+			ttsAbortController = null;
+		}
+		if (ttsAudioEl) {
+			ttsAudioEl.pause();
+			ttsAudioEl.src = '';
+			ttsAudioEl = null;
+		}
+		if (ttsObjectUrl) {
+			URL.revokeObjectURL(ttsObjectUrl);
+			ttsObjectUrl = null;
+		}
+		isReadingAloud = false;
+	}
+
+	async function toggleReadAloud() {
+		console.log('[notes][tts] toggleReadAloud clicked', {
+			hasSelectedNote: !!selectedNote,
+			isEditing,
+			isReadingAloud
+		});
+		if (!selectedNote || isEditing) {
+			console.warn('[notes][tts] Ignoring click because note is unavailable or in edit mode');
+			return;
+		}
+		if (isReadingAloud) {
+			console.log('[notes][tts] Already reading; stopping');
+			stopReadAloud();
+			return;
+		}
+
+		const text = (selectedNote.content ?? '').trim();
+		if (!text) {
+			console.warn('[notes][tts] Note text is empty; nothing to read');
+			return;
+		}
+		console.log('[notes][tts] Starting TTS request', { textLength: text.length });
+
+		stopReadAloud();
+
+		ttsAbortController = new AbortController();
+		isReadingAloud = true;
+
+		try {
+			const response = await fetch('/api/tts', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					text,
+					voiceName: store.ttsVoiceName || 'Kore'
+				}),
+				signal: ttsAbortController.signal
+			});
+			console.log('[notes][tts] /api/tts response', {
+				status: response.status,
+				ok: response.ok,
+				contentType: response.headers.get('content-type')
+			});
+
+			if (!response.ok) {
+				const errorText = await response.text();
+				console.error('[notes][tts] /api/tts returned error payload', errorText);
+				throw new Error(`TTS request failed (${response.status})`);
+			}
+
+			const audioBlob = await response.blob();
+			console.log('[notes][tts] Audio blob received', {
+				size: audioBlob.size,
+				type: audioBlob.type
+			});
+			if (!audioBlob.size) {
+				throw new Error('TTS returned empty audio');
+			}
+
+			ttsObjectUrl = URL.createObjectURL(audioBlob);
+			const audio = new Audio(ttsObjectUrl);
+			ttsAudioEl = audio;
+			ttsAbortController = null;
+			console.log('[notes][tts] Audio element created; attempting playback');
+
+			audio.onended = () => {
+				console.log('[notes][tts] Playback ended');
+				isReadingAloud = false;
+				if (ttsAudioEl === audio) {
+					ttsAudioEl = null;
+				}
+				if (ttsObjectUrl) {
+					URL.revokeObjectURL(ttsObjectUrl);
+					ttsObjectUrl = null;
+				}
+			};
+			audio.onerror = () => {
+				console.error('[notes][tts] Playback error event fired');
+				isReadingAloud = false;
+				if (ttsAudioEl === audio) {
+					ttsAudioEl = null;
+				}
+				if (ttsObjectUrl) {
+					URL.revokeObjectURL(ttsObjectUrl);
+					ttsObjectUrl = null;
+				}
+			};
+			await audio.play();
+			console.log('[notes][tts] Playback started');
+		} catch (error) {
+			if (!(error instanceof DOMException && error.name === 'AbortError')) {
+				console.error('Failed to read note aloud', error);
+			} else {
+				console.log('[notes][tts] Request aborted');
+			}
+			stopReadAloud();
+		}
+	}
+
+	onDestroy(() => {
+		stopReadAloud();
+	});
 
 	function enterPresentation() {
 		if (!selectedNote || isEditing) return;
@@ -628,15 +760,31 @@ $effect(() => {
 								{getNoteTitle(selectedNote.content)}
 							</button>
 						</h1>
-						<button
-							type="button"
-							onclick={enterPresentation}
-							class="shrink-0 inline-flex items-center justify-center rounded-md border border-slate-300 bg-white p-1.5 text-slate-500 shadow-sm transition hover:border-violet-400 hover:text-violet-600 hover:shadow dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-violet-500 dark:hover:text-violet-400"
-							aria-label="Enter presentation mode"
-							title="Presentation mode"
-						>
-							<Maximize2 class="h-4 w-4" strokeWidth={1.75} />
-						</button>
+						<div class="flex shrink-0 items-center gap-2">
+							<button
+								type="button"
+								onclick={toggleReadAloud}
+								class={`inline-flex items-center justify-center rounded-md border bg-white p-1.5 shadow-sm transition dark:bg-slate-800 ${
+									isReadingAloud
+										? 'border-violet-500 text-violet-600 dark:border-violet-500 dark:text-violet-400'
+										: 'border-slate-300 text-slate-500 hover:border-violet-400 hover:text-violet-600 hover:shadow dark:border-slate-600 dark:text-slate-400 dark:hover:border-violet-500 dark:hover:text-violet-400'
+								}`}
+								aria-label={isReadingAloud ? 'Stop reading note aloud' : 'Read note aloud'}
+								title={isReadingAloud ? 'Stop reading aloud' : 'Read aloud'}
+								disabled={!selectedNote || isEditing}
+							>
+								<Volume2 class="h-4 w-4" strokeWidth={1.75} />
+							</button>
+							<button
+								type="button"
+								onclick={enterPresentation}
+								class="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white p-1.5 text-slate-500 shadow-sm transition hover:border-violet-400 hover:text-violet-600 hover:shadow dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-violet-500 dark:hover:text-violet-400"
+								aria-label="Enter presentation mode"
+								title="Presentation mode"
+							>
+								<Maximize2 class="h-4 w-4" strokeWidth={1.75} />
+							</button>
+						</div>
 					</div>
 					<div
 						role="button"

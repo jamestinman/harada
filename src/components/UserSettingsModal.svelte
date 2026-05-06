@@ -15,6 +15,16 @@ let agentEnabled = $state(false);
 let agentRequests = $state([]);
 let agentLoadError = $state(/** @type {string | null} */ (null));
 let agentBusy = $state(false);
+const geminiVoiceOptions = [
+	{ value: 'Kore', label: 'Kore' },
+	{ value: 'Aoede', label: 'Aoede' },
+	{ value: 'Charon', label: 'Charon' },
+	{ value: 'Fenrir', label: 'Fenrir' },
+	{ value: 'Leda', label: 'Leda' },
+	{ value: 'Orus', label: 'Orus' },
+	{ value: 'Puck', label: 'Puck' },
+	{ value: 'Zephyr', label: 'Zephyr' }
+];
 
 	const userId = $derived(authStore.user?.id);
 	const agentPending = $derived(agentRequests.filter((r) => r.status === 'pending'));
@@ -290,6 +300,24 @@ function startEditingName() {
 					</div>
 				</div>
 
+			</div>
+
+			<div class="settings-section-divider">
+				<div class="flex flex-col gap-3 text-left">
+					<div>
+						<div class="settings-appearance-label">Gemini voice</div>
+						<div class="settings-appearance-help">Used for note read-aloud in Notes</div>
+					</div>
+					<select
+						class="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+						value={store.ttsVoiceName}
+						onchange={(e) => store.setTtsVoiceName(e.currentTarget.value)}
+					>
+						{#each geminiVoiceOptions as option (option.value)}
+							<option value={option.value}>{option.label}</option>
+						{/each}
+					</select>
+				</div>
 			</div>
 
 			{#if supabase && userId}
