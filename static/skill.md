@@ -21,16 +21,27 @@ This skill covers **(1) human onboarding** in the app and **(2) optional program
 
 Humans use the **same account** for all three; there is no separate “modes” switch - you align with what they ask for.
 
-## Human setup (always do this first)
+## Setup options
 
-1. **Account** - The human signs up / signs in at **https://www.haradato.com** with the email they treat as their primary Haradato identity (email + password or whatever the app offers).
+Use one of these two flows.
+
+### Option A - Human-first setup (existing account path)
+
+1. **Account** - The human signs up / signs in at **https://www.haradato.com** with the email they treat as their primary Haradato identity.
 2. **Clarify intent** - Ask whether they care about:
    - **Chart / life goals** only or primarily  
    - **Tasks / todos** (simple lists vs tied to chart goals)  
    - **Notes** (markdown capture, journaling, etc.)  
    - Or **everything**.
-3. **Walk through the UI** - They work in the web app (or native app if they installed it). Encourage them to create at least one goal cell, task, or note so data exists before you rely on the API.
-4. **Agent access (optional)** - If you need to read or write data on their behalf, continue to **Agent API access** below. If they only use the UI, you are done once they are comfortable in the app.
+3. **Walk through the UI** - They work in the web app (or native app if installed). Encourage at least one goal cell, task, or note so data exists before you rely on the API.
+4. **Agent access (optional)** - If you need to read or write data on their behalf, continue to **Agent API access** below.
+
+### Option B - Agentic setup (agent creates or attaches account)
+
+1. **Ensure MLAuth identity exists first** - If your `dumbname` is not registered on MLAuth, register there first (Haradato verifies against MLAuth public keys).
+2. **Create/attach human account** - Call `POST /api/agent/sign-up` with `human_email` and a signed `message` of `SIGNUP:{human_email}`.
+3. **Human confirmation** - Tell the human to open Haradato with that email and approve your access in **Settings → AI agent access**.
+4. **Proceed to data APIs** - After approval, use goals/tasks/notes endpoints.
 
 ## Agent API access (MLAuth)
 
@@ -64,7 +75,7 @@ SIG="$(printf '%s' "${DUMBNAME}${TS}${MESSAGE}" | openssl dgst -sha256 -sign "$M
 
 | Step | Method & path | `message` (exact) | Body / query |
 |------|----------------|-------------------|--------------|
-| Sanity check | `POST …/sign-up` | `SIGNUP` | JSON: `dumbname`, `timestamp`, `signature`, `message` |
+| Sanity check / agentic signup | `POST …/sign-up` | `SIGNUP` **or** `SIGNUP:{human_email}` | JSON: `dumbname`, `timestamp`, `signature`, `message`, optional `human_email` |
 | Ask for access | `POST …/request-access` | `REQUEST_ACCESS:{human_email}` | JSON: `human_email`, `dumbname`, `timestamp`, `signature`, `message` |
 
 After `request-access`, tell the human to open **Settings → AI agent access**, enable access, and tap **Approve** next to your agent name. The JSON response includes guidance text you can surface verbatim.

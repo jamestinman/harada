@@ -1,3 +1,22 @@
-# allow crawling everything by default
+# Haradato - robots policy
+# This file allows normal discovery while giving AI agents a clear
+# pointer to project-specific integration instructions.
+#
+# Primary agent integration guide:
+# https://www.haradato.com/skill.md
+#
+# For AI agents:
+# - Crawl public pages for context.
+# - Do not crawl API endpoints; use the documented API flow in skill.md.
+# - Respect auth and approval requirements for any agent operations.
+
 User-agent: *
-Disallow:
+Allow: /
+Disallow: /api/
+
+# Common AI crawler user-agents can be controlled granularly if needed:
+# GPTBot, OAI-SearchBot, ChatGPT-User, ClaudeBot, Claude-SearchBot, Claude-User
+# (currently inheriting the global rules above)
+
+# Project docs for agent discovery
+# skill.md: https://www.haradato.com/skill.md
