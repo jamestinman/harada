@@ -4,7 +4,7 @@
 	import { Capacitor } from '@capacitor/core';
 	import AppleStoreBtn from '$components/AppleStoreBtn.svelte';
 
-	const haradaAgentPrompt = `Read https://haradato.com/skill.md and follow it to work with my Harada workspace to create and manage my to-dos and notes.`;
+	const haradaAgentPrompt = `Read https://haradato.com/skill.md and follow it to work with my Harada workspace to create and manage my to-do list.`;
 
 	let copiedPrompt = $state(false);
 
@@ -69,8 +69,9 @@
 
 	<div class="rounded-2xl border border-slate-200 bg-white p-8 text-center dark:border-slate-800 dark:bg-slate-900 sm:p-10">
 		<h2 class="mx-auto max-w-2xl text-balance text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl md:text-4xl">
-			Use Claude, OpenClaw or any local AI agent to manage your to-do list
+			Use an AI agent to manage your to-do list
 		</h2>
+    <p class="text-sm">(works with Claude, OpenClaw, Hermes, and most AI agents)</p>
 		<div class="mx-auto mt-8 flex max-w-3xl items-stretch gap-0 overflow-hidden rounded-2xl bg-slate-100 text-left dark:bg-slate-800/80">
 			<p class="min-w-0 flex-1 break-words px-4 py-3 font-mono text-sm leading-relaxed text-slate-800 dark:text-slate-100 sm:px-5 sm:text-[0.8125rem]">
 				{haradaAgentPrompt}

@@ -232,6 +232,29 @@ export function escapeHtml(str) {
 		.replace(/'/g, '&#39;');
 }
 
+function normalizeNoteLinkHref(href) {
+	if (typeof href !== 'string') return '';
+	const trimmed = href.trim();
+	if (!trimmed) return '';
+	if (trimmed.startsWith('#') || trimmed.startsWith('/')) return trimmed;
+	if (trimmed.startsWith('https://')) return trimmed;
+	if (trimmed.startsWith('http://')) return `https://${trimmed.slice('http://'.length)}`;
+	if (/^(mailto:|tel:)/i.test(trimmed)) return trimmed;
+	return `https://${trimmed}`;
+}
+
+function rewriteRenderedAnchors(html) {
+	if (typeof html !== 'string' || html.length === 0) return html;
+	return html.replace(/<a\b([^>]*?)\bhref=(["'])(.*?)\2([^>]*)>/gi, (_m, before, _q, rawHref, after) => {
+		const normalizedHref = escapeHtml(normalizeNoteLinkHref(rawHref));
+		if (!normalizedHref) return `<a${before}${after}>`;
+		let attrs = `${before}${after}`;
+		attrs = attrs.replace(/\s*\btarget=(["']).*?\1/gi, '');
+		attrs = attrs.replace(/\s*\brel=(["']).*?\1/gi, '');
+		return `<a${attrs} href="${normalizedHref}" target="_blank" rel="noopener noreferrer">`;
+	});
+}
+
 // Configure marked with custom renderers for Tailwind styling
 class CustomRenderer extends marked.Renderer {
 	heading(token) {
@@ -269,6 +292,14 @@ class CustomRenderer extends marked.Renderer {
 		const text = this.parser.parseInline(token.tokens);
 		return `<p class="mb-1">${text}</p>`;
 	}
+
+	link(token) {
+		const text = this.parser.parseInline(token.tokens);
+		const href = escapeHtml(normalizeNoteLinkHref(token.href || ''));
+		if (!href) return text;
+		const titleAttr = token.title ? ` title="${escapeHtml(token.title)}"` : '';
+		return `<a href="${href}" target="_blank" rel="noopener noreferrer"${titleAttr}>${text}</a>`;
+	}
 }
 
 marked.use({
@@ -279,7 +310,7 @@ marked.use({
 
 export function renderMarkdown(md) {
 	if (!md) return '';
-	return marked.parse(md);
+	return rewriteRenderedAnchors(marked.parse(md));
 }
 
 function nextOrderedMarker(marker) {
