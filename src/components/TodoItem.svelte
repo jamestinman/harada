@@ -37,7 +37,8 @@
 		onUpsertPrimaryNote = null,
 		linkedGoalIndices = [],
 		/** When set (from `?task=` query), empty tasks focus even if `disableAutoFocus` is true */
-		pageTaskId = null
+		pageTaskId = null,
+		isHighlighted = false
 	} = $props();
 
 	let isEditing = $state(false);
@@ -367,6 +368,10 @@
 	<div
 		data-todo-item-id={isFeedPinnedDuplicate ? undefined : todo.id}
 		class={`group task relative rounded-md transition-colors ${
+			isHighlighted
+				? 'ring-2 ring-violet-400/80 ring-offset-2 ring-offset-transparent'
+				: ''
+		} ${
 			mainFeedPinStyle === 'top'
 				? '!border-2 border-pink-400/50'
 				: mainFeedPinStyle === 'inline'

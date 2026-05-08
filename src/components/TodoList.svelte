@@ -796,12 +796,6 @@
 		return '';
 	}
 
-	function targetTodoClass(todoId) {
-		return highlightTaskId === todoId
-			? 'ring-2 ring-violet-400/80 ring-offset-2 ring-offset-transparent'
-			: '';
-	}
-
 	function showChildIndicator(todoId) {
 		return taskDrag.active && taskDrag.targetTodoId === todoId && taskDrag.dropMode === 'child';
 	}
@@ -869,7 +863,7 @@
 						<div
 							data-dnd-item-id={todo.id}
 							onpointerdown={(event) => handleTaskPointerDown(event, todo)}
-							class={`relative rounded-lg transition ${itemDragClass(todo.id)} ${targetTodoClass(todo.id)}`}
+							class={`relative rounded-lg transition ${itemDragClass(todo.id)}`}
 						>
 							{#if showChildIndicator(todo.id)}
 								<div class="pointer-events-none absolute right-2 top-1/2 z-10 -translate-y-1/2">
@@ -898,6 +892,7 @@
 								onToggleCollapse={() => toggleCollapse(todo.id)}
 								isFeedPinnedDuplicate={true}
 								mainFeedPinStyle="top"
+								isHighlighted={highlightTaskId === todo.id}
 								primaryNote={getPrimaryNoteForTodo ? getPrimaryNoteForTodo(todo.id) : null}
 								linkedNotes={getLinkedNotesForTodo ? getLinkedNotesForTodo(todo.id) : []}
 								linkedGoalIndices={getLinkedGoalIndicesForTodo ? getLinkedGoalIndicesForTodo(todo.id) : []}
@@ -952,7 +947,7 @@
 										<div
 											data-dnd-item-id={todo.id}
 											onpointerdown={(event) => handleTaskPointerDown(event, todo)}
-											class={`relative rounded-lg transition ${itemDragClass(todo.id)} ${targetTodoClass(todo.id)}`}
+											class={`relative rounded-lg transition ${itemDragClass(todo.id)}`}
 										>
 											{#if showChildIndicator(todo.id)}
 												<div class="pointer-events-none absolute right-2 top-1/2 z-10 -translate-y-1/2">
@@ -980,6 +975,7 @@
 												isCollapsed={collapsedTodos.has(todo.id)}
 												onToggleCollapse={() => toggleCollapse(todo.id)}
 												mainFeedPinStyle={isMainTodoFeed && todo.pinned ? 'inline' : null}
+												isHighlighted={highlightTaskId === todo.id}
 												primaryNote={getPrimaryNoteForTodo ? getPrimaryNoteForTodo(todo.id) : null}
 												linkedNotes={getLinkedNotesForTodo ? getLinkedNotesForTodo(todo.id) : []}
 												linkedGoalIndices={getLinkedGoalIndicesForTodo ? getLinkedGoalIndicesForTodo(todo.id) : []}
@@ -1012,7 +1008,7 @@
 						<div
 							data-dnd-item-id={todo.id}
 							onpointerdown={(event) => handleTaskPointerDown(event, todo)}
-							class={`relative rounded-lg transition ${itemDragClass(todo.id)} ${targetTodoClass(todo.id)}`}
+							class={`relative rounded-lg transition ${itemDragClass(todo.id)}`}
 						>
 							{#if showChildIndicator(todo.id)}
 								<div class="pointer-events-none absolute right-2 top-1/2 z-10 -translate-y-1/2">
@@ -1040,6 +1036,7 @@
 								isCollapsed={collapsedTodos.has(todo.id)}
 								onToggleCollapse={() => toggleCollapse(todo.id)}
 								mainFeedPinStyle={isMainTodoFeed && todo.pinned ? 'inline' : null}
+								isHighlighted={highlightTaskId === todo.id}
 								primaryNote={getPrimaryNoteForTodo ? getPrimaryNoteForTodo(todo.id) : null}
 								linkedNotes={getLinkedNotesForTodo ? getLinkedNotesForTodo(todo.id) : []}
 								linkedGoalIndices={getLinkedGoalIndicesForTodo ? getLinkedGoalIndicesForTodo(todo.id) : []}

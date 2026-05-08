@@ -13,7 +13,7 @@
 	let { variant = 'website', onSignIn = () => {}, onOpenSettings = () => {} } = $props();
 
 	const isApp = $derived(variant === 'app');
-	const isLight = $derived(!isApp || store.theme === 'light');
+	const isLight = $derived(store.theme === 'light');
 	const isOnline = $derived(store.isOnline);
 
 	const todoResumeHref = $derived.by(() => {

@@ -192,7 +192,7 @@ function startEditingName() {
 		tabindex="-1"
 		aria-label="Close settings modal"
 	>
-		<div class="settings-modal">
+		<div class="settings-modal bg-white">
 			<div class="mb-6 flex items-center justify-between">
 				<h2 class="text-xl font-semibold">Settings</h2>
 				<button
