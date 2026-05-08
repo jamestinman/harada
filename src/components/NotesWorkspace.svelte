@@ -12,9 +12,11 @@
 		renderNoteBodyMarkdown,
 		handleMarkdownEditorKeydown
 	} from '$lib/todoUtils.js';
+	import { fetchNoteSpeechBlob, speechTextFromNoteContent } from '$lib/noteSpeech.js';
 	import GoalSelect from './GoalSelect.svelte';
 	import WorkspaceToolbar from './WorkspaceToolbar.svelte';
-	import { ChevronLeft, Trash2 } from 'lucide-svelte';
+	import NotesPresentationOverlay from './NotesPresentationOverlay.svelte';
+	import { ChevronLeft, Trash2, Maximize2, Volume2, Square } from 'lucide-svelte';
 	import {
 		persistNotesMobileSidebar,
 		readNotesMobileSidebarOpen,
@@ -32,13 +34,22 @@
 	let searchText = $state('');
 
 	onMount(() => {
+		speechSupported =
+			typeof window !== 'undefined' &&
+			typeof Audio !== 'undefined' &&
+			typeof URL !== 'undefined' &&
+			typeof URL.createObjectURL === 'function';
+		console.log('[Notes TTS][Workspace] speechSupported:', speechSupported);
 		if (isWorkspaceNarrowLayout() && readNotesMobileSidebarOpen()) {
 			mobileMenuOpen = true;
 		}
 		mobileSidebarHydrated = true;
 		const onResize = () => resizeTextarea({ force: true });
 		window.addEventListener('resize', onResize);
-		return () => window.removeEventListener('resize', onResize);
+		return () => {
+			window.removeEventListener('resize', onResize);
+			stopSpeaking();
+		};
 	});
 
 	$effect(() => {
@@ -188,6 +199,7 @@
 
 	$effect(() => {
 		if (!selectedNote) {
+			if (isSpeaking) stopSpeaking();
 			selectedNoteId = null;
 			editContent = '';
 			lastSavedContent = '';
@@ -348,6 +360,20 @@ $effect(() => {
 	}
 
 	$effect(() => {
+		const currentNoteId = selectedNote?.id ?? null;
+		if (lastSpokenWatchNoteId !== null && currentNoteId !== lastSpokenWatchNoteId && isSpeaking) {
+			console.log(
+				'[Notes TTS][Workspace] note changed while speaking, stopping:',
+				lastSpokenWatchNoteId,
+				'->',
+				currentNoteId
+			);
+			stopSpeaking();
+		}
+		lastSpokenWatchNoteId = currentNoteId;
+	});
+
+	$effect(() => {
 		if (!browser || !isEditing) return;
 		const id = selectedNote?.id;
 		editContent;
@@ -378,6 +404,120 @@ $effect(() => {
 
 	const notesDeleteToolbarButtonClass =
 		'shrink-0 inline-flex h-9 w-9 items-center justify-center rounded-md border border-rose-600/80 bg-rose-600 text-white transition hover:bg-rose-500';
+
+	let presentationOpen = $state(false);
+	let speechSupported = $state(false);
+	let isSpeaking = $state(false);
+	let activeAudio = null;
+	let activeAudioUrl = null;
+	let activeSpeechController = null;
+	let speechRunId = 0;
+	let lastSpokenWatchNoteId = null;
+
+	function clearActiveAudio() {
+		if (activeAudio) {
+			activeAudio.pause();
+			activeAudio.src = '';
+			activeAudio = null;
+		}
+		if (activeAudioUrl) {
+			URL.revokeObjectURL(activeAudioUrl);
+			activeAudioUrl = null;
+		}
+	}
+
+	function stopSpeaking() {
+		console.log('[Notes TTS][Workspace] stopSpeaking called');
+		speechRunId += 1;
+		activeSpeechController?.abort();
+		activeSpeechController = null;
+		clearActiveAudio();
+		isSpeaking = false;
+	}
+
+	function selectNextNoteInCurrentList(currentNoteId) {
+		const currentIndex = filteredNotes.findIndex((note) => note.id === currentNoteId);
+		if (currentIndex === -1) return null;
+		const nextNote = filteredNotes[currentIndex + 1];
+		if (!nextNote) return null;
+		selectedNoteId = nextNote.id;
+		store.recordLastOpenedNote(nextNote.id);
+		mobileMenuOpen = false;
+		shouldAutoEdit = false;
+		return nextNote.id;
+	}
+
+	async function speakSelectedNote() {
+		if (!speechSupported) {
+			console.warn('[Notes TTS][Workspace] audio playback not supported');
+			return;
+		}
+		if (!selectedNote) {
+			console.warn('[Notes TTS][Workspace] no selected note to read');
+			return;
+		}
+		const text = speechTextFromNoteContent(selectedNote.content ?? '');
+		console.log('[Notes TTS][Workspace] extracted text length:', text.length);
+		if (!text) {
+			console.warn('[Notes TTS][Workspace] note text is empty after cleanup');
+			return;
+		}
+
+		const noteIdAtStart = selectedNote.id;
+		console.log('[Notes TTS][Workspace] speaking note:', noteIdAtStart);
+		stopSpeaking();
+
+		const runId = ++speechRunId;
+		const controller = new AbortController();
+		activeSpeechController = controller;
+		isSpeaking = true;
+
+		try {
+			const blob = await fetchNoteSpeechBlob(text, { signal: controller.signal });
+			if (runId !== speechRunId || controller.signal.aborted) return;
+			if (activeSpeechController === controller) activeSpeechController = null;
+
+			activeAudioUrl = URL.createObjectURL(blob);
+			activeAudio = new Audio(activeAudioUrl);
+			activeAudio.onended = () => {
+				console.log('[Notes TTS][Workspace] audio ended');
+				if (runId !== speechRunId) return;
+				clearActiveAudio();
+				isSpeaking = false;
+				const advancedToNoteId = selectNextNoteInCurrentList(noteIdAtStart);
+				if (advancedToNoteId) {
+					console.log('[Notes TTS][Workspace] auto-advancing to next note:', advancedToNoteId);
+					void tick().then(() => speakSelectedNote());
+				}
+			};
+			activeAudio.onerror = (event) => {
+				console.error('[Notes TTS][Workspace] audio error:', event);
+				if (runId === speechRunId) {
+					clearActiveAudio();
+					isSpeaking = false;
+				}
+			};
+
+			await activeAudio.play();
+		} catch (error) {
+			if (controller.signal.aborted) return;
+			console.error('[Notes TTS][Workspace] Gemini TTS error:', error);
+			if (runId === speechRunId) {
+				clearActiveAudio();
+				activeSpeechController = null;
+				isSpeaking = false;
+			}
+		}
+	}
+
+	function toggleSpeech() {
+		console.log('[Notes TTS][Workspace] toggleSpeech, currently speaking:', isSpeaking);
+		if (isSpeaking) {
+			stopSpeaking();
+			return;
+		}
+		speakSelectedNote();
+	}
 </script>
 
 {#snippet notesDeleteToolbarTrailing()}
@@ -526,8 +666,9 @@ $effect(() => {
 								oninput={() => resizeTextarea({ force: false })}
 								onkeydown={handleMarkdownEditorKeydown}
 							></textarea>
-						{:else}
-						<h1 class="mb-3 text-lg font-semibold leading-tight text-slate-900 dark:text-slate-100">
+					{:else}
+					<div class="mb-3 flex items-start gap-2">
+						<h1 class="min-w-0 flex-1 text-lg font-semibold leading-tight text-slate-900 dark:text-slate-100">
 							<button
 								type="button"
 								class="inline-block w-full cursor-text border-0 bg-transparent p-0 text-left font-semibold tracking-tight text-inherit outline-none focus-visible:rounded focus-visible:ring-2 focus-visible:ring-violet-500/50 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900"
@@ -536,16 +677,39 @@ $effect(() => {
 								{getNoteTitle(selectedNote.content)}
 							</button>
 						</h1>
-						<div
-							role="button"
-							tabindex="0"
-							class="notes-markdown-display markdown min-h-[22rem] !bg-transparent !border-transparent"
-							onclick={enterEditMode}
-							onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && enterEditMode()}
+						<button
+							type="button"
+							onclick={toggleSpeech}
+							class="mt-0.5 shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-violet-500/10 hover:text-violet-400 dark:hover:text-violet-300"
+							aria-label={isSpeaking ? 'Stop reading note aloud' : 'Read note aloud'}
+							title={isSpeaking ? 'Stop reading' : 'Read aloud'}
 						>
-							{@html renderNoteBodyMarkdown(selectedNote.content)}
-						</div>
-						{/if}
+							{#if isSpeaking}
+								<Square class="h-4 w-4" />
+							{:else}
+								<Volume2 class="h-4 w-4" />
+							{/if}
+						</button>
+						<button
+							type="button"
+							onclick={() => (presentationOpen = true)}
+							class="mt-0.5 shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-violet-500/10 hover:text-violet-400 dark:hover:text-violet-300"
+							aria-label="Present note"
+							title="Present fullscreen"
+						>
+							<Maximize2 class="h-4 w-4" />
+						</button>
+					</div>
+					<div
+						role="button"
+						tabindex="0"
+						class="notes-markdown-display markdown min-h-[22rem] !bg-transparent !border-transparent"
+						onclick={enterEditMode}
+						onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && enterEditMode()}
+					>
+						{@html renderNoteBodyMarkdown(selectedNote.content)}
+					</div>
+					{/if}
 
 						<div class="mt-4 pt-4">
 							{#if isEditing || isNoteEmpty(selectedNote)}
@@ -636,8 +800,9 @@ $effect(() => {
 							oninput={() => resizeTextarea({ force: false })}
 							onkeydown={handleMarkdownEditorKeydown}
 						></textarea>
-						{:else}
-						<h1 class="mb-3 text-lg font-semibold leading-tight text-slate-900 dark:text-slate-100">
+					{:else}
+					<div class="mb-3 flex items-start gap-2">
+						<h1 class="min-w-0 flex-1 text-lg font-semibold leading-tight text-slate-900 dark:text-slate-100">
 							<button
 								type="button"
 								class="inline-block w-full cursor-text border-0 bg-transparent p-0 text-left font-semibold tracking-tight text-inherit outline-none focus-visible:rounded focus-visible:ring-2 focus-visible:ring-violet-500/50 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900"
@@ -646,16 +811,39 @@ $effect(() => {
 								{getNoteTitle(selectedNote.content)}
 							</button>
 						</h1>
-					<div
-						role="button"
-						tabindex="0"
-						class="notes-markdown-display markdown min-h-[18rem] !p-3 !bg-transparent !border-transparent"
-						onclick={enterEditMode}
-						onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && enterEditMode()}
-					>
-						{@html renderNoteBodyMarkdown(selectedNote.content)}
+						<button
+							type="button"
+							onclick={toggleSpeech}
+							class="mt-0.5 shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-violet-500/10 hover:text-violet-400 dark:hover:text-violet-300"
+							aria-label={isSpeaking ? 'Stop reading note aloud' : 'Read note aloud'}
+							title={isSpeaking ? 'Stop reading' : 'Read aloud'}
+						>
+							{#if isSpeaking}
+								<Square class="h-4 w-4" />
+							{:else}
+								<Volume2 class="h-4 w-4" />
+							{/if}
+						</button>
+						<button
+							type="button"
+							onclick={() => (presentationOpen = true)}
+							class="mt-0.5 shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-violet-500/10 hover:text-violet-400 dark:hover:text-violet-300"
+							aria-label="Present note"
+							title="Present fullscreen"
+						>
+							<Maximize2 class="h-4 w-4" />
+						</button>
 					</div>
-						{/if}
+				<div
+					role="button"
+					tabindex="0"
+					class="notes-markdown-display markdown min-h-[18rem] !p-3 !bg-transparent !border-transparent"
+					onclick={enterEditMode}
+					onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && enterEditMode()}
+				>
+					{@html renderNoteBodyMarkdown(selectedNote.content)}
+				</div>
+					{/if}
 
 						<div class="my-4">
 							{#if isEditing || isNoteEmpty(selectedNote)}
@@ -682,3 +870,7 @@ $effect(() => {
 		</div>
 	</div>
 </div>
+
+{#if presentationOpen && selectedNote}
+	<NotesPresentationOverlay note={selectedNote} notes={filteredNotes} onclose={() => (presentationOpen = false)} />
+{/if}
