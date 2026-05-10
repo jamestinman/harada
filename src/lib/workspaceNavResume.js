@@ -76,7 +76,7 @@ export function workspaceNavActiveSection(pathname) {
 
 /**
  * Marketing site centre nav.
- * @returns {'harada' | 'todo' | 'notes' | 'chart' | null}
+ * @returns {'harada' | 'todo' | 'notes' | 'chart' | 'pricing' | null}
  */
 export function websiteNavActiveSection(pathname) {
 	const p = normalizeWorkspacePathname(pathname);
@@ -84,5 +84,6 @@ export function websiteNavActiveSection(pathname) {
 	if (p === '/harada' || p.startsWith('/harada/')) return 'harada';
 	if (p.startsWith('/todo')) return 'todo';
 	if (p.startsWith('/notes')) return 'notes';
+	if (p === '/pricing') return 'pricing';
 	return null;
 }

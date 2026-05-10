@@ -37,6 +37,7 @@
 		<div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4">
 			<p>Haradato - your AI-accessible brain extension.</p>
 			<div class="flex items-center gap-4">
+				<a href="/pricing" class="hover:text-emerald-600 dark:hover:text-emerald-400">Pricing</a>
 				<a href="/privacy" class="hover:text-emerald-600 dark:hover:text-emerald-400">Privacy</a>
 				<a href="/to-do-lists" class="hover:text-emerald-600 dark:hover:text-emerald-400">To-do Lists</a>
 				<a href="/articles" class="hover:text-emerald-600 dark:hover:text-emerald-400">Articles</a>

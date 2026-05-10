@@ -46,6 +46,11 @@
 	const targetTodoId = $derived(page.url.searchParams.get('task') || null);
 	let activeGoalTab = $state('tasks');
 	let activeTodoId = $state(null);
+
+	function clearHighlight() {
+		activeTodoId = null;
+		if (targetTodoId) goto(page.url.pathname, { replaceState: true, keepFocus: true });
+	}
 	let searchText = $state('');
 	
 	// Goal editing state (declared early so it can be used in derived values)
@@ -1187,16 +1192,17 @@
 							allowCrossListMove={false}
 							enableGroupDrag={false}
 							searchText={searchText}
-							{targetTodoId}
-							activeTodoId={activeTodoId}
-							{getPrimaryNoteForTodo}
-							{getLinkedNotesForTodo}
-							{getLinkedGoalIndicesForTodo}
-							onUpsertPrimaryNote={upsertPrimaryNoteForTodo}
-						/>
-					{:else}
-						<div class="space-y-3">
-							<div class="mb-6 hidden lg:block">
+						{targetTodoId}
+						activeTodoId={activeTodoId}
+						{getPrimaryNoteForTodo}
+						{getLinkedNotesForTodo}
+						{getLinkedGoalIndicesForTodo}
+						onUpsertPrimaryNote={upsertPrimaryNoteForTodo}
+						onClearHighlight={clearHighlight}
+					/>
+				{:else}
+					<div class="space-y-3">
+						<div class="mb-6 hidden lg:block">
 								<button
 									type="button"
 									onclick={() => createNoteFromComposer()}
@@ -1436,16 +1442,17 @@
 								allowCrossListMove={false}
 								enableGroupDrag={false}
 								searchText={searchText}
-								{targetTodoId}
-								activeTodoId={activeTodoId}
-								{getPrimaryNoteForTodo}
-								{getLinkedNotesForTodo}
-								{getLinkedGoalIndicesForTodo}
-								onUpsertPrimaryNote={upsertPrimaryNoteForTodo}
-							/>
-						{:else}
-							<div class="space-y-3">
-								<div class="mb-4">
+							{targetTodoId}
+							activeTodoId={activeTodoId}
+							{getPrimaryNoteForTodo}
+							{getLinkedNotesForTodo}
+							{getLinkedGoalIndicesForTodo}
+							onUpsertPrimaryNote={upsertPrimaryNoteForTodo}
+							onClearHighlight={clearHighlight}
+						/>
+					{:else}
+						<div class="space-y-3">
+							<div class="mb-4">
 									<button
 										type="button"
 										onclick={() => createNoteFromComposer()}

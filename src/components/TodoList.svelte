@@ -1,6 +1,7 @@
 <script>
 	import { browser, dev } from '$app/environment';
 	import { onDestroy, onMount, tick } from 'svelte';
+	import { ChevronDown } from 'lucide-svelte';
 	import TodoItem from '$components/TodoItem.svelte';
 
 	let {
@@ -34,9 +35,10 @@
 		resolveGroupForTodo = null,
 		getPrimaryNoteForTodo = null,
 		getLinkedNotesForTodo = null,
-		onUpsertPrimaryNote = null,
-		getLinkedGoalIndicesForTodo = null
-	} = $props();
+	onUpsertPrimaryNote = null,
+	getLinkedGoalIndicesForTodo = null,
+	onClearHighlight = null
+} = $props();
 
 	const LONG_PRESS_MS = 260;
 	const DRAG_START_PX = 6;
@@ -78,6 +80,7 @@
 	});
 	let justDidGroupDrag = false;
 	let collapsedTodos = $state(new Set());
+	let collapsedGroups = $state(new Set());
 	let renderedTodoLimit = $state(INITIAL_RENDERED_TODOS);
 	let renderResetKey = '';
 
@@ -252,10 +255,33 @@
 
 	function hasRenderedTodosInGroup(group) {
 		if (!group) return false;
+		if (isGroupCollapsed(group.id)) return false;
 		if (group.subGroups && group.subGroups.length > 0) {
 			return group.subGroups.some((subGroup) => getRenderedTodosForGroup(group, subGroup.todos).length > 0);
 		}
 		return getRenderedTodosForGroup(group, group.todos).length > 0;
+	}
+
+	function isGroupCollapsible(group) {
+		if (!group || group.groupType !== 'goal') return false;
+		if (group.subGroups && group.subGroups.length > 0) {
+			return group.subGroups.some((subGroup) => (subGroup.todos || []).length > 0);
+		}
+		return (group.todos || []).length > 0;
+	}
+
+	function isGroupCollapsed(groupId) {
+		return collapsedGroups.has(groupId);
+	}
+
+	function toggleGroupCollapse(groupId) {
+		const next = new Set(collapsedGroups);
+		if (next.has(groupId)) {
+			next.delete(groupId);
+		} else {
+			next.add(groupId);
+		}
+		collapsedGroups = next;
 	}
 
 	function getTodoById(todoId) {
@@ -840,7 +866,18 @@
 	</div>
 {/if}
 
-<div class="space-y-6">
+<div
+	class="space-y-6"
+	role="presentation"
+	onclick={(e) => {
+		if (onClearHighlight && !e.target.closest('[data-dnd-item-id]')) {
+			onClearHighlight();
+		}
+	}}
+	onkeydown={(e) => {
+		if (e.key === 'Escape' && onClearHighlight) onClearHighlight();
+	}}
+>
 	{#if onCreateTodo}
 		<div class="mb-6 hidden lg:block">
 			<button
@@ -907,7 +944,7 @@
 	{/if}
 	
 	{#each groups as group}
-		{#if hasRenderedTodosInGroup(group) || showHeaderTopPlaceholder(group.id)}
+		{#if hasRenderedTodosInGroup(group) || showHeaderTopPlaceholder(group.id) || isGroupCollapsed(group.id)}
 			<div
 				data-dnd-group-id={group.groupType === 'goal' ? group.id : null}
 				class={`${group.groupType === 'goal' ? `rounded-lg transition ${groupDragClass(group.id)}` : ''}`}
@@ -918,21 +955,43 @@
 						class="mb-4 {enableGroupDrag && group.groupType === 'goal' ? 'cursor-grab active:cursor-grabbing' : ''}"
 						onpointerdown={(event) => handleGroupPointerDown(event, group.id)}
 					>
-						<h2 class="todo-group-heading">
-							{#if group.href}
-								<a
-									href={group.href}
-									class="hover:text-violet-400 transition-colors"
-									ondragstart={(e) => e.preventDefault()}
+						<div class="relative flex items-center">
+							{#if isGroupCollapsible(group)}
+								<button
+									type="button"
+									onpointerdown={(e) => e.stopPropagation()}
+									onclick={(e) => {
+										e.stopPropagation();
+										toggleGroupCollapse(group.id);
+									}}
+									class="absolute -left-6 top-1/2 -translate-y-1/2 rounded p-0.5 transition todo-collapse-toggle"
+									title={isGroupCollapsed(group.id) ? 'Expand goal tasks' : 'Collapse goal tasks'}
+									aria-label={isGroupCollapsed(group.id) ? 'Expand goal tasks' : 'Collapse goal tasks'}
+									aria-expanded={!isGroupCollapsed(group.id)}
 								>
-									{group.label}
-								</a>
-							{:else}
-								{group.label}
+									<ChevronDown
+										class={`h-5 w-5 transition-transform duration-150 ${isGroupCollapsed(group.id) ? '-rotate-90' : ''}`}
+										strokeWidth={2.8}
+									/>
+								</button>
 							{/if}
-						</h2>
+							<h2 class="todo-group-heading">
+								{#if group.href}
+									<a
+										href={group.href}
+										class="hover:text-violet-400 transition-colors"
+										ondragstart={(e) => e.preventDefault()}
+									>
+										{group.label}
+									</a>
+								{:else}
+									{group.label}
+								{/if}
+							</h2>
+						</div>
 					</div>
 				{/if}
+			{#if !isGroupCollapsed(group.id)}
 			{#if group.subGroups}
 				<!-- Render nested sub-groups -->
 				<div class="todo-subgroup-container">
@@ -1049,6 +1108,7 @@
 						{/if}
 					{/each}
 				</div>
+			{/if}
 			{/if}
 			</div>
 		{/if}

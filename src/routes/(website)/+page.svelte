@@ -37,11 +37,8 @@
 	<!-- Hero -->
 	<div class="relative overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-white to-emerald-50/60 p-6 text-center shadow-sm dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-emerald-950/30">
 		<div class="absolute inset-0 -z-10 bg-[radial-gradient(ellipse_80%_50%_at_50%_-10%,rgba(16,185,129,0.08),transparent)] dark:bg-[radial-gradient(ellipse_80%_50%_at_50%_-10%,rgba(16,185,129,0.12),transparent)]"></div>
-		<div class="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-400">
-			Free &mdash; no sign up required
-		</div>
 		<h1 class="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">
-			To-do lists and notes for life goals
+			To-do lists and markdown notes for life goals
 		</h1>
 		<p class="mx-auto mt-2 max-w-lg text-base text-slate-500 dark:text-slate-400">A simple, focused brain-extension that keeps your daily tasks connected to what actually matters.</p>
 		<div class="mt-6 grid gap-6 text-base text-slate-600 dark:text-slate-300 md:grid-cols-[1fr_16rem] md:items-start md:justify-items-center">

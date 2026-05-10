@@ -1950,19 +1950,43 @@ class Store {
 		const canonical = canonicalGoalIndex(goalIndex);
 		const todo = this.harada_chart.todos.find((t) => t.id === taskId);
 		if (!todo) return;
-		const alreadyLinked = this.taskGoalLinks.some(
-			(link) => link.taskId === taskId && link.goalIndex === canonical
-		);
-		if (!alreadyLinked) {
-			this.taskGoalLinks = [
+		const todos = this.harada_chart.todos || [];
+		const childrenByParent = new Map();
+		for (const candidate of todos) {
+			const parentId = candidate?.parentId;
+			if (!parentId) continue;
+			if (!childrenByParent.has(parentId)) childrenByParent.set(parentId, []);
+			childrenByParent.get(parentId).push(candidate.id);
+		}
+		const tasksToLink = new Set([taskId]);
+		const queue = [taskId];
+		while (queue.length > 0) {
+			const currentId = queue.shift();
+			const childIds = childrenByParent.get(currentId) || [];
+			for (const childId of childIds) {
+				if (tasksToLink.has(childId)) continue;
+				tasksToLink.add(childId);
+				queue.push(childId);
+			}
+		}
+		const now = Date.now();
+		const newLinks = [];
+		for (const id of tasksToLink) {
+			const alreadyLinked = this.taskGoalLinks.some(
+				(link) => link.taskId === id && link.goalIndex === canonical
+			);
+			if (alreadyLinked) continue;
+			newLinks.push(
 				normalizeTaskGoalLink({
-					taskId,
+					taskId: id,
 					goalIndex: canonical,
-					createdAt: Date.now(),
-					updatedAt: Date.now()
-				}),
-				...this.taskGoalLinks
-			].filter(Boolean);
+					createdAt: now,
+					updatedAt: now
+				})
+			);
+		}
+		if (newLinks.length > 0) {
+			this.taskGoalLinks = [...newLinks, ...this.taskGoalLinks].filter(Boolean);
 		}
 		if (typeof todo.goalIndex !== 'number') {
 			this.updateTodo(taskId, buildGoalListMeta(canonical));

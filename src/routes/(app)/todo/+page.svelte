@@ -67,6 +67,11 @@
 	const targetTodoId = $derived(page.url.searchParams.get('task') || null);
 	let activeTodoId = $state(null);
 
+	function clearHighlight() {
+		activeTodoId = null;
+		if (targetTodoId) goto(page.url.pathname, { replaceState: true, keepFocus: true });
+	}
+
 	// Clear currentGoalIndex when on the all tasks page
 	$effect(() => {
 		if (dataLoaded) {
@@ -886,15 +891,16 @@
 							enableGroupDrag={true}
 							onMoveGroup={moveGoalGroup}
 							searchText={searchText}
-							{targetTodoId}
-							activeTodoId={activeTodoId}
-							{getPrimaryNoteForTodo}
-							{getLinkedNotesForTodo}
-							{getLinkedGoalIndicesForTodo}
-							onUpsertPrimaryNote={upsertPrimaryNoteForTodo}
-						/>
-					{:else}
-						<div class="todo-panel p-6 text-sm text-slate-700 dark:text-slate-300">Preparing task list...</div>
+						{targetTodoId}
+						activeTodoId={activeTodoId}
+						{getPrimaryNoteForTodo}
+						{getLinkedNotesForTodo}
+						{getLinkedGoalIndicesForTodo}
+						onUpsertPrimaryNote={upsertPrimaryNoteForTodo}
+						onClearHighlight={clearHighlight}
+					/>
+				{:else}
+					<div class="todo-panel p-6 text-sm text-slate-700 dark:text-slate-300">Preparing task list...</div>
 					{/if}
 				{:else}
 					<p class="page-subtitle mb-6">
@@ -993,15 +999,16 @@
 								enableGroupDrag={true}
 								onMoveGroup={moveGoalGroup}
 								searchText={searchText}
-								{targetTodoId}
-								activeTodoId={activeTodoId}
-								{getPrimaryNoteForTodo}
-								{getLinkedNotesForTodo}
-								{getLinkedGoalIndicesForTodo}
-								onUpsertPrimaryNote={upsertPrimaryNoteForTodo}
-							/>
-						{:else}
-							<div class="todo-panel p-4 text-sm text-slate-700 dark:text-slate-300">Preparing task list...</div>
+							{targetTodoId}
+							activeTodoId={activeTodoId}
+							{getPrimaryNoteForTodo}
+							{getLinkedNotesForTodo}
+							{getLinkedGoalIndicesForTodo}
+							onUpsertPrimaryNote={upsertPrimaryNoteForTodo}
+							onClearHighlight={clearHighlight}
+						/>
+					{:else}
+						<div class="todo-panel p-4 text-sm text-slate-700 dark:text-slate-300">Preparing task list...</div>
 						{/if}
 					{:else}
 						<p class="page-subtitle mb-4">

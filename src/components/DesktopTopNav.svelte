@@ -132,15 +132,23 @@
 				>
 					To-do
 				</a>
-				<a
-					href="/notes"
-					class={activeWebsite === 'notes' ? websiteLinkActive : linkBase}
-					aria-current={activeWebsite === 'notes' ? 'page' : undefined}
-				>
-					Notes
-				</a>
-				<a
-					href="/harada-chart"
+			<a
+				href="/notes"
+				class={activeWebsite === 'notes' ? websiteLinkActive : linkBase}
+				aria-current={activeWebsite === 'notes' ? 'page' : undefined}
+			>
+				Notes
+			</a>
+      <span>|</span>
+			<a
+				href="/pricing"
+				class={activeWebsite === 'pricing' ? websiteLinkActive : linkBase}
+				aria-current={activeWebsite === 'pricing' ? 'page' : undefined}
+			>
+				Pricing
+			</a>
+			<a
+				href="/harada-chart"
 					class={activeWebsite === 'chart' ? websiteLinkActive : linkBase}
 					aria-current={activeWebsite === 'chart' ? 'page' : undefined}
 				>
