@@ -10,7 +10,7 @@
 	<!-- Hero -->
 	<div class="text-center">
 		<h1 class="text-3xl font-bold tracking-tight sm:text-4xl">Everything you need is free. No strings attached.</h1>
-    <p class="mx-auto max-w-lg text-base text-slate-500 dark:text-slate-400">We also offer add-ons for AI and publishing.</p>
+    <p class="mx-auto max-w-lg text-base text-slate-500 dark:text-slate-400">Add-ons for AI and publishing coming soon.</p>
 	</div>
 
 	<!-- Tier cards -->
@@ -67,7 +67,7 @@
 				{#each [
 					'AI audio playback and playlists',
 					'Text Haradato on +447878 ... to update tasks or ask questions',
-					'MLAuth support for your own agent',
+					'MLAuth access for your own agent',
 				] as feature}
 					<li class="flex items-start gap-2.5">
 						<svg class="mt-0.5 h-4 w-4 shrink-0 text-violet-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -119,17 +119,6 @@
 			<button disabled class="salesBtn mt-4 block w-full cursor-not-allowed text-center opacity-40">Join waitlist</button>
 		</div>
 
-	</div>
-
-	<!-- Free commitment note -->
-	<div class="rounded-2xl border border-slate-200 bg-white p-8 text-center dark:border-slate-800 dark:bg-slate-900">
-		<h2 class="text-xl font-semibold text-slate-900 dark:text-white">Why is it free?</h2>
-		<p class="mx-auto mt-3 max-w-xl text-sm text-slate-600 dark:text-slate-400">
-			Haradato is built on the belief that tools for thinking clearly and planning your life
-			shouldn't be locked behind a paywall. The core — unlimited tasks, notes, goals, sync, and offline
-			— will always be free. Add-ons are for people who want to go further.
-		</p>
-		<a href="/harada" class="salesBtn mt-6 inline-block">Start using Haradato</a>
 	</div>
 
 </section>
