@@ -619,12 +619,12 @@
 		goto(`/todo?${q}`);
 	}
 
-	function createTodoFromComposer({ title, markdown, goalIndex, listType, listName } = {}) {
+	function createTodoFromComposer({ title, markdown, goalIndex, listType, listName, shouldNavigate = true } = {}) {
 		// Handle case when called without parameters (from "+ New Task" button)
 		// Add to no-goal list when not on a specific goal page
 		if (!title && !markdown && goalIndex === undefined && !listType && !listName) {
 			const created = addTodoForGoal(null, '');
-			if (created) navigateToNewTask(created);
+			if (created && shouldNavigate) navigateToNewTask(created);
 			return;
 		}
 		
@@ -634,7 +634,7 @@
 			if (created && markdown?.trim()) {
 				store.setPrimaryNoteForTask(created.id, { content: markdown.trim() });
 			}
-			if (created) navigateToNewTask(created);
+			if (created && shouldNavigate) navigateToNewTask(created);
 			return;
 		}
 		const normalizedGoalIndex =
@@ -644,7 +644,7 @@
 		if (created && markdown?.trim()) {
 			store.setPrimaryNoteForTask(created.id, { content: markdown.trim(), goalIndex: normalizedGoalIndex });
 		}
-		if (created) navigateToNewTask(created);
+		if (created && shouldNavigate) navigateToNewTask(created);
 	}
 
 	function createNoteFromComposer(content = '') {
@@ -690,7 +690,16 @@
 
 	function upsertPrimaryNoteForTodo(todoId, content, group) {
 		const maybeGoalIndex = group?.groupType === 'goal' ? group.goalIndex : null;
-		store.setPrimaryNoteForTask(todoId, { content, goalIndex: maybeGoalIndex });
+	const existingPrimary = store.getPrimaryNoteForTask(todoId);
+	const savedNote = store.setPrimaryNoteForTask(todoId, { content, goalIndex: maybeGoalIndex });
+	if (!existingPrimary && savedNote) {
+		store.pendingSelectNoteId = savedNote.id;
+		if (typeof maybeGoalIndex === 'number') {
+			goto(`/notes/${indexToNomenclature(maybeGoalIndex)}`);
+			return;
+		}
+		goto('/notes');
+	}
 	}
 
 	$effect(() => {

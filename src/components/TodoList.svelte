@@ -284,6 +284,12 @@
 		collapsedGroups = next;
 	}
 
+	function quickAddToGroup(group, event) {
+		event?.stopPropagation?.();
+		if (!onCreateTodo || group?.groupType !== 'goal') return;
+		onCreateTodo({ goalIndex: group.goalIndex, listType: 'goal', title: '', shouldNavigate: false });
+	}
+
 	function getTodoById(todoId) {
 		return flatTodos.find((todo) => todo.id === todoId) || null;
 	}
@@ -975,19 +981,33 @@
 									/>
 								</button>
 							{/if}
-							<h2 class="todo-group-heading">
-								{#if group.href}
-									<a
-										href={group.href}
-										class="hover:text-violet-400 transition-colors"
-										ondragstart={(e) => e.preventDefault()}
-									>
+							<div class="flex items-center gap-2">
+								<h2 class="todo-group-heading">
+									{#if group.href}
+										<a
+											href={group.href}
+											class="hover:text-violet-400 transition-colors"
+											ondragstart={(e) => e.preventDefault()}
+										>
+											{group.label}
+										</a>
+									{:else}
 										{group.label}
-									</a>
-								{:else}
-									{group.label}
+									{/if}
+								</h2>
+								{#if group.groupType === 'goal'}
+									<button
+										type="button"
+										title="Quick add task"
+										aria-label={`Quick add task to ${group.label}`}
+										onpointerdown={(e) => e.stopPropagation()}
+										onclick={(e) => quickAddToGroup(group, e)}
+										class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-300/70 text-slate-400 hover:text-black text-sm font-bold leading-none transition hover:border-violet-400/80 hover:bg-violet-500/25"
+									>
+										<span class="-translate-y-px">+</span>
+									</button>
 								{/if}
-							</h2>
+							</div>
 						</div>
 					</div>
 				{/if}

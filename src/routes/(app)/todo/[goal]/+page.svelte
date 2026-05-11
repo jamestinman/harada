@@ -660,7 +660,16 @@
 		if (content?.trim()) {
 			store.updateTodo(todoId, { isDraft: false });
 		}
-		store.setPrimaryNoteForTask(todoId, { content, goalIndex });
+	const existingPrimary = store.getPrimaryNoteForTask(todoId);
+	const savedNote = store.setPrimaryNoteForTask(todoId, { content, goalIndex });
+	if (!existingPrimary && savedNote) {
+		store.pendingSelectNoteId = savedNote.id;
+		if (typeof goalIndex === 'number') {
+			goto(`/notes/${indexToNomenclature(goalIndex)}`);
+			return;
+		}
+		goto('/notes');
+	}
 	}
 
 	function deleteTodo(id) {
