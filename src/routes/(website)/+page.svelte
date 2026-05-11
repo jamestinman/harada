@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { Capacitor } from '@capacitor/core';
 	import AppleStoreBtn from '$components/AppleStoreBtn.svelte';
+	import GooglePlayBtn from '$components/GooglePlayBtn.svelte';
 
 	const haradaAgentPrompt = `Read https://haradato.com/skill.md and follow it to work with my Harada workspace to create and manage my to-do list.`;
 
@@ -121,9 +122,10 @@
 	<!-- Download -->
 	<div class="rounded-2xl border border-slate-200 bg-white p-6 text-center dark:border-slate-800 dark:bg-slate-900">
 		<h2 class="text-xl font-semibold">Download apps</h2>
-		<p class="text-slate-600 dark:text-slate-300">Use on the web, iOS or OSX (Android and Windows coming soon)</p>
+		<p class="text-slate-600 dark:text-slate-300">Use on the web, iOS, OSX, and Android (Windows coming soon)</p>
 		<div class="mt-4 flex flex-wrap items-center justify-center gap-3">
 			<AppleStoreBtn />
+			<GooglePlayBtn />
 		</div>
 	</div>
 

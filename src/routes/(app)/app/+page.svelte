@@ -1,6 +1,7 @@
 <script>
 	import { store } from '$stores/store.svelte.js';
 	import AppleStoreBtn from '$components/AppleStoreBtn.svelte';
+	import GooglePlayBtn from '$components/GooglePlayBtn.svelte';
 </script>
 
 <div class="flex flex-col items-center max-w-2xl mx-auto mt-8 sm:mt-12 px-4 pb-12">
@@ -31,15 +32,16 @@
 	<section class="w-full text-left space-y-6">
 		<div>
 			<h2 class="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">
-				Download (iOS + macOS)
+				Download (iOS + macOS + Android)
 			</h2>
 
 			<p class="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">
-				Haradato is currently available on iPhone, iPad and Mac via the App Store. If you don’t see it on your device,
-				check again later, or reach out if you’re looking for other platforms.
+				Haradato is currently available on iPhone, iPad, Mac, and Android.
 			</p>
-
-		<AppleStoreBtn /> 
+			<div class="mt-4 flex flex-row flex-wrap items-center gap-3">
+				<AppleStoreBtn />
+				<GooglePlayBtn />
+			</div>
 		</div>
 
 		<div>

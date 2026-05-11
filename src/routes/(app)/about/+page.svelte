@@ -1,6 +1,7 @@
 <script>
 	import { store } from '$stores/store.svelte.js';
 	import AppleStoreBtn from '$components/AppleStoreBtn.svelte';
+	import GooglePlayBtn from '$components/GooglePlayBtn.svelte';
 </script>
 
 <div class="content flex flex-col items-center max-w-2xl mx-auto mt-8 sm:mt-12 px-4 pb-12">
@@ -18,7 +19,10 @@
   </p>
   <button onclick={() => store.showHowItWorksModal = true} class="rounded-xl border py-2 px-4 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900 font-medium">See how it works</button>.
 
-  <AppleStoreBtn />
+	<div class="mt-4 flex flex-row flex-wrap items-center justify-center gap-3">
+		<AppleStoreBtn />
+		<GooglePlayBtn />
+	</div>
 
   <section class="w-full text-left space-y-6 mt-10">
 		<div>
