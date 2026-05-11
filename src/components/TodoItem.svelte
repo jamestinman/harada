@@ -230,15 +230,17 @@
 	function startEditingNotes() {
 		editTitle = todo.title || '';
 		editMarkdown = taskNoteContent;
+		const startsEmptyNote = !taskNoteContent.trim();
 		linkPanelOpen = false;
 		linkGoalValue = '';
 
 		// Check if mobile (window width < 768px)
 		if (typeof window !== 'undefined' && window.innerWidth < 768) {
+			isEditingMarkdown = startsEmptyNote;
 			showMobileEditor = true;
 		} else {
 			isEditing = true;
-			isEditingMarkdown = false;
+			isEditingMarkdown = startsEmptyNote;
 		}
 	}
 
