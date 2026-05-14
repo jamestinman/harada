@@ -452,7 +452,13 @@
 						{todo.title || '\u00A0'}
 					</span>
 					{#if hasNotes}
-						<div class="max-h-16 overflow-hidden text-xs leading-relaxed opacity-70">
+						<div
+							role="button"
+							tabindex="0"
+							class="max-h-16 overflow-hidden text-xs leading-relaxed opacity-70"
+							onclick={(e) => { e.stopPropagation(); startEditingNotes(); }}
+							onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.stopPropagation(), startEditingNotes())}
+						>
 							{inlineNotePreview}
 						</div>
 					{/if}
