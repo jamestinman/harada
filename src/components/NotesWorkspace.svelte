@@ -137,8 +137,12 @@
 
 	var selectedNote = $derived.by(() => {
 		if (selectedNoteId) {
-			const fromId = filteredNotes.find((note) => note.id === selectedNoteId);
-			if (fromId) return fromId;
+			const fromFiltered = filteredNotes.find((note) => note.id === selectedNoteId);
+			if (fromFiltered) return fromFiltered;
+			// Primary task notes are omitted from the sidebar list but can still be selected
+			// (e.g. pendingSelectNoteId after saving a task note). Resolve from the full store.
+			const fromStore = notes.find((note) => note.id === selectedNoteId);
+			if (fromStore) return fromStore;
 		}
 		return filteredNotes[0] || null;
 	});

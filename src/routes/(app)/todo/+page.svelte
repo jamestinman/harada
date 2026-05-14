@@ -72,6 +72,16 @@
 		if (targetTodoId) goto(page.url.pathname, { replaceState: true, keepFocus: true });
 	}
 
+	function setHighlightedTaskId(id) {
+		if (!id) return;
+		activeTodoId = id;
+		if (!browser) return;
+		if (page.url.searchParams.get('task') === id) return;
+		const url = new URL(page.url.href);
+		url.searchParams.set('task', id);
+		goto(`${url.pathname}${url.search}`, { replaceState: true, keepFocus: true });
+	}
+
 	// Clear currentGoalIndex when on the all tasks page
 	$effect(() => {
 		if (dataLoaded) {
@@ -890,7 +900,7 @@
 							onDeletePrevious={deleteAndFocusPrevious}
 							onMakeSubtask={makeSubtask}
 							onOutdent={(todoId) => outdentTodo(todoId)}
-							onTitleFocus={(id) => (activeTodoId = id)}
+							onTitleFocus={setHighlightedTaskId}
 							getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
 							canIndent={canIndentTodo}
 							canOutdent={(todoId) => canOutdentTodo(todoId)}
@@ -998,7 +1008,7 @@
 								onDeletePrevious={deleteAndFocusPrevious}
 								onMakeSubtask={makeSubtask}
 								onOutdent={(todoId) => outdentTodo(todoId)}
-								onTitleFocus={(id) => (activeTodoId = id)}
+								onTitleFocus={setHighlightedTaskId}
 								getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
 								canIndent={canIndentTodo}
 								canOutdent={(todoId) => canOutdentTodo(todoId)}

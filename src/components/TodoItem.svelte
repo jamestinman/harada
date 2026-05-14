@@ -142,18 +142,19 @@
 		}, delayMs);
 	}
 
-	function saveTitle() {
+	function saveTitle(syncHighlight = true) {
 		if (isCreatingNext) return; // Don't save if we're creating next
 		if (editTitle.trim() !== (todo.title || '').trim()) {
 			onUpdate({ title: editTitle.trim() });
 		}
 		isEditingTitle = false;
+		if (syncHighlight && onTitleFocus) onTitleFocus(todo.id);
 	}
 
 	function handleTitleKeydown(e) {
 		if (e.key === 'Enter') {
 			e.preventDefault();
-			saveTitle(); // Save before setting isCreatingNext so the guard doesn't block it
+			saveTitle(false); // Save before setting isCreatingNext so the guard doesn't block it; next row will take highlight
 			isCreatingNext = true;
 			// Create new todo below and focus it
 			if (onCreateNext) {
@@ -233,6 +234,7 @@
 		const startsEmptyNote = !taskNoteContent.trim();
 		linkPanelOpen = false;
 		linkGoalValue = '';
+		if (onTitleFocus) onTitleFocus(todo.id);
 
 		// Check if mobile (window width < 768px)
 		if (typeof window !== 'undefined' && window.innerWidth < 768) {
@@ -268,6 +270,7 @@
 		isEditing = false;
 		isEditingMarkdown = false;
 		showMobileEditor = false;
+		if (onTitleFocus) onTitleFocus(todo.id);
 	}
 
 	function getGoalLabel(goalIndex) {
@@ -371,7 +374,7 @@
 		data-todo-item-id={isFeedPinnedDuplicate ? undefined : todo.id}
 		class={`group task relative rounded-md transition-colors ${
 			isHighlighted
-				? 'ring-2 ring-violet-400/80 ring-offset-2 ring-offset-transparent'
+				? 'ring-1 ring-violet-400'
 				: ''
 		} ${
 			mainFeedPinStyle === 'top'
@@ -402,7 +405,7 @@
 			class={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border-2 transition ${
 				todo.status === 'done'
 					? 'border-emerald-500 bg-emerald-500 text-white'
-					: 'todo-checkbox-todo'
+					: `todo-checkbox-todo${isHighlighted ? ' !border-black hover:!border-black' : ''}`
 			}`}
 			title={todo.status === 'done' ? 'Mark as to-do' : 'Mark as done'}
 		>
@@ -498,7 +501,9 @@
 			class={`flex-shrink-0 rounded p-1 transition ${
 				isPinned
 					? 'text-pink-400 hover:bg-pink-500/20 hover:text-pink-300'
-					: 'text-slate-500 hover:bg-slate-700/50 hover:text-slate-300'
+					: isHighlighted
+						? '!text-black hover:!text-black hover:bg-black/10'
+						: 'text-slate-500 hover:bg-slate-700/50 hover:text-slate-300'
 			}`}
 			title={isPinned ? 'Unpin' : 'Pin to top of Todo feed'}
 			aria-pressed={isPinned}
@@ -515,11 +520,18 @@
 			class={`flex-shrink-0 transition ${
 				hasNotes
 					? 'todo-notes-button-has-notes'
-					: 'todo-notes-button-empty'
+					: isHighlighted
+						? 'rounded p-1 !text-black hover:!text-black hover:bg-black/10'
+						: 'todo-notes-button-empty'
 			}`}
 			title={hasNotes ? 'Edit notes' : 'Add notes'}
 		>
-			<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+			<svg
+				class={`h-4 w-4 ${hasNotes ? '' : isHighlighted ? 'opacity-60' : ''}`}
+				fill="none"
+				stroke="currentColor"
+				viewBox="0 0 24 24"
+			>
 				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
 			</svg>
 		</button>

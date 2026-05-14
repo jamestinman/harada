@@ -442,11 +442,23 @@ class Store {
 			const remoteCell = remoteGrid[i];
 			const localTime = localCell?.updated_at ? new Date(localCell.updated_at).getTime() : 0;
 			const remoteTime = remoteCell?.updated_at ? new Date(remoteCell.updated_at).getTime() : 0;
+			const localText = (localCell?.text ?? '').trim();
+			const remoteText = (remoteCell?.text ?? '').trim();
+
+			// Never let a freshly-seeded blank remote cell (no updated_at, no text) wipe
+			// a populated local title just because local also lacks updated_at.
+			// Background tab-focus refresh used to clobber goal titles via this branch.
+			if (localText && !remoteText && remoteTime === 0) {
+				return localCell;
+			}
+
 			if (remoteTime > localTime) {
 				changed = true;
 				return remoteCell;
 			}
 			if (remoteTime === localTime && JSON.stringify(remoteCell) !== JSON.stringify(localCell)) {
+				// Tie on timestamp: prefer the cell that actually holds content over a blank one.
+				if (localText && !remoteText) return localCell;
 				changed = true;
 				return remoteCell;
 			}
@@ -734,6 +746,14 @@ class Store {
 
 			const localTime = localCell?.updated_at ? new Date(localCell.updated_at).getTime() : 0;
 			const remoteTime = remoteCell?.updated_at ? new Date(remoteCell.updated_at).getTime() : 0;
+
+			// Mirror mergeGridByUpdatedAt: don't let a blank remote cell wipe a populated
+			// local title when the remote has no timestamp.
+			const localText = (localCell?.text ?? '').trim();
+			const remoteText = (remoteCell?.text ?? '').trim();
+			if (localText && !remoteText && remoteTime === 0) {
+				return localCell;
+			}
 
 			if (remoteTime > localTime) {
 				changed = true;

@@ -51,6 +51,16 @@
 		activeTodoId = null;
 		if (targetTodoId) goto(page.url.pathname, { replaceState: true, keepFocus: true });
 	}
+
+	function setHighlightedTaskId(id) {
+		if (!id) return;
+		activeTodoId = id;
+		if (!browser) return;
+		if (page.url.searchParams.get('task') === id) return;
+		const url = new URL(page.url.href);
+		url.searchParams.set('task', id);
+		goto(`${url.pathname}${url.search}`, { replaceState: true, keepFocus: true });
+	}
 	let searchText = $state('');
 	
 	// Goal editing state (declared early so it can be used in derived values)
@@ -867,7 +877,11 @@
 			}
 			store.harada_chart.grid[linkedGoalIndex].color = color;
 		}
-		
+
+		// Stamp updated_at so the cloud merge can win conflicts cleanly and
+		// doesn't wipe the cell on a tab-return refresh.
+		updateGoalTimestamp(store.harada_chart.grid, goalIndex);
+
 		// Force reactivity by reassigning
 		store.harada_chart.grid = [...store.harada_chart.grid];
 		store.saveNow();
@@ -1191,7 +1205,7 @@
 							onDeletePrevious={(todoId, group) => deleteAndFocusPrevious(todoId, group.goalIndex)}
 							onMakeSubtask={(todoId, group) => makeSubtask(todoId, group.goalIndex)}
 							onOutdent={(todoId) => outdentTodo(todoId)}
-							onTitleFocus={(id) => (activeTodoId = id)}
+							onTitleFocus={setHighlightedTaskId}
 							getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
 							canIndent={(todoId, group) => canIndentTodo(todoId, group.goalIndex)}
 							canOutdent={(todoId) => canOutdentTodo(todoId)}
@@ -1441,7 +1455,7 @@
 								onDeletePrevious={(todoId, group) => deleteAndFocusPrevious(todoId, group.goalIndex)}
 								onMakeSubtask={(todoId, group) => makeSubtask(todoId, group.goalIndex)}
 								onOutdent={(todoId) => outdentTodo(todoId)}
-								onTitleFocus={(id) => (activeTodoId = id)}
+								onTitleFocus={setHighlightedTaskId}
 								getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
 								canIndent={(todoId, group) => canIndentTodo(todoId, group.goalIndex)}
 								canOutdent={(todoId) => canOutdentTodo(todoId)}
