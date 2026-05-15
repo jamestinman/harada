@@ -923,7 +923,7 @@
 								onMakeSubtask={() => onMakeSubtask && onMakeSubtask(todo.id, pinGroup)}
 								onOutdent={() => onOutdent && onOutdent(todo.id, pinGroup)}
 								onTitleFocus={(id) => onTitleFocus && onTitleFocus(id)}
-								indentLevel={getIndentLevel ? getIndentLevel(todo.id, pinGroup) : 0}
+								indentLevel={0}
 								canIndent={canIndent ? canIndent(todo.id, pinGroup) : false}
 								canOutdent={canOutdent ? canOutdent(todo.id, pinGroup) : false}
 								{allGoals}
