@@ -701,13 +701,29 @@
 	}
 
 	function formatUpdatedAt(timestamp) {
-		if (!timestamp) return 'just now';
-		return new Intl.DateTimeFormat(undefined, {
-			month: 'short',
-			day: 'numeric',
-			hour: 'numeric',
-			minute: '2-digit'
-		}).format(timestamp);
+		if (!timestamp) return '';
+		const date = new Date(timestamp);
+		const now = new Date();
+		const msPerDay = 86400000;
+		const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+		const noteDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+		const daysDiff = Math.round((today.getTime() - noteDay.getTime()) / msPerDay);
+		if (daysDiff === 0) {
+			return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+		} else if (daysDiff < 7) {
+			return date.toLocaleDateString(undefined, { weekday: 'long' });
+		} else if (date.getFullYear() === now.getFullYear()) {
+			return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+		} else {
+			return date.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: '2-digit' });
+		}
+	}
+
+	function getNoteGoalLabel(noteId) {
+		const link = store.noteGoalLinks?.find((l) => l.noteId === noteId);
+		if (!link) return null;
+		const cell = grid[link.goalIndex];
+		return (cell?.text ?? '').trim() || indexToNomenclature(link.goalIndex);
 	}
 
 	function getLinkedNotesForTodo(todoId) {
@@ -834,29 +850,37 @@
 
 		{#if !isNarrowLayout}
 		<div class="grid gap-8 grid-cols-[18rem_minmax(0,1fr)]">
-			<aside class="todo-panel h-[calc(100vh-5.5rem)] overflow-y-auto p-3">
-				<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">TASKS</h2>
-				<div class="space-y-1.5">
+			<aside class="h-[calc(100vh-5.5rem)] overflow-y-auto px-2 pt-2 pb-3">
+				<h2 class="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">TASKS</h2>
+				<div class="mb-3 px-1">
+					<input
+						type="search"
+						placeholder="Search..."
+						bind:value={searchText}
+						class="w-full rounded-lg bg-slate-500/10 px-3 py-1.5 text-sm text-slate-800 placeholder-slate-400 outline-none focus:ring-1 focus:ring-violet-500/50 dark:bg-slate-700/30 dark:text-slate-100 dark:placeholder-slate-500"
+					/>
+				</div>
+				<div class="relative ml-2 border-l border-slate-200/50 pl-2 dark:border-slate-700/40 space-y-0.5">
 					<button
 						type="button"
 						onclick={() => (activeMainFeed = 'todos')}
-						class={`flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm font-semibold shadow-sm transition ${
+						class={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-sm font-semibold transition ${
 							activeMainFeed === 'todos'
-								? 'border-slate-400/60 bg-slate-500/10 text-slate-900 dark:border-slate-500/70 dark:bg-slate-200/10 dark:text-slate-100'
-								: 'border-slate-400/40 text-slate-700 hover:bg-slate-500/10 dark:border-slate-600/70 dark:text-slate-200 dark:hover:bg-slate-200/10'
+								? 'bg-violet-500/20 text-violet-800 dark:bg-violet-500/25 dark:text-violet-200'
+								: 'text-slate-700 hover:bg-slate-500/10 dark:text-slate-200 dark:hover:bg-white/5'
 						}`}
 						aria-pressed={activeMainFeed === 'todos'}
 					>
 						<span>All Tasks</span>
-						<span class="text-xs text-slate-500 dark:text-slate-300">{allTodos.length}</span>
+						<span class="text-xs opacity-50">{allTodos.length}</span>
 					</button>
 					{#each goalMenuItems as item (item.id)}
 						<a
 							href={item.href}
-							class="flex items-center justify-between rounded-md border border-slate-700/70 px-3 py-2 text-sm transition hover:border-violet-500/50 hover:bg-violet-500/10"
+							class="flex items-center justify-between rounded-lg px-2.5 py-1.5 text-sm transition hover:bg-slate-500/10 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200"
 						>
 							<span class="truncate pr-3">{item.label}</span>
-							<span class="text-xs text-slate-400">{item.count}</span>
+							<span class="text-xs opacity-50">{item.count}</span>
 						</a>
 					{/each}
 				</div>
@@ -916,20 +940,21 @@
 					{#if allNotes.length === 0}
 						<div class="todo-panel p-6 text-sm text-slate-700 dark:text-slate-300">No notes match this view.</div>
 					{:else}
-						<div class="space-y-2">
+						<div class="space-y-0.5">
 							{#each allNotes as note (note.id)}
 								<button
 									type="button"
 									onclick={() => openNote(note.id)}
-									class="todo-panel block w-full rounded-lg p-3 text-left transition hover:border-slate-500/40 hover:bg-slate-500/10 dark:hover:border-slate-300/30 dark:hover:bg-slate-200/10"
+									class="block w-full rounded-lg px-3 py-2.5 text-left transition hover:bg-slate-500/10 dark:hover:bg-white/5"
 								>
-									<div class="mb-1 flex items-center justify-between gap-3">
-										<p class="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{getNoteTitle(note.content)}</p>
-										<p class="shrink-0 text-xs text-slate-500 dark:text-slate-400">{formatUpdatedAt(note.updatedAt)}</p>
+									<p class="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{getNoteTitle(note.content)}</p>
+									<div class="flex items-baseline gap-1.5 mt-0.5">
+										<span class="shrink-0 text-xs text-slate-500 dark:text-slate-400">{formatUpdatedAt(note.updatedAt)}</span>
+										<span class="truncate text-xs text-slate-500 dark:text-slate-400">{getNotePreview(note.content) || 'No content yet'}</span>
 									</div>
-									<p class="line-clamp-2 text-sm text-slate-700 dark:text-slate-300">
-										{getNotePreview(note.content) || 'No content yet'}
-									</p>
+									{#if getNoteGoalLabel(note.id)}
+										<p class="truncate text-xs text-slate-400 dark:text-slate-500 mt-0.5">{getNoteGoalLabel(note.id)}</p>
+									{/if}
 								</button>
 							{/each}
 						</div>
@@ -945,36 +970,44 @@
 				style={`transform: translateX(${mobileMenuOpen ? '0%' : '-50%'});`}
 			>
 				<div class="w-1/2 pr-4">
-					<div class="todo-panel h-[calc(100vh-8rem)] overflow-y-auto p-3">
-						<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">TASKS</h2>
-						<div class="space-y-1.5">
-							<button
-								type="button"
-								onclick={() => {
-									activeMainFeed = 'todos';
-									mobileMenuOpen = false;
-								}}
-								class={`flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm font-semibold shadow-sm transition ${
-									activeMainFeed === 'todos'
-										? 'border-slate-400/60 bg-slate-500/10 text-slate-900 dark:border-slate-500/70 dark:bg-slate-200/10 dark:text-slate-100'
-										: 'border-slate-400/40 text-slate-700 dark:border-slate-600/70 dark:text-slate-200'
-								}`}
-							>
-								<span>All Tasks</span>
-								<span class="text-xs text-slate-500 dark:text-slate-300">{allTodos.length}</span>
-							</button>
-							{#each goalMenuItems as item (item.id)}
-								<a
-									href={item.href}
-									onclick={() => (mobileMenuOpen = false)}
-									class="flex items-center justify-between rounded-md border border-slate-700/70 px-3 py-2 text-sm transition hover:border-violet-500/50 hover:bg-violet-500/10"
-								>
-									<span class="truncate pr-3">{item.label}</span>
-									<span class="text-xs text-slate-400">{item.count}</span>
-								</a>
-							{/each}
-						</div>
+				<div class="h-[calc(100vh-8rem)] overflow-y-auto px-2 pt-2 pb-3">
+					<h2 class="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">TASKS</h2>
+					<div class="mb-3 px-1">
+						<input
+							type="search"
+							placeholder="Search..."
+							bind:value={searchText}
+							class="w-full rounded-lg bg-slate-500/10 px-3 py-1.5 text-sm text-slate-800 placeholder-slate-400 outline-none focus:ring-1 focus:ring-violet-500/50 dark:bg-slate-700/30 dark:text-slate-100 dark:placeholder-slate-500"
+						/>
 					</div>
+					<div class="relative ml-2 border-l border-slate-200/50 pl-2 dark:border-slate-700/40 space-y-0.5">
+						<button
+							type="button"
+							onclick={() => {
+								activeMainFeed = 'todos';
+								mobileMenuOpen = false;
+							}}
+							class={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-sm font-semibold transition ${
+								activeMainFeed === 'todos'
+									? 'bg-violet-500/20 text-violet-800 dark:bg-violet-500/25 dark:text-violet-200'
+									: 'text-slate-700 hover:bg-slate-500/10 dark:text-slate-200 dark:hover:bg-white/5'
+							}`}
+						>
+							<span>All Tasks</span>
+							<span class="text-xs opacity-50">{allTodos.length}</span>
+						</button>
+						{#each goalMenuItems as item (item.id)}
+							<a
+								href={item.href}
+								onclick={() => (mobileMenuOpen = false)}
+								class="flex items-center justify-between rounded-lg px-2.5 py-1.5 text-sm transition hover:bg-slate-500/10 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200"
+							>
+								<span class="truncate pr-3">{item.label}</span>
+								<span class="text-xs opacity-50">{item.count}</span>
+							</a>
+						{/each}
+					</div>
+				</div>
 				</div>
 
 				<div class="w-1/2 pl-2">
@@ -1028,20 +1061,21 @@
 						{#if allNotes.length === 0}
 							<div class="todo-panel p-4 text-sm text-slate-700 dark:text-slate-300">No notes match this view.</div>
 						{:else}
-							<div class="space-y-2">
+							<div class="space-y-0.5">
 								{#each allNotes as note (note.id)}
 									<button
 										type="button"
 										onclick={() => openNote(note.id)}
-										class="todo-panel block w-full rounded-lg p-3 text-left transition hover:border-slate-500/40 hover:bg-slate-500/10 dark:hover:border-slate-300/30 dark:hover:bg-slate-200/10"
+										class="block w-full rounded-lg px-3 py-2.5 text-left transition hover:bg-slate-500/10 dark:hover:bg-white/5"
 									>
-										<div class="mb-1 flex items-center justify-between gap-3">
-											<p class="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{getNoteTitle(note.content)}</p>
-											<p class="shrink-0 text-xs text-slate-500 dark:text-slate-400">{formatUpdatedAt(note.updatedAt)}</p>
+										<p class="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{getNoteTitle(note.content)}</p>
+										<div class="flex items-baseline gap-1.5 mt-0.5">
+											<span class="shrink-0 text-xs text-slate-500 dark:text-slate-400">{formatUpdatedAt(note.updatedAt)}</span>
+											<span class="truncate text-xs text-slate-500 dark:text-slate-400">{getNotePreview(note.content) || 'No content yet'}</span>
 										</div>
-										<p class="line-clamp-2 text-sm text-slate-700 dark:text-slate-300">
-											{getNotePreview(note.content) || 'No content yet'}
-										</p>
+										{#if getNoteGoalLabel(note.id)}
+											<p class="truncate text-xs text-slate-400 dark:text-slate-500 mt-0.5">{getNoteGoalLabel(note.id)}</p>
+										{/if}
 									</button>
 								{/each}
 							</div>

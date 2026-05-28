@@ -244,7 +244,33 @@
 
 	function formatUpdatedAt(ms) {
 		if (!ms) return '';
-		return new Date(ms).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+		const date = new Date(ms);
+		const now = new Date();
+		const msPerDay = 86400000;
+		const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+		const noteDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+		const daysDiff = Math.round((today.getTime() - noteDay.getTime()) / msPerDay);
+		if (daysDiff === 0) {
+			return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+		} else if (daysDiff < 7) {
+			return date.toLocaleDateString(undefined, { weekday: 'long' });
+		} else if (date.getFullYear() === now.getFullYear()) {
+			return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+		} else {
+			return date.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: '2-digit' });
+		}
+	}
+
+	function getNotePreview(content = '') {
+		const lines = content.split('\n');
+		const bodyLines = lines.slice(1).filter((l) => l.trim().length > 0);
+		return bodyLines.join(' ').replace(/#+\s*/g, '').trim();
+	}
+
+	function getNoteGoalLabel(noteId) {
+		const link = noteGoalLinks.find((l) => l.noteId === noteId);
+		if (!link) return null;
+		return getGoalLabelFromIndex(link.goalIndex);
 	}
 
 function isNoteEmpty(note) {
@@ -603,47 +629,61 @@ $effect(() => {
 		</div>
 
 		<div class="hidden gap-8 md:grid md:grid-cols-[18rem_minmax(0,1fr)]">
-			<aside class="todo-panel h-[calc(100vh-5.5rem)] overflow-y-auto p-3">
-				<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">NOTES</h2>
-				{#if typeof scopedGoalIndex === 'number'}
-					<div class="mb-3 flex items-center gap-2 p-1">
+		<aside class="h-[calc(100vh-5.5rem)] overflow-y-auto px-2 pt-2 pb-3">
+			<h2 class="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">NOTES</h2>
+			<div class="mb-3 px-1">
+				<input
+					type="search"
+					placeholder="Search..."
+					bind:value={searchText}
+					class="w-full rounded-lg bg-slate-500/10 px-3 py-1.5 text-sm text-slate-800 placeholder-slate-400 outline-none focus:ring-1 focus:ring-violet-500/50 dark:bg-slate-700/30 dark:text-slate-100 dark:placeholder-slate-500"
+				/>
+			</div>
+			{#if typeof scopedGoalIndex === 'number'}
+				<div class="mb-2 flex items-center gap-2 px-1">
+					<a
+						href="/notes"
+						onclick={() => store.clearLastOpenedNote()}
+						class="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-500/10 dark:text-slate-400 dark:hover:bg-white/5"
+						aria-label="Back to all notes"
+					>
+						<ChevronLeft class="h-4 w-4" />
+					</a>
+					<div class="min-w-0">
 						<a
-							href="/notes"
-							onclick={() => store.clearLastOpenedNote()}
-							class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-500 text-slate-700 transition hover:border-violet-500/60 hover:bg-violet-500/10 dark:text-slate-200"
-							aria-label="Back to all notes"
+							href={`/todo/${indexToNomenclature(scopedGoalIndex)}`}
+							class="truncate text-sm font-medium text-slate-800 underline-offset-2 hover:text-violet-600 hover:underline dark:text-slate-100 dark:hover:text-violet-300"
 						>
-							<ChevronLeft class="h-4 w-4" />
+							{getGoalLabelFromIndex(scopedGoalIndex)}
 						</a>
-						<div class="min-w-0">
-							<a
-								href={`/todo/${indexToNomenclature(scopedGoalIndex)}`}
-								class="truncate text-sm font-medium text-slate-800 underline-offset-2 hover:text-violet-600 hover:underline dark:text-slate-100 dark:hover:text-violet-300"
-							>
-								{getGoalLabelFromIndex(scopedGoalIndex)}
-							</a>
-						</div>
 					</div>
-				{/if}
-				<div class="space-y-1.5">
-					{#each filteredNotes as note (note.id)}
-						<button
-							type="button"
-							onclick={() => selectNote(note.id)}
-							class={`w-full rounded-md border px-3 py-2 text-left text-sm transition ${
-								selectedNote?.id === note.id
-									? 'border-violet-500/40 bg-violet-500/15'
-									: 'border-slate-700/70 hover:border-violet-500/50 hover:bg-violet-500/10'
-							}`}
-						>
-							<div class="flex items-center justify-between gap-2">
-								<span class="truncate pr-2 font-semibold">{getNoteTitle(note.content)}</span>
-							</div>
-							<div class="truncate text-xs text-slate-400">{formatUpdatedAt(note.updatedAt)}</div>
-						</button>
-					{/each}
 				</div>
-			</aside>
+			{/if}
+			<div class="space-y-0.5">
+				{#each filteredNotes as note (note.id)}
+					<button
+						type="button"
+						onclick={() => selectNote(note.id)}
+						class={`w-full rounded-lg px-2.5 py-2 text-left text-sm transition ${
+							selectedNote?.id === note.id
+								? 'bg-violet-500/20 dark:bg-violet-500/25'
+								: 'hover:bg-slate-500/10 dark:hover:bg-white/5'
+						}`}
+					>
+						<div class="truncate font-semibold text-slate-900 dark:text-slate-100">{getNoteTitle(note.content)}</div>
+						<div class="flex items-baseline gap-1.5 mt-0.5">
+							<span class="shrink-0 text-xs text-slate-500 dark:text-slate-400">{formatUpdatedAt(note.updatedAt)}</span>
+							{#if getNotePreview(note.content)}
+								<span class="truncate text-xs text-slate-500 dark:text-slate-400">{getNotePreview(note.content)}</span>
+							{/if}
+						</div>
+						{#if getNoteGoalLabel(note.id)}
+							<div class="truncate text-xs text-slate-400 dark:text-slate-500 mt-0.5">{getNoteGoalLabel(note.id)}</div>
+						{/if}
+					</button>
+				{/each}
+			</div>
+		</aside>
 
 			<div class="min-w-0">
 				<div class="mb-6 hidden md:block">
@@ -750,47 +790,61 @@ $effect(() => {
 				style={`transform: translateX(${mobileMenuOpen ? '0%' : '-50%'});`}
 			>
 				<div class="w-1/2 pr-4">
-					<div class="todo-panel h-[calc(100vh-8rem)] overflow-y-auto p-3">
-						<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">NOTES</h2>
-						{#if typeof scopedGoalIndex === 'number'}
-							<div class="mb-3 flex items-center gap-2 p-1">
-								<a
-									href="/notes"
-									onclick={() => store.clearLastOpenedNote()}
-									class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-500 text-slate-700 transition hover:border-violet-500/60 hover:bg-violet-500/10 dark:text-slate-200"
-									aria-label="Back to all notes"
-								>
-									<ChevronLeft class="h-4 w-4" />
-								</a>
-								<div class="min-w-0">
-									<a
-										href={`/todo/${indexToNomenclature(scopedGoalIndex)}`}
-										class="truncate text-sm font-medium text-slate-800 underline-offset-2 hover:text-violet-600 hover:underline dark:text-slate-100 dark:hover:text-violet-300"
-									>
-										{getGoalLabelFromIndex(scopedGoalIndex)}
-									</a>
-								</div>
-							</div>
-						{/if}
-						<div class="space-y-1.5">
-							{#each filteredNotes as note (note.id)}
-								<button
-									type="button"
-									onclick={() => selectNote(note.id)}
-									class={`w-full rounded-md border px-3 py-2 text-left text-sm transition ${
-										selectedNote?.id === note.id
-											? 'border-violet-500/40 bg-violet-500/15'
-											: 'border-slate-700/70 hover:border-violet-500/50 hover:bg-violet-500/10'
-									}`}
-								>
-									<div class="flex items-center justify-between gap-2">
-										<span class="truncate pr-2 font-semibold">{getNoteTitle(note.content)}</span>
-									</div>
-									<div class="truncate text-xs text-slate-400">{formatUpdatedAt(note.updatedAt)}</div>
-								</button>
-							{/each}
-						</div>
+				<div class="h-[calc(100vh-8rem)] overflow-y-auto px-2 pt-2 pb-3">
+					<h2 class="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">NOTES</h2>
+					<div class="mb-3 px-1">
+						<input
+							type="search"
+							placeholder="Search..."
+							bind:value={searchText}
+							class="w-full rounded-lg bg-slate-500/10 px-3 py-1.5 text-sm text-slate-800 placeholder-slate-400 outline-none focus:ring-1 focus:ring-violet-500/50 dark:bg-slate-700/30 dark:text-slate-100 dark:placeholder-slate-500"
+						/>
 					</div>
+					{#if typeof scopedGoalIndex === 'number'}
+						<div class="mb-2 flex items-center gap-2 px-1">
+							<a
+								href="/notes"
+								onclick={() => store.clearLastOpenedNote()}
+								class="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-500/10 dark:text-slate-400 dark:hover:bg-white/5"
+								aria-label="Back to all notes"
+							>
+								<ChevronLeft class="h-4 w-4" />
+							</a>
+							<div class="min-w-0">
+								<a
+									href={`/todo/${indexToNomenclature(scopedGoalIndex)}`}
+									class="truncate text-sm font-medium text-slate-800 underline-offset-2 hover:text-violet-600 hover:underline dark:text-slate-100 dark:hover:text-violet-300"
+								>
+									{getGoalLabelFromIndex(scopedGoalIndex)}
+								</a>
+							</div>
+						</div>
+					{/if}
+					<div class="space-y-0.5">
+						{#each filteredNotes as note (note.id)}
+							<button
+								type="button"
+								onclick={() => selectNote(note.id)}
+								class={`w-full rounded-lg px-2.5 py-2 text-left text-sm transition ${
+									selectedNote?.id === note.id
+										? 'bg-violet-500/20 dark:bg-violet-500/25'
+										: 'hover:bg-slate-500/10 dark:hover:bg-white/5'
+								}`}
+							>
+								<div class="truncate font-semibold text-slate-900 dark:text-slate-100">{getNoteTitle(note.content)}</div>
+								<div class="flex items-baseline gap-1.5 mt-0.5">
+									<span class="shrink-0 text-xs text-slate-500 dark:text-slate-400">{formatUpdatedAt(note.updatedAt)}</span>
+									{#if getNotePreview(note.content)}
+										<span class="truncate text-xs text-slate-500 dark:text-slate-400">{getNotePreview(note.content)}</span>
+									{/if}
+								</div>
+								{#if getNoteGoalLabel(note.id)}
+									<div class="truncate text-xs text-slate-400 dark:text-slate-500 mt-0.5">{getNoteGoalLabel(note.id)}</div>
+								{/if}
+							</button>
+						{/each}
+					</div>
+				</div>
 				</div>
 
 				<div class="w-1/2 pl-2">

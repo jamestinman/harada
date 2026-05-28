@@ -268,6 +268,63 @@
 		return getVisibleTodosForGroup(group, todosList).filter((todo) => renderedTodoIdSet.has(todo.id));
 	}
 
+	/**
+	 * For a flat ordered list of todos with known indent levels, compute, per todo,
+	 * which ancestor columns should keep their vertical tree-line going past that row.
+	 *
+	 * Returns: Map<todoId, boolean[]> where the array has length === indentLevel
+	 * and `arr[c]` is true when the line at column c (the level-(c+1) ancestor's
+	 * children-list) has a further sibling row after this one.
+	 */
+	function computeTreeContinuesForOrderedList(orderedTodos, indentLevelOf) {
+		const result = new Map();
+		if (!orderedTodos?.length) return result;
+		const levels = orderedTodos.map((todo) => indentLevelOf(todo) || 0);
+
+		for (let i = 0; i < orderedTodos.length; i++) {
+			const level = levels[i];
+			if (level <= 0) {
+				result.set(orderedTodos[i].id, []);
+				continue;
+			}
+			const continues = new Array(level).fill(false);
+			for (let c = 0; c < level; c++) {
+				for (let j = i + 1; j < orderedTodos.length; j++) {
+					const lj = levels[j];
+					if (lj <= c) break;
+					if (lj === c + 1) {
+						continues[c] = true;
+						break;
+					}
+				}
+			}
+			result.set(orderedTodos[i].id, continues);
+		}
+		return result;
+	}
+
+	const treeContinuesById = $derived.by(() => {
+		const map = new Map();
+		for (const group of groups) {
+			if (group.subGroups) {
+				for (const subGroup of group.subGroups) {
+					const ordered = getRenderedTodosForGroup(group, subGroup.todos);
+					const partial = computeTreeContinuesForOrderedList(ordered, (todo) =>
+						getIndentLevel ? getIndentLevel(todo.id, subGroup) : 0
+					);
+					for (const [id, c] of partial) map.set(id, c);
+				}
+			} else {
+				const ordered = getRenderedTodosForGroup(group, group.todos);
+				const partial = computeTreeContinuesForOrderedList(ordered, (todo) =>
+					getIndentLevel ? getIndentLevel(todo.id, group) : 0
+				);
+				for (const [id, c] of partial) map.set(id, c);
+			}
+		}
+		return map;
+	});
+
 	function hasRenderedTodosInGroup(group) {
 		if (!group) return false;
 		if (isGroupCollapsed(group.id)) return false;
@@ -940,6 +997,7 @@
 								onOutdent={() => onOutdent && onOutdent(todo.id, pinGroup)}
 								onTitleFocus={(id) => onTitleFocus && onTitleFocus(id)}
 								indentLevel={row.indentLevel}
+								treeContinues={null}
 								canIndent={canIndent ? canIndent(todo.id, pinGroup) : false}
 								canOutdent={canOutdent ? canOutdent(todo.id, pinGroup) : false}
 								{allGoals}
@@ -1062,6 +1120,7 @@
 												onOutdent={() => onOutdent && onOutdent(todo.id, subGroup)}
 												onTitleFocus={(id) => onTitleFocus && onTitleFocus(id)}
 												indentLevel={getIndentLevel ? getIndentLevel(todo.id, subGroup) : 0}
+												treeContinues={treeContinuesById.get(todo.id) ?? null}
 												canIndent={canIndent ? canIndent(todo.id, subGroup) : false}
 												canOutdent={canOutdent ? canOutdent(todo.id, subGroup) : false}
 												{allGoals}
@@ -1125,6 +1184,7 @@
 								onOutdent={() => onOutdent && onOutdent(todo.id, group)}
 								onTitleFocus={(id) => onTitleFocus && onTitleFocus(id)}
 								indentLevel={getIndentLevel ? getIndentLevel(todo.id, group) : 0}
+								treeContinues={treeContinuesById.get(todo.id) ?? null}
 								canIndent={canIndent ? canIndent(todo.id, group) : false}
 								canOutdent={canOutdent ? canOutdent(todo.id, group) : false}
 								{allGoals}

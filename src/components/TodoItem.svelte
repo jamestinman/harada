@@ -21,6 +21,10 @@
 		onMakeSubtask = null,
 		onOutdent = null,
 		indentLevel = 0,
+		/** Per-column flag indicating whether the tree-line at that ancestor column
+		 *  continues past this row (true) or terminates at the elbow (false).
+		 *  Length should equal `indentLevel`. Null/empty for unindented rows. */
+		treeContinues = null,
 		canIndent = false,
 		canOutdent = false,
 		onTitleFocus = null,
@@ -301,9 +305,9 @@
 </script>
 
 {#snippet taskLinkControls()}
-	<div class="flex flex-wrap items-center gap-2">
+	<div class="flex flex-wrap items-center gap-1.5">
 			{#each linkedGoalsForDisplay as linkedGoal}
-				<span class="inline-flex items-center gap-1 rounded-md border border-slate-400 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm dark:border-slate-600 dark:bg-slate-900/60 dark:text-slate-200">
+				<span class="task-link-chip">
 					<a
 						href={`/todo/${indexToNomenclature(linkedGoal)}`}
 						class="underline-offset-2 hover:text-violet-600 hover:underline dark:hover:text-violet-300"
@@ -312,21 +316,21 @@
 					</a>
 					<button
 						type="button"
-						class="text-rose-500 hover:text-rose-600 dark:text-rose-300 dark:hover:text-rose-200"
+						class="text-slate-400 hover:text-rose-500 dark:text-slate-500 dark:hover:text-rose-300"
 						aria-label={`Unlink ${getGoalLabel(linkedGoal)}`}
 						onclick={() => store.unlinkTaskFromGoal(todo.id, linkedGoal)}
 					>
-						x
+						×
 					</button>
 				</span>
 			{/each}
 			{#if !linkPanelOpen}
 				<button
 					type="button"
-					class="rounded border border-violet-400/40 px-2.5 py-1 text-xs font-medium text-violet-400 transition hover:bg-violet-500/15"
+					class="task-link-add-button"
 					onclick={openLinkPanel}
 				>
-					+ to goal
+					+ link goal
 				</button>
 			{:else}
 				<div class="inline-flex w-52 max-w-full">
@@ -346,19 +350,26 @@
 {#if !isEditing}
 	<div
 		data-todo-item-id={isFeedPinnedDuplicate ? undefined : todo.id}
-		class={`group task relative rounded-md transition-colors ${
-			isHighlighted
-				? 'ring-1 ring-violet-400'
-				: ''
-		} ${
-			mainFeedPinStyle === 'top'
-				? '!border-2 border-pink-400/50'
-				: mainFeedPinStyle === 'inline'
-					? ''
-					: ''
-		}`}
+		class={`group task ${
+			isHighlighted ? 'rounded-md' : ''
+		} ${mainFeedPinStyle === 'top' ? 'task-pinned-top' : ''}`}
 		style="margin-left: {indentLevel * 1.5}rem;"
 	>
+		{#if indentLevel > 0 && Array.isArray(treeContinues) && treeContinues.length === indentLevel}
+			{#each treeContinues as continues, c}
+				{@const offsetRem = (c - indentLevel) * 1.5 + 1.375}
+				{#if c < indentLevel - 1}
+					{#if continues}
+						<span class="task-tree-line" style="left: {offsetRem}rem;" aria-hidden="true"></span>
+					{/if}
+				{:else}
+					<span class="task-tree-elbow" style="left: {offsetRem}rem;" aria-hidden="true"></span>
+					{#if continues}
+						<span class="task-tree-line-half" style="left: {offsetRem}rem;" aria-hidden="true"></span>
+					{/if}
+				{/if}
+			{/each}
+		{/if}
 		<!-- Collapse toggle: absolutely positioned in the left padding so checkboxes always line up -->
 		{#if hasChildren}
 			<button
@@ -379,7 +390,7 @@
 			class={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border-2 transition ${
 				todo.status === 'done'
 					? 'border-emerald-500 bg-emerald-500 text-white'
-					: `todo-checkbox-todo${isHighlighted ? ' !border-black hover:!border-black' : ''}`
+					: `todo-checkbox-todo`
 			}`}
 			title={todo.status === 'done' ? 'Mark as to-do' : 'Mark as done'}
 		>
@@ -518,67 +529,57 @@
 	</div>
 {:else}
 	<!-- Desktop expanded editor -->
-			<div class="desktop-expanded-editor">
-
-    <!-- Title input -->
+	<div class="desktop-expanded-editor" style="margin-left: {indentLevel * 1.5}rem;">
 		<input
 			type="text"
 			bind:value={editTitle}
-			placeholder="Task"
+			placeholder="Task title"
+			class="task-edit-title"
 		/>
 
-		<!-- Links -->
-		<div class="mb-3">
-			{@render taskLinkControls()}
-		</div>
+		{@render taskLinkControls()}
 
-		<!-- Primary note -->
-		<div class="mb-3 space-y-2">
-			<div class="space-y-1">
-				{#if isEditingMarkdown || !editMarkdown.trim()}
-					<textarea
-						bind:this={markdownTextareaElement}
-						bind:value={editMarkdown}
-						placeholder="Task note"
-						onkeydown={handleMarkdownEditorKeydown}
-					></textarea>
-				{:else}
-					<div
-						bind:this={markdownPreviewElement}
-						role="button"
-						tabindex="0"
-						class="markdown cursor-text rounded-md border border-slate-700/70 p-3 text-sm transition hover:border-violet-500/40 hover:bg-violet-500/10"
-						onclick={enterMarkdownEdit}
-						onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && enterMarkdownEdit()}
-					>
-						{@html renderMarkdown(editMarkdown)}
-					</div>
-				{/if}
-			</div>
-		</div>
-
-
-		<!-- Actions -->
-		<div class="flex items-center justify-between gap-2">
-			<button
-				type="button"
-				onclick={handleDelete}
-				class="rounded-md px-3 py-1.5 text-sm font-medium text-rose-300 transition hover:bg-rose-900/40"
+		{#if isEditingMarkdown || !editMarkdown.trim()}
+			<textarea
+				bind:this={markdownTextareaElement}
+				bind:value={editMarkdown}
+				placeholder="Add a note..."
+				class="task-edit-note"
+				onkeydown={handleMarkdownEditorKeydown}
+			></textarea>
+		{:else}
+			<div
+				bind:this={markdownPreviewElement}
+				role="button"
+				tabindex="0"
+				class="markdown task-edit-note-preview"
+				onclick={enterMarkdownEdit}
+				onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && enterMarkdownEdit()}
 			>
-				Delete
-			</button>
-			<div class="flex gap-2">
+				{@html renderMarkdown(editMarkdown)}
+			</div>
+		{/if}
+
+		<div class="task-edit-actions">
+			<div class="ml-auto flex items-center gap-1">
+				<button
+					type="button"
+					onclick={handleDelete}
+					class="task-edit-delete-button"
+				>
+					Delete
+				</button>
 				<button
 					type="button"
 					onclick={cancelEdit}
-					class="todo-desktop-cancel"
+					class="task-edit-cancel-button"
 				>
 					Cancel
 				</button>
 				<button
 					type="button"
 					onclick={saveChanges}
-					class="rounded-md border border-violet-600/70 bg-violet-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-violet-500"
+					class="task-edit-save-button"
 				>
 					Save
 				</button>

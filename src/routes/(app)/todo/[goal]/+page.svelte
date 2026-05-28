@@ -424,6 +424,10 @@
 			.filter((group) => group.todos.length > 0);
 	});
 
+	const goalTasksCount = $derived.by(() =>
+		goalGroups.reduce((sum, g) => sum + (g.todos?.filter((t) => !t.isDraft).length ?? 0), 0)
+	);
+
 	function getVisibleGoalGroupsByOrdering() {
 		const uniqueCanonical = [...new Set(goalIndices.map((idx) => canonicalGoalIndex(idx)))];
 		return uniqueCanonical
@@ -994,28 +998,36 @@
 		</div>
 
 		<div class="hidden gap-8 md:grid md:grid-cols-[18rem_minmax(0,1fr)]">
-			<aside class="todo-panel h-[calc(100vh-5.5rem)] overflow-y-auto p-3">
-				<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">TASKS</h2>
-				<div class="space-y-1.5">
+		<aside class="h-[calc(100vh-5.5rem)] overflow-y-auto px-2 pt-2 pb-3">
+			<h2 class="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">TASKS</h2>
+				<div class="mb-3 px-1">
+					<input
+						type="search"
+						placeholder="Search..."
+						bind:value={searchText}
+						class="w-full rounded-lg bg-slate-500/10 px-3 py-1.5 text-sm text-slate-800 placeholder-slate-400 outline-none focus:ring-1 focus:ring-violet-500/50 dark:bg-slate-700/30 dark:text-slate-100 dark:placeholder-slate-500"
+					/>
+				</div>
+				<div class="relative ml-2 border-l border-slate-200/50 pl-2 dark:border-slate-700/40 space-y-0.5">
 					<a
 						href="/todo"
-						class="flex items-center justify-between rounded-md border border-slate-700/70 px-3 py-2 text-sm font-semibold transition hover:border-violet-500/50 hover:bg-violet-500/10"
+						class="flex items-center justify-between rounded-lg px-2.5 py-1.5 text-sm font-semibold transition hover:bg-slate-500/10 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200"
 					>
 						<span>All Tasks</span>
-						<span class="text-xs text-slate-400">{todos.filter((t) => !t.isDraft && t.status !== 'done').length}</span>
+						<span class="text-xs opacity-50">{todos.filter((t) => !t.isDraft && t.status !== 'done').length}</span>
 					</a>
 					{#each goalMenuItems as item (item.id)}
 						<a
 							href={item.href}
-							class={`flex items-center justify-between rounded-md border px-3 py-2 text-sm transition ${
+							class={`flex items-center justify-between rounded-lg px-2.5 py-1.5 text-sm transition ${
 								item.goalIndex === goalIndex
-									? 'border-violet-500/40 bg-violet-500/15'
-									: 'border-slate-700/70 hover:border-violet-500/50 hover:bg-violet-500/10'
+									? 'bg-violet-500/20 text-violet-800 dark:bg-violet-500/25 dark:text-violet-200'
+									: 'text-slate-700 hover:bg-slate-500/10 dark:text-slate-200 dark:hover:bg-white/5'
 							}`}
 							aria-current={item.goalIndex === goalIndex ? 'page' : undefined}
 						>
 							<span class="truncate pr-3">{item.label}</span>
-							<span class={item.goalIndex === goalIndex ? 'text-xs text-violet-200/80' : 'text-xs text-slate-400'}>{item.count}</span>
+							<span class="text-xs opacity-50">{item.count}</span>
 						</a>
 					{/each}
 				</div>
@@ -1151,28 +1163,22 @@
 							{/if}
 						</div>
 					</div>
-					<div class="mb-4 flex items-center gap-2 border-b border-slate-700/60 pb-2">
+					<div class="mb-4 flex items-center gap-6 border-b border-slate-300/70 dark:border-slate-700/60">
 						<button
 							type="button"
 							onclick={() => (activeGoalTab = 'tasks')}
-							class={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-								activeGoalTab === 'tasks'
-									? 'bg-violet-600/90 text-white'
-									: 'text-slate-700 hover:bg-slate-200/80 dark:text-slate-300 dark:hover:bg-slate-800/80'
-							}`}
+							class={`goal-tab ${activeGoalTab === 'tasks' ? 'goal-tab-active' : ''}`}
 						>
-							Tasks
+							<span>Tasks</span>
+							<span class="goal-tab-count">{goalTasksCount}</span>
 						</button>
 						<button
 							type="button"
 							onclick={() => (activeGoalTab = 'notes')}
-							class={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-								activeGoalTab === 'notes'
-									? 'bg-violet-600/90 text-white'
-									: 'text-slate-700 hover:bg-slate-200/80 dark:text-slate-300 dark:hover:bg-slate-800/80'
-							}`}
+							class={`goal-tab ${activeGoalTab === 'notes' ? 'goal-tab-active' : ''}`}
 						>
-							Notes ({associatedGoalNotes.length})
+							<span>Notes</span>
+							<span class="goal-tab-count">{associatedGoalNotes.length}</span>
 						</button>
 					</div>
 				</div>
@@ -1248,34 +1254,42 @@
 				style={`transform: translateX(${mobileMenuOpen ? '0%' : '-50%'});`}
 			>
 				<div class="w-1/2 pr-4">
-					<div class="todo-panel h-[calc(100vh-8rem)] overflow-y-auto p-3">
-						<h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">TASKS</h2>
-						<div class="space-y-1.5">
-							<a
-								href="/todo"
-								onclick={() => (mobileMenuOpen = false)}
-								class="flex items-center justify-between rounded-md border border-slate-700/70 px-3 py-2 text-sm font-semibold transition hover:border-violet-500/50 hover:bg-violet-500/10"
-							>
-								<span>All Tasks</span>
-								<span class="text-xs text-slate-400">{todos.filter((t) => !t.isDraft && t.status !== 'done').length}</span>
-							</a>
-							{#each goalMenuItems as item (item.id)}
-								<a
-									href={item.href}
-									onclick={() => (mobileMenuOpen = false)}
-									class={`flex items-center justify-between rounded-md border px-3 py-2 text-sm transition ${
-										item.goalIndex === goalIndex
-											? 'border-violet-500/40 bg-violet-500/15'
-											: 'border-slate-700/70 hover:border-violet-500/50 hover:bg-violet-500/10'
-									}`}
-									aria-current={item.goalIndex === goalIndex ? 'page' : undefined}
-								>
-									<span class="truncate pr-3">{item.label}</span>
-									<span class={item.goalIndex === goalIndex ? 'text-xs text-violet-200/80' : 'text-xs text-slate-400'}>{item.count}</span>
-								</a>
-							{/each}
-						</div>
+				<div class="h-[calc(100vh-8rem)] overflow-y-auto px-2 pt-2 pb-3">
+					<h2 class="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">TASKS</h2>
+					<div class="mb-3 px-1">
+						<input
+							type="search"
+							placeholder="Search..."
+							bind:value={searchText}
+							class="w-full rounded-lg bg-slate-500/10 px-3 py-1.5 text-sm text-slate-800 placeholder-slate-400 outline-none focus:ring-1 focus:ring-violet-500/50 dark:bg-slate-700/30 dark:text-slate-100 dark:placeholder-slate-500"
+						/>
 					</div>
+					<div class="relative ml-2 border-l border-slate-200/50 pl-2 dark:border-slate-700/40 space-y-0.5">
+						<a
+							href="/todo"
+							onclick={() => (mobileMenuOpen = false)}
+							class="flex items-center justify-between rounded-lg px-2.5 py-1.5 text-sm font-semibold transition hover:bg-slate-500/10 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200"
+						>
+							<span>All Tasks</span>
+							<span class="text-xs opacity-50">{todos.filter((t) => !t.isDraft && t.status !== 'done').length}</span>
+						</a>
+						{#each goalMenuItems as item (item.id)}
+							<a
+								href={item.href}
+								onclick={() => (mobileMenuOpen = false)}
+								class={`flex items-center justify-between rounded-lg px-2.5 py-1.5 text-sm transition ${
+									item.goalIndex === goalIndex
+										? 'bg-violet-500/20 text-violet-800 dark:bg-violet-500/25 dark:text-violet-200'
+										: 'text-slate-700 hover:bg-slate-500/10 dark:text-slate-200 dark:hover:bg-white/5'
+								}`}
+								aria-current={item.goalIndex === goalIndex ? 'page' : undefined}
+							>
+								<span class="truncate pr-3">{item.label}</span>
+								<span class="text-xs opacity-50">{item.count}</span>
+							</a>
+						{/each}
+					</div>
+				</div>
 				</div>
 
 				<div class="w-1/2 pl-2">
@@ -1403,28 +1417,22 @@
 								{/if}
 							</div>
 						</div>
-						<div class="mb-4 flex items-center gap-2 border-b border-slate-700/60 pb-2">
+						<div class="mb-4 flex items-center gap-6 border-b border-slate-300/70 dark:border-slate-700/60">
 							<button
 								type="button"
 								onclick={() => (activeGoalTab = 'tasks')}
-								class={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-									activeGoalTab === 'tasks'
-										? 'bg-violet-600/90 text-white'
-										: 'text-slate-700 hover:bg-slate-200/80 dark:text-slate-300 dark:hover:bg-slate-800/80'
-								}`}
+								class={`goal-tab ${activeGoalTab === 'tasks' ? 'goal-tab-active' : ''}`}
 							>
-								Tasks
+								<span>Tasks</span>
+								<span class="goal-tab-count">{goalTasksCount}</span>
 							</button>
 							<button
 								type="button"
 								onclick={() => (activeGoalTab = 'notes')}
-								class={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-									activeGoalTab === 'notes'
-										? 'bg-violet-600/90 text-white'
-										: 'text-slate-700 hover:bg-slate-200/80 dark:text-slate-300 dark:hover:bg-slate-800/80'
-								}`}
+								class={`goal-tab ${activeGoalTab === 'notes' ? 'goal-tab-active' : ''}`}
 							>
-								Notes ({associatedGoalNotes.length})
+								<span>Notes</span>
+								<span class="goal-tab-count">{associatedGoalNotes.length}</span>
 							</button>
 						</div>
 					</div>
