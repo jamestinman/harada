@@ -121,7 +121,8 @@
 	}
 
 	let selectedNoteId = $state(null);
-	let resumeNoteId = $state(store.lastOpenedNoteId);
+	// Skip MRU resume when navigation already requested a specific note (e.g. new note from composer).
+	let resumeNoteId = $state(store.pendingSelectNoteId ? null : store.lastOpenedNoteId);
 	let isEditing = $state(false);
 	let editContent = $state('');
 	let linkPanelOpen = $state(false);
@@ -184,12 +185,15 @@
 		store.pendingSelectNoteId = null;
 		flushNoteEditsIfNeeded();
 		selectedNoteId = pending;
+		resumeNoteId = null;
+		store.recordLastOpenedNote(pending);
 		mobileMenuOpen = false;
 	});
 
 	// Restore the last-viewed note when navigating back to the notes section.
 	$effect(() => {
 		if (!resumeNoteId) return;
+		if (store.pendingSelectNoteId) return;
 		if (!dataLoaded) return;
 		const target = resumeNoteId;
 		resumeNoteId = null;

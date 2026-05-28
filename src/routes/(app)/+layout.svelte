@@ -26,8 +26,13 @@
 
 	// Watch for auth changes and (re)initialize Supabase sync when needed
 	$effect(() => {
-		if (!browser) return;
+		if (!browser || authStore.loading) return;
 		const userId = authStore.user?.id ?? null;
+		// First auth resolution is handled by store.initialize(); only react to later changes.
+		if (lastAuthUserId === undefined) {
+			lastAuthUserId = userId;
+			return;
+		}
 		if (userId === lastAuthUserId) return;
 		lastAuthUserId = userId;
 		store.handleAuthChange();

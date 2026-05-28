@@ -15,9 +15,16 @@ class AuthStore {
 	error = $state(null);
 	// Persisted across offline periods - used for display only, not for API auth
 	lastKnownUser = $state(null);
+	/** Resolves once the initial getSession() check has finished */
+	_readyPromise = /** @type {Promise<void> | null} */ (null);
+	_readyResolve = /** @type {(() => void) | null} */ (null);
 
 	constructor() {
 		if (browser) {
+			this._readyPromise = new Promise((resolve) => {
+				this._readyResolve = resolve;
+			});
+
 			// Restore cached display user immediately so UI doesn't flicker
 			try {
 				const cached = localStorage.getItem(LAST_USER_KEY);
@@ -65,7 +72,13 @@ class AuthStore {
 			this.error = err.message;
 		} finally {
 			this.loading = false;
+			this._readyResolve?.();
 		}
+	}
+
+	whenReady() {
+		if (!browser || !this.loading) return Promise.resolve();
+		return this._readyPromise ?? Promise.resolve();
 	}
 
 	async _tryRefreshSession() {

@@ -1,6 +1,6 @@
 <script>
 	import { onMount, tick } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { afterNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { browser, dev } from '$app/environment';
 	import { store } from '$stores/store.svelte.js';
@@ -12,7 +12,8 @@
 		normalizeTodoListMeta,
 		buildGoalListMeta,
 		buildCustomListMeta,
-		getNoteTitle
+		getNoteTitle,
+		buildFeedPinnedRows
 	} from '$lib/todoUtils.js';
 	import TodoList from '$components/TodoList.svelte';
 	import WorkspaceToolbar from '$components/WorkspaceToolbar.svelte';
@@ -64,8 +65,20 @@
 		return ids;
 	}));
 	const dataLoaded = $derived(!store.isBootstrapping);
+	const todoListReady = $derived(initialTodoListReady && dataLoaded);
 	const targetTodoId = $derived(page.url.searchParams.get('task') || null);
 	let activeTodoId = $state(null);
+	let focusTodoId = $state(null);
+	let skipTaskScroll = false;
+
+	function requestTaskFocus(id) {
+		if (!id) return;
+		focusTodoId = id;
+	}
+
+	function handleFocusTitleHandled() {
+		focusTodoId = null;
+	}
 
 	function clearHighlight() {
 		activeTodoId = null;
@@ -77,6 +90,7 @@
 		activeTodoId = id;
 		if (!browser) return;
 		if (page.url.searchParams.get('task') === id) return;
+		skipTaskScroll = true;
 		const url = new URL(page.url.href);
 		url.searchParams.set('task', id);
 		goto(`${url.pathname}${url.search}`, { replaceState: true, keepFocus: true });
@@ -445,10 +459,9 @@
 		});
 	}));
 
-	const feedPinnedTodos = $derived.by(() =>
-		measureDerived('feedPinnedTodos derive', () => todos
-			.filter((t) => t.pinned === true && t.status !== 'done')
-			.sort((a, b) => getTodoOrdering(a) - getTodoOrdering(b))
+	const feedPinnedRows = $derived.by(() =>
+		measureDerived('feedPinnedRows derive', () =>
+			buildFeedPinnedRows(todos, getTodoOrdering)
 		)
 	);
 
@@ -494,7 +507,18 @@
 		activeMainFeed = 'todos';
 		mobileMenuOpen = false;
 		activeTodoId = targetTodoId;
-		void tick().then(() => scrollToLinkedTask(targetTodoId));
+	});
+
+	afterNavigate(() => {
+		if (!browser || !dataLoaded) return;
+		const task = page.url.searchParams.get('task');
+		if (!task) return;
+		activeTodoId = task;
+		if (skipTaskScroll) {
+			skipTaskScroll = false;
+			return;
+		}
+		void tick().then(() => scrollToLinkedTask(task));
 	});
 
 	function scrollToLinkedTask(todoId, attempt = 0) {
@@ -507,7 +531,7 @@
 			}
 			return;
 		}
-		el.scrollIntoView({ behavior: attempt === 0 ? 'smooth' : 'auto', block: 'center' });
+		el.scrollIntoView({ behavior: attempt === 0 ? 'smooth' : 'auto', block: 'nearest' });
 	}
 
 	let lastTodoSidebarPulseSynced = $state(-1);
@@ -700,16 +724,7 @@
 
 	function upsertPrimaryNoteForTodo(todoId, content, group) {
 		const maybeGoalIndex = group?.groupType === 'goal' ? group.goalIndex : null;
-	const existingPrimary = store.getPrimaryNoteForTask(todoId);
-	const savedNote = store.setPrimaryNoteForTask(todoId, { content, goalIndex: maybeGoalIndex });
-	if (!existingPrimary && savedNote) {
-		store.pendingSelectNoteId = savedNote.id;
-		if (typeof maybeGoalIndex === 'number') {
-			goto(`/notes/${indexToNomenclature(maybeGoalIndex)}`);
-			return;
-		}
-		goto('/notes');
-	}
+		store.setPrimaryNoteForTask(todoId, { content, goalIndex: maybeGoalIndex });
 	}
 
 	$effect(() => {
@@ -738,6 +753,8 @@
 		};
 
 		store.harada_chart.todos = [...store.harada_chart.todos, newTodo];
+		activeTodoId = newTodo.id;
+		requestTaskFocus(newTodo.id);
 
 		if (typeof normalizedCurrentTodo.goalIndex === 'number') {
 			store.bumpGoalAfterTodoActivity(normalizedCurrentTodo.goalIndex);
@@ -791,42 +808,9 @@
 		// Delete the current todo
 		deleteTodo(currentTodoId);
 		
-		// Focus the previous todo if it exists and start editing
 		if (currentIndex > 0) {
 			const previousTodo = goalTodosList[currentIndex - 1];
-			if (previousTodo) {
-				setTimeout(() => {
-					// Find the button for the previous todo and click it to start editing
-					const prevTodoElement = document.querySelector(`[data-todo-item-id="${previousTodo.id}"]`);
-					if (prevTodoElement) {
-						// Find the title button (the one with flex-1 class)
-						const editButton = prevTodoElement.querySelector('button.flex-1');
-						if (editButton) {
-							editButton.click();
-							// Wait for Svelte to render the input, then focus it
-							// Use multiple attempts to ensure the input is ready
-							const tryFocus = (attempts = 0) => {
-								const prevInput = document.querySelector(`[data-todo-id="${previousTodo.id}"]`);
-								if (prevInput) {
-									prevInput.focus();
-									// Double-check focus is active
-									if (document.activeElement !== prevInput) {
-										setTimeout(() => {
-											prevInput.focus();
-										}, 10);
-									}
-								} else if (attempts < 10) {
-									// Retry if input not found yet
-									setTimeout(() => tryFocus(attempts + 1), 20);
-								}
-							};
-							requestAnimationFrame(() => {
-								setTimeout(() => tryFocus(), 50);
-							});
-						}
-					}
-				}, 50);
-			}
+			if (previousTodo) requestTaskFocus(previousTodo.id);
 		}
 	}
 </script>
@@ -886,11 +870,11 @@
 					<p class="page-subtitle mb-6">
 						{allTodos.length} todo{allTodos.length !== 1 ? 's' : ''} across {todoGroups.filter((g) => g.id !== 'no-goal').length} goal{todoGroups.filter((g) => g.id !== 'no-goal').length !== 1 ? 's' : ''}
 					</p>
-					{#if initialTodoListReady}
+					{#if todoListReady}
 						<TodoList
 							groups={todoGroups}
 							isMainTodoFeed={true}
-							feedPinnedTodos={feedPinnedTodos}
+							feedPinnedRows={feedPinnedRows}
 							{resolveGroupForTodo}
 							{allGoals}
 							onUpdate={updateTodo}
@@ -912,6 +896,8 @@
 							searchText={searchText}
 						{targetTodoId}
 						activeTodoId={activeTodoId}
+						{focusTodoId}
+						onFocusTitleHandled={handleFocusTitleHandled}
 						{getPrimaryNoteForTodo}
 						{getLinkedNotesForTodo}
 						{getLinkedGoalIndicesForTodo}
@@ -919,7 +905,9 @@
 						onClearHighlight={clearHighlight}
 					/>
 				{:else}
-					<div class="todo-panel p-6 text-sm text-slate-700 dark:text-slate-300">Preparing task list...</div>
+					<div class="todo-panel p-6 text-sm text-slate-700 dark:text-slate-300">
+						{dataLoaded ? 'Preparing task list...' : 'Loading tasks...'}
+					</div>
 					{/if}
 				{:else}
 					<p class="page-subtitle mb-6">
@@ -994,11 +982,11 @@
 						<p class="page-subtitle mb-4">
 							{allTodos.length} todo{allTodos.length !== 1 ? 's' : ''} across {todoGroups.filter((g) => g.id !== 'no-goal').length} goal{todoGroups.filter((g) => g.id !== 'no-goal').length !== 1 ? 's' : ''}
 						</p>
-						{#if initialTodoListReady}
+						{#if todoListReady}
 							<TodoList
 								groups={todoGroups}
 								isMainTodoFeed={true}
-								feedPinnedTodos={feedPinnedTodos}
+								feedPinnedRows={feedPinnedRows}
 								{resolveGroupForTodo}
 								{allGoals}
 								onUpdate={updateTodo}
@@ -1020,6 +1008,8 @@
 								searchText={searchText}
 							{targetTodoId}
 							activeTodoId={activeTodoId}
+							{focusTodoId}
+							onFocusTitleHandled={handleFocusTitleHandled}
 							{getPrimaryNoteForTodo}
 							{getLinkedNotesForTodo}
 							{getLinkedGoalIndicesForTodo}
@@ -1027,7 +1017,9 @@
 							onClearHighlight={clearHighlight}
 						/>
 					{:else}
-						<div class="todo-panel p-4 text-sm text-slate-700 dark:text-slate-300">Preparing task list...</div>
+						<div class="todo-panel p-4 text-sm text-slate-700 dark:text-slate-300">
+							{dataLoaded ? 'Preparing task list...' : 'Loading tasks...'}
+						</div>
 						{/if}
 					{:else}
 						<p class="page-subtitle mb-4">

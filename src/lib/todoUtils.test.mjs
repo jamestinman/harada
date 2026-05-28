@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeTodoLists } from './todoUtils.js';
+import {
+	mergeTodoLists,
+	buildFeedPinnedRows,
+	filterFeedPinnedRowsBySearch
+} from './todoUtils.js';
 
 test('mergeTodoLists prefers todo with newer updatedAt', () => {
 	const id = 'todo-1';
@@ -34,5 +38,64 @@ test('mergeTodoLists uses ordering or createdAt for stable sort', () => {
 	const titles = merged.map((t) => t.title);
 
 	assert.deepEqual(titles, ['B', 'A']);
+});
+
+test('buildFeedPinnedRows lists descendants under a pinned parent', () => {
+	const parent = {
+		id: 'p',
+		pinned: true,
+		status: 'todo',
+		parentId: null,
+		ordering: 1
+	};
+	const child = {
+		id: 'c',
+		pinned: false,
+		status: 'todo',
+		parentId: 'p',
+		ordering: 2
+	};
+	const pinnedChild = {
+		id: 'pc',
+		pinned: true,
+		status: 'todo',
+		parentId: 'p',
+		ordering: 3
+	};
+
+	const rows = buildFeedPinnedRows([parent, child, pinnedChild]);
+	assert.deepEqual(
+		rows.map((r) => [r.todo.id, r.indentLevel]),
+		[
+			['p', 0],
+			['c', 1],
+			['pc', 1]
+		]
+	);
+});
+
+test('buildFeedPinnedRows omits pinned child as separate root when parent is pinned', () => {
+	const parent = { id: 'p', pinned: true, status: 'todo', parentId: null, ordering: 1 };
+	const child = { id: 'c', pinned: true, status: 'todo', parentId: 'p', ordering: 2 };
+
+	const rows = buildFeedPinnedRows([parent, child]);
+	assert.deepEqual(
+		rows.map((r) => r.todo.id),
+		['p', 'c']
+	);
+});
+
+test('filterFeedPinnedRowsBySearch keeps pinned ancestors of matching descendants', () => {
+	const rows = [
+		{ todo: { id: 'p', title: 'Parent', parentId: null }, indentLevel: 0 },
+		{ todo: { id: 'c', title: 'Southampton', parentId: 'p' }, indentLevel: 1 }
+	];
+	const filtered = filterFeedPinnedRowsBySearch(rows, (todo) =>
+		(todo.title ?? '').toLowerCase().includes('south')
+	);
+	assert.deepEqual(
+		filtered.map((r) => r.todo.id),
+		['p', 'c']
+	);
 });
 

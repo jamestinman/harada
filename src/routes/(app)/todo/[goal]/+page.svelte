@@ -1,7 +1,7 @@
 <script>
 	import { onMount, tick } from 'svelte';
 	import { page } from '$app/state';
-	import { goto } from '$app/navigation';
+	import { afterNavigate, goto } from '$app/navigation';
 	import { browser } from '$app/environment';
 	import { store } from '$stores/store.svelte.js';
 	import { authStore } from '$stores/auth.svelte.js';
@@ -46,6 +46,17 @@
 	const targetTodoId = $derived(page.url.searchParams.get('task') || null);
 	let activeGoalTab = $state('tasks');
 	let activeTodoId = $state(null);
+	let focusTodoId = $state(null);
+	let skipTaskScroll = false;
+
+	function requestTaskFocus(id) {
+		if (!id) return;
+		focusTodoId = id;
+	}
+
+	function handleFocusTitleHandled() {
+		focusTodoId = null;
+	}
 
 	function clearHighlight() {
 		activeTodoId = null;
@@ -57,6 +68,7 @@
 		activeTodoId = id;
 		if (!browser) return;
 		if (page.url.searchParams.get('task') === id) return;
+		skipTaskScroll = true;
 		const url = new URL(page.url.href);
 		url.searchParams.set('task', id);
 		goto(`${url.pathname}${url.search}`, { replaceState: true, keepFocus: true });
@@ -506,7 +518,18 @@
 		if (todos.find((todo) => todo.id === targetTodoId)?.status === 'done') {
 			showCompleted = true;
 		}
-		void tick().then(() => scrollToLinkedTask(targetTodoId));
+	});
+
+	afterNavigate(() => {
+		if (!browser || !dataLoaded) return;
+		const task = page.url.searchParams.get('task');
+		if (!task) return;
+		activeTodoId = task;
+		if (skipTaskScroll) {
+			skipTaskScroll = false;
+			return;
+		}
+		void tick().then(() => scrollToLinkedTask(task));
 	});
 
 	function scrollToLinkedTask(todoId, attempt = 0) {
@@ -519,7 +542,7 @@
 			}
 			return;
 		}
-		el.scrollIntoView({ behavior: attempt === 0 ? 'smooth' : 'auto', block: 'center' });
+		el.scrollIntoView({ behavior: attempt === 0 ? 'smooth' : 'auto', block: 'nearest' });
 	}
 
 	// When this goal has no todos, ensure one blank todo exists so the user can type immediately
@@ -670,16 +693,7 @@
 		if (content?.trim()) {
 			store.updateTodo(todoId, { isDraft: false });
 		}
-	const existingPrimary = store.getPrimaryNoteForTask(todoId);
-	const savedNote = store.setPrimaryNoteForTask(todoId, { content, goalIndex });
-	if (!existingPrimary && savedNote) {
-		store.pendingSelectNoteId = savedNote.id;
-		if (typeof goalIndex === 'number') {
-			goto(`/notes/${indexToNomenclature(goalIndex)}`);
-			return;
-		}
-		goto('/notes');
-	}
+		store.setPrimaryNoteForTask(todoId, { content, goalIndex });
 	}
 
 	function deleteTodo(id) {
@@ -710,6 +724,8 @@
 			ordering: newOrdering
 		};
 		store.harada_chart.todos = [...store.harada_chart.todos, newTodo];
+		activeTodoId = newTodo.id;
+		requestTaskFocus(newTodo.id);
 
 		if (typeof targetGoalIndex === 'number') {
 			store.bumpGoalAfterTodoActivity(targetGoalIndex);
@@ -782,42 +798,9 @@
 		// Delete the current todo
 		deleteTodo(currentTodoId);
 		
-		// Focus the previous todo if it exists and start editing
 		if (currentIndex > 0) {
 			const previousTodo = goalTodosList[currentIndex - 1];
-			if (previousTodo) {
-				setTimeout(() => {
-					// Find the button for the previous todo and click it to start editing
-					const prevTodoElement = document.querySelector(`[data-todo-item-id="${previousTodo.id}"]`);
-					if (prevTodoElement) {
-						// Find the title button (the one with flex-1 class)
-						const editButton = prevTodoElement.querySelector('button.flex-1');
-						if (editButton) {
-							editButton.click();
-							// Wait for Svelte to render the input, then focus it
-							// Use multiple attempts to ensure the input is ready
-							const tryFocus = (attempts = 0) => {
-								const prevInput = document.querySelector(`[data-todo-id="${previousTodo.id}"]`);
-								if (prevInput) {
-									prevInput.focus();
-									// Double-check focus is active
-									if (document.activeElement !== prevInput) {
-										setTimeout(() => {
-											prevInput.focus();
-										}, 10);
-									}
-								} else if (attempts < 10) {
-									// Retry if input not found yet
-									setTimeout(() => tryFocus(attempts + 1), 20);
-								}
-							};
-							requestAnimationFrame(() => {
-								setTimeout(() => tryFocus(), 50);
-							});
-						}
-					}
-				}, 50);
-			}
+			if (previousTodo) requestTaskFocus(previousTodo.id);
 		}
 	}
 
@@ -1217,6 +1200,8 @@
 							searchText={searchText}
 						{targetTodoId}
 						activeTodoId={activeTodoId}
+						{focusTodoId}
+						onFocusTitleHandled={handleFocusTitleHandled}
 						{getPrimaryNoteForTodo}
 						{getLinkedNotesForTodo}
 						{getLinkedGoalIndicesForTodo}
@@ -1467,6 +1452,8 @@
 								searchText={searchText}
 							{targetTodoId}
 							activeTodoId={activeTodoId}
+							{focusTodoId}
+							onFocusTitleHandled={handleFocusTitleHandled}
 							{getPrimaryNoteForTodo}
 							{getLinkedNotesForTodo}
 							{getLinkedGoalIndicesForTodo}

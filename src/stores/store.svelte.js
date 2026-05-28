@@ -326,8 +326,12 @@ class Store {
 		return true;
 	}
 
+	_localOwnerUserId() {
+		return authStore.user?.id ?? authStore.lastKnownUser?.id ?? null;
+	}
+
 	async _loadLocalSnapshot() {
-		const userId = authStore.user?.id ?? null;
+		const userId = this._localOwnerUserId();
 		try {
 			const indexedDbSnapshot = await loadLocalHaradaSnapshot(userId);
 			if (indexedDbSnapshot) return indexedDbSnapshot;
@@ -351,6 +355,11 @@ class Store {
 		this._setBootstrapping(true);
 
 		try {
+			// Wait for auth before choosing the IndexedDB owner or hitting Supabase.
+			if (supabase) {
+				await authStore.whenReady();
+			}
+
 			// 1) Bootstrap from local persistent storage so the app works offline
 			const local = await this._loadLocalSnapshot();
 			if (local) {
@@ -1033,7 +1042,7 @@ class Store {
 				? this.taskGoalLinks.map((link) => (link && typeof link === 'object' ? { ...link } : link))
 				: [];
 
-			const userId = authStore.user?.id ?? null;
+			const userId = this._localOwnerUserId();
 			const taskRows = plainTodos
 				.map((todo) => this._todoToTaskRow(todo, userId))
 				.filter(Boolean);
@@ -2084,7 +2093,7 @@ class Store {
 	// --- Auth ---
 
 	handleAuthChange() {
-		if (!browser) return;
+		if (!browser || authStore.loading) return;
 
 		this._isInitialized = false;
 		this._unsubscribeRealtime();

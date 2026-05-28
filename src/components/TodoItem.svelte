@@ -38,7 +38,10 @@
 		linkedGoalIndices = [],
 		/** When set (from `?task=` query), empty tasks focus even if `disableAutoFocus` is true */
 		pageTaskId = null,
-		isHighlighted = false
+		isHighlighted = false,
+		/** Parent requested title edit + focus (e.g. Return → new task below) */
+		focusTitle = false,
+		onFocusTitleHandled = null
 	} = $props();
 
 	let isEditing = $state(false);
@@ -90,20 +93,24 @@
 		});
 	});
 
-	// Auto-start editing for a fresh empty todo, or when ?task= points at this empty row (e.g. + New task)
+	// Auto-start editing for a fresh empty todo, when ?task= points at this row, or parent focus request.
 	$effect(() => {
 		const allowRecentEmpty =
 			isNewEmptyTodo && !disableAutoFocus && !isFeedPinnedDuplicate;
 		const allowLinkedEmpty = isUrlTargetEmptyTodo;
+		const allowParentFocus = focusTitle && !isFeedPinnedDuplicate;
 
 		if (
-			(allowRecentEmpty || allowLinkedEmpty) &&
+			(allowRecentEmpty || allowLinkedEmpty || allowParentFocus) &&
 			autoFocusedTodoId !== todo.id &&
 			!isEditingTitle &&
 			!isEditing
 		) {
 			autoFocusedTodoId = todo.id;
-			startEditingTitle();
+			const syncHighlight = allowRecentEmpty || allowLinkedEmpty;
+			void startEditingTitle({ syncHighlight }).then(() => {
+				if (allowParentFocus) onFocusTitleHandled?.();
+			});
 		}
 	});
 
@@ -116,30 +123,25 @@
 		onUpdate({ pinned: !isPinned });
 	}
 
-	async function startEditingTitle() {
+	async function startEditingTitle({ syncHighlight = true } = {}) {
 		editTitle = todo.title || '';
 		isEditingTitle = true;
-		if (onTitleFocus) onTitleFocus(todo.id);
+		if (syncHighlight && onTitleFocus) onTitleFocus(todo.id);
 		await tick();
-		// URL/deep-link + freshly inserted rows need a beat so the input mounts and scroll settles
-		const delayMs =
-			pageTaskId === todo.id ? 120 : isNewEmptyTodo ? 64 : 0;
-		setTimeout(() => {
-			const applyFocus = () => {
-				if (!titleInputElement) return;
-				titleInputElement.focus();
-				if (titleInputElement.value === '') {
-					titleInputElement.select();
-				} else {
-					const len = titleInputElement.value.length;
-					titleInputElement.setSelectionRange(len, len);
-				}
-			};
-			applyFocus();
-			if (document.activeElement !== titleInputElement) {
-				requestAnimationFrame(() => applyFocus());
+		const applyFocus = () => {
+			if (!titleInputElement) return;
+			titleInputElement.focus({ preventScroll: true });
+			if (titleInputElement.value === '') {
+				titleInputElement.select();
+			} else {
+				const len = titleInputElement.value.length;
+				titleInputElement.setSelectionRange(len, len);
 			}
-		}, delayMs);
+		};
+		applyFocus();
+		if (document.activeElement !== titleInputElement) {
+			requestAnimationFrame(applyFocus);
+		}
 	}
 
 	function saveTitle(syncHighlight = true) {
@@ -154,40 +156,12 @@
 	function handleTitleKeydown(e) {
 		if (e.key === 'Enter') {
 			e.preventDefault();
-			saveTitle(false); // Save before setting isCreatingNext so the guard doesn't block it; next row will take highlight
+			saveTitle(false);
 			isCreatingNext = true;
-			// Create new todo below and focus it
-			if (onCreateNext) {
-				const newTodo = onCreateNext();
-				if (newTodo) {
-					// Click the edit button to enter edit mode (works even when disableAutoFocus=true),
-					// then focus the input once it renders.
-					requestAnimationFrame(() => {
-						const nextTodoElement = document.querySelector(`[data-todo-item-id="${newTodo.id}"]`);
-						const editButton = nextTodoElement?.querySelector('button.flex-1');
-						if (editButton) {
-							editButton.click();
-						}
-						const tryFocus = (attempts = 0) => {
-							const nextInput = document.querySelector(`[data-todo-id="${newTodo.id}"]`);
-							if (nextInput) {
-								nextInput.focus();
-								nextInput.select();
-								isCreatingNext = false;
-							} else if (attempts < 10) {
-								setTimeout(() => tryFocus(attempts + 1), 20);
-							} else {
-								isCreatingNext = false;
-							}
-						};
-						setTimeout(() => tryFocus(), 50);
-					});
-				} else {
-					isCreatingNext = false;
-				}
-			} else {
+			onCreateNext?.();
+			requestAnimationFrame(() => {
 				isCreatingNext = false;
-			}
+			});
 		} else if ((e.metaKey || e.ctrlKey) && e.code === 'BracketRight') {
 			e.preventDefault();
 			if (onMakeSubtask && canIndent) {
@@ -440,7 +414,7 @@
 		{:else}
 			<button
 				type="button"
-				onclick={startEditingTitle}
+				onclick={() => startEditingTitle()}
 				class={`flex-1 text-left text-sm min-h-[1.5rem] py-1 transition ${
 					todo.status === 'done'
 						? 'line-through'

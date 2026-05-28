@@ -692,3 +692,105 @@ export function updateGoalTimestamp(grid, goalIndex) {
 	
 	return grid;
 }
+
+export function getTodoOrderingValue(todo) {
+	if (typeof todo?.ordering === 'number' && Number.isFinite(todo.ordering)) return todo.ordering;
+	if (typeof todo?.createdAt === 'number' && Number.isFinite(todo.createdAt)) return todo.createdAt;
+	return 0;
+}
+
+/**
+ * Rows for the /todo pinned strip: pinned roots (no pinned ancestor), each followed by
+ * all active descendants in tree order. indentLevel is relative to that pinned root.
+ */
+export function buildFeedPinnedRows(todos, getTodoOrdering = getTodoOrderingValue) {
+	const active = (todos ?? []).filter((t) => t.status !== 'done');
+	if (active.length === 0) return [];
+
+	const byId = new Map(active.map((t) => [t.id, t]));
+	const pinnedIds = new Set(active.filter((t) => t.pinned === true).map((t) => t.id));
+	if (pinnedIds.size === 0) return [];
+
+	function hasPinnedAncestor(todo) {
+		let currentId = todo.parentId;
+		const visited = new Set();
+		while (currentId) {
+			if (visited.has(currentId)) break;
+			visited.add(currentId);
+			if (pinnedIds.has(currentId)) return true;
+			const parent = byId.get(currentId);
+			if (!parent) break;
+			currentId = parent.parentId;
+		}
+		return false;
+	}
+
+	const childrenByParent = new Map();
+	for (const todo of active) {
+		const parentKey = todo.parentId ?? '__root__';
+		if (!childrenByParent.has(parentKey)) childrenByParent.set(parentKey, []);
+		childrenByParent.get(parentKey).push(todo);
+	}
+	for (const siblings of childrenByParent.values()) {
+		siblings.sort((a, b) => getTodoOrdering(a) - getTodoOrdering(b));
+	}
+
+	const rows = [];
+	function walkDescendants(parentId, depth) {
+		for (const child of childrenByParent.get(parentId) ?? []) {
+			rows.push({ todo: child, indentLevel: depth });
+			walkDescendants(child.id, depth + 1);
+		}
+	}
+
+	const roots = active
+		.filter((t) => t.pinned === true && !hasPinnedAncestor(t))
+		.sort((a, b) => getTodoOrdering(a) - getTodoOrdering(b));
+
+	for (const root of roots) {
+		rows.push({ todo: root, indentLevel: 0 });
+		walkDescendants(root.id, 1);
+	}
+
+	return rows;
+}
+
+/** Keep ancestor context when search matches a pinned subtree member. */
+export function filterFeedPinnedRowsBySearch(rows, matchesSearch) {
+	if (!rows.length) return [];
+	if (!matchesSearch) return rows;
+
+	const rowById = new Map(rows.map((row) => [row.todo.id, row]));
+	const includeIds = new Set();
+
+	function includeAncestors(todoId) {
+		let parentId = rowById.get(todoId)?.todo?.parentId;
+		const visited = new Set();
+		while (parentId) {
+			if (visited.has(parentId)) break;
+			visited.add(parentId);
+			const parentRow = rowById.get(parentId);
+			if (!parentRow) break;
+			includeIds.add(parentId);
+			parentId = parentRow.todo.parentId ?? null;
+		}
+	}
+
+	function includeDescendants(fromIndex) {
+		const rootDepth = rows[fromIndex].indentLevel;
+		for (let i = fromIndex + 1; i < rows.length; i++) {
+			if (rows[i].indentLevel <= rootDepth) break;
+			includeIds.add(rows[i].todo.id);
+		}
+	}
+
+	for (let i = 0; i < rows.length; i++) {
+		const row = rows[i];
+		if (!matchesSearch(row.todo)) continue;
+		includeIds.add(row.todo.id);
+		includeAncestors(row.todo.id);
+		includeDescendants(i);
+	}
+
+	return rows.filter((row) => includeIds.has(row.todo.id));
+}

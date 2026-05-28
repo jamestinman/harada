@@ -3,6 +3,7 @@
 	import { onDestroy, onMount, tick } from 'svelte';
 	import { ChevronDown } from 'lucide-svelte';
 	import TodoItem from '$components/TodoItem.svelte';
+	import { filterFeedPinnedRowsBySearch } from '$lib/todoUtils.js';
 
 	let {
 		groups = [],
@@ -29,9 +30,12 @@
 		targetTodoId = null,
 		/** Immediately-updated focused task id (beats async `goto` updating `?task=`) */
 		activeTodoId = null,
-		/** When true, pinned tasks show pink chrome; top duplicate strip uses feedPinnedTodos + resolveGroupForTodo */
+		/** One-shot: open title editor on this row without scrolling or URL side effects */
+		focusTodoId = null,
+		onFocusTitleHandled = null,
+		/** When true, pinned tasks show pink chrome; top duplicate strip uses feedPinnedRows + resolveGroupForTodo */
 		isMainTodoFeed = false,
-		feedPinnedTodos = null,
+		feedPinnedRows = null,
 		resolveGroupForTodo = null,
 		getPrimaryNoteForTodo = null,
 		getLinkedNotesForTodo = null,
@@ -82,9 +86,10 @@
 	let collapsedTodos = $state(new Set());
 	let collapsedGroups = $state(new Set());
 	let renderedTodoLimit = $state(INITIAL_RENDERED_TODOS);
-	let renderResetKey = '';
+	let lastSearchForRender = '';
 
 	const highlightTaskId = $derived(activeTodoId ?? targetTodoId);
+	const renderThroughTodoId = $derived(focusTodoId ?? targetTodoId);
 
 	function shouldLogPerf() {
 		return browser && (dev || localStorage.getItem('harada_perf') === '1');
@@ -129,7 +134,7 @@
 			console.log('[Harada perf] TodoList mounted', {
 				groups: groups.length,
 				rows: countGroupTodos(groups),
-				pinned: feedPinnedTodos?.length ?? 0,
+				pinned: feedPinnedRows?.length ?? 0,
 				search: searchText,
 				initialRenderedRows: Math.min(renderedTodoLimit, visibleFlatTodos.length),
 				totalVisibleRows: visibleFlatTodos.length
@@ -232,8 +237,8 @@
 	});
 
 	const effectiveRenderedTodoLimit = $derived.by(() => {
-		if (!highlightTaskId) return renderedTodoLimit;
-		const targetIndex = visibleFlatTodos.findIndex((todo) => todo.id === highlightTaskId);
+		if (!renderThroughTodoId) return renderedTodoLimit;
+		const targetIndex = visibleFlatTodos.findIndex((todo) => todo.id === renderThroughTodoId);
 		return targetIndex >= 0 ? Math.max(renderedTodoLimit, targetIndex + 1) : renderedTodoLimit;
 	});
 
@@ -241,12 +246,22 @@
 		return new Set(visibleFlatTodos.slice(0, effectiveRenderedTodoLimit).map((todo) => todo.id));
 	});
 
+	// Only reset virtualized window on search — adding a task must not collapse the list.
 	$effect(() => {
-		const nextKey = `${searchText}|${highlightTaskId ?? ''}|${flatTodos.map((todo) => todo.id).join(',')}`;
-		if (nextKey === renderResetKey) return;
-		renderResetKey = nextKey;
+		const query = searchText ?? '';
+		if (query === lastSearchForRender) return;
+		lastSearchForRender = query;
 		renderedTodoLimit = INITIAL_RENDERED_TODOS;
 		scheduleProgressiveRender();
+	});
+
+	// Ensure a programmatically focused row is actually in the DOM.
+	$effect(() => {
+		if (!focusTodoId) return;
+		const targetIndex = visibleFlatTodos.findIndex((todo) => todo.id === focusTodoId);
+		if (targetIndex >= 0 && renderedTodoLimit < targetIndex + 1) {
+			renderedTodoLimit = targetIndex + 1;
+		}
 	});
 
 	function getRenderedTodosForGroup(group, todosList) {
@@ -351,10 +366,10 @@
 	}
 
 	const visibleFeedPinned = $derived.by(() => {
-		if (!isMainTodoFeed || !feedPinnedTodos?.length) return [];
+		if (!isMainTodoFeed || !feedPinnedRows?.length) return [];
 		const query = (searchText ?? '').trim().toLowerCase();
-		if (!query) return feedPinnedTodos;
-		return feedPinnedTodos.filter((t) => matchesSearch(t));
+		if (!query) return feedPinnedRows;
+		return filterFeedPinnedRowsBySearch(feedPinnedRows, matchesSearch);
 	});
 
 	function hasVisibleTodosInGroup(group) {
@@ -900,7 +915,8 @@
 		<div class="mb-6 space-y-2">
 			<h2 class="text-sm font-semibold uppercase tracking-wide text-pink-300/90">Pinned</h2>
 			<div class="space-y-2">
-				{#each visibleFeedPinned as todo (todo.id)}
+				{#each visibleFeedPinned as row (row.todo.id)}
+					{@const todo = row.todo}
 					{@const pinGroup = resolveGroupForTodo(todo)}
 					{#if pinGroup}
 						<div
@@ -923,12 +939,14 @@
 								onMakeSubtask={() => onMakeSubtask && onMakeSubtask(todo.id, pinGroup)}
 								onOutdent={() => onOutdent && onOutdent(todo.id, pinGroup)}
 								onTitleFocus={(id) => onTitleFocus && onTitleFocus(id)}
-								indentLevel={0}
+								indentLevel={row.indentLevel}
 								canIndent={canIndent ? canIndent(todo.id, pinGroup) : false}
 								canOutdent={canOutdent ? canOutdent(todo.id, pinGroup) : false}
 								{allGoals}
 								allTodos={pinGroup.todos}
 								pageTaskId={highlightTaskId}
+								focusTitle={focusTodoId === todo.id}
+								onFocusTitleHandled={focusTodoId === todo.id ? onFocusTitleHandled : null}
 								{disableAutoFocus}
 								hasChildren={parentTodoIds.has(todo.id)}
 								isCollapsed={collapsedTodos.has(todo.id)}
@@ -1049,6 +1067,8 @@
 												{allGoals}
 												allTodos={subGroup.todos}
 												pageTaskId={highlightTaskId}
+												focusTitle={focusTodoId === todo.id}
+												onFocusTitleHandled={focusTodoId === todo.id ? onFocusTitleHandled : null}
 												{disableAutoFocus}
 												hasChildren={parentTodoIds.has(todo.id)}
 												isCollapsed={collapsedTodos.has(todo.id)}
@@ -1110,6 +1130,8 @@
 								{allGoals}
 								allTodos={group.todos}
 								pageTaskId={highlightTaskId}
+								focusTitle={focusTodoId === todo.id}
+								onFocusTitleHandled={focusTodoId === todo.id ? onFocusTitleHandled : null}
 								{disableAutoFocus}
 								hasChildren={parentTodoIds.has(todo.id)}
 								isCollapsed={collapsedTodos.has(todo.id)}
