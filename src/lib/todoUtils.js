@@ -794,3 +794,211 @@ export function filterFeedPinnedRowsBySearch(rows, matchesSearch) {
 
 	return rows.filter((row) => includeIds.has(row.todo.id));
 }
+
+export function organizeTodosWithHierarchy(todosList, getTodoOrdering = getTodoOrderingValue) {
+	const byParent = new Map();
+	const ids = new Set(todosList.map((todo) => todo.id));
+	for (const todo of todosList) {
+		const parentKey = todo.parentId && ids.has(todo.parentId) ? todo.parentId : '__root__';
+		if (!byParent.has(parentKey)) byParent.set(parentKey, []);
+		byParent.get(parentKey).push(todo);
+	}
+
+	for (const siblingList of byParent.values()) {
+		siblingList.sort((a, b) => getTodoOrdering(a) - getTodoOrdering(b));
+	}
+
+	const ordered = [];
+	function walk(parentId = null) {
+		const key = parentId ?? '__root__';
+		const siblings = byParent.get(key) || [];
+		for (const todo of siblings) {
+			ordered.push(todo);
+			walk(todo.id);
+		}
+	}
+
+	walk(null);
+	return ordered;
+}
+
+/**
+ * Build task→note and task→goal lookup maps in a single pass for O(1) row rendering.
+ */
+export function buildTaskNoteIndexMaps(notes, noteTaskLinks, taskGoalLinks, todos) {
+	const notesById = new Map((notes ?? []).map((note) => [note.id, note]));
+	const primaryNoteByTaskId = new Map();
+	const freeNotesByTaskId = new Map();
+
+	for (const link of noteTaskLinks ?? []) {
+		const note = notesById.get(link.noteId);
+		if (!note) continue;
+		if (link.isPrimary === true) {
+			primaryNoteByTaskId.set(link.taskId, note);
+			continue;
+		}
+		if (!freeNotesByTaskId.has(link.taskId)) freeNotesByTaskId.set(link.taskId, []);
+		freeNotesByTaskId.get(link.taskId).push(note);
+	}
+
+	for (const notesList of freeNotesByTaskId.values()) {
+		notesList.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+	}
+
+	const goalIndicesByTaskId = new Map();
+	for (const link of taskGoalLinks ?? []) {
+		if (!goalIndicesByTaskId.has(link.taskId)) goalIndicesByTaskId.set(link.taskId, []);
+		const indices = goalIndicesByTaskId.get(link.taskId);
+		if (!indices.includes(link.goalIndex)) indices.push(link.goalIndex);
+	}
+	for (const todo of todos ?? []) {
+		if (typeof todo?.goalIndex !== 'number' || !todo.id) continue;
+		const canonical = canonicalGoalIndex(todo.goalIndex);
+		if (!goalIndicesByTaskId.has(todo.id)) goalIndicesByTaskId.set(todo.id, []);
+		const indices = goalIndicesByTaskId.get(todo.id);
+		if (!indices.includes(canonical)) indices.push(canonical);
+	}
+	for (const [taskId, indices] of goalIndicesByTaskId) {
+		goalIndicesByTaskId.set(
+			taskId,
+			[...indices].sort((a, b) => a - b)
+		);
+	}
+
+	return { primaryNoteByTaskId, freeNotesByTaskId, goalIndicesByTaskId };
+}
+
+const GOAL_GROUP_ORDER_STEP = 1024;
+
+/**
+ * Single O(n) pass to build All Tasks feed groups, sidebar menu items, and counts.
+ */
+export function buildAllTasksFeed({
+	todos = [],
+	grid = [],
+	taskGoalKeySet = new Set(),
+	linkedTaskIdSet = new Set(),
+	getTodoOrdering = getTodoOrderingValue,
+	goalGroupOrderStep = GOAL_GROUP_ORDER_STEP
+} = {}) {
+	const active = (todos ?? []).filter((t) => !t?.isDraft && t.status !== 'done');
+
+	function isUnassignedNoGoalTodo(t) {
+		return (
+			(t.listType === 'goal' || !t.listType) &&
+			t.goalIndex == null &&
+			!linkedTaskIdSet.has(t.id)
+		);
+	}
+
+	const noGoalTodos = [];
+	const goalBuckets = new Map();
+	const customBuckets = new Map();
+
+	for (const t of active) {
+		if (t.listType === 'custom') {
+			if (!customBuckets.has(t.listId)) {
+				customBuckets.set(t.listId, { listName: t.listName || 'New list', todos: [] });
+			}
+			customBuckets.get(t.listId).todos.push(t);
+			continue;
+		}
+
+		if (t.listType !== 'goal' && t.listType) continue;
+
+		if (isUnassignedNoGoalTodo(t)) {
+			if (!t.pinned) noGoalTodos.push(t);
+			continue;
+		}
+
+		if (typeof t.goalIndex === 'number') {
+			const idx = canonicalGoalIndex(t.goalIndex);
+			if (!goalBuckets.has(idx)) goalBuckets.set(idx, new Map());
+			goalBuckets.get(idx).set(t.id, t);
+		}
+
+		for (const key of taskGoalKeySet) {
+			const sep = key.lastIndexOf(':');
+			if (sep === -1) continue;
+			const taskId = key.slice(0, sep);
+			const goalIdx = Number(key.slice(sep + 1));
+			if (taskId !== t.id || Number.isNaN(goalIdx)) continue;
+			if (!goalBuckets.has(goalIdx)) goalBuckets.set(goalIdx, new Map());
+			goalBuckets.get(goalIdx).set(t.id, t);
+		}
+	}
+
+	const goalGroups = [];
+	for (const [goalIndex, bucketMap] of goalBuckets) {
+		const bucketTodos = [...bucketMap.values()];
+		const organized = organizeTodosWithHierarchy(bucketTodos, getTodoOrdering);
+		if (organized.length === 0) continue;
+		const cell = grid[goalIndex];
+		const text = (cell?.text ?? '').trim();
+		goalGroups.push({
+			id: `goal-${goalIndex}`,
+			groupType: 'goal',
+			goalIndex,
+			label: text || indexToNomenclature(goalIndex),
+			href: `/todo/${indexToNomenclature(goalIndex)}`,
+			addTitle: 'Add todo to this goal',
+			todos: organized,
+			goalOrdering:
+				typeof cell?.todo_group_ordering === 'number' && Number.isFinite(cell.todo_group_ordering)
+					? cell.todo_group_ordering
+					: (goalIndex + 1) * goalGroupOrderStep,
+			updated_at: cell?.updated_at || null
+		});
+	}
+
+	goalGroups.sort((a, b) => {
+		if (a.goalOrdering !== b.goalOrdering) return a.goalOrdering - b.goalOrdering;
+		return a.goalIndex - b.goalIndex;
+	});
+
+	const groups = [...goalGroups];
+	const organizedNoGoal = organizeTodosWithHierarchy(noGoalTodos, getTodoOrdering);
+	if (organizedNoGoal.length > 0) {
+		groups.unshift({
+			id: 'no-goal',
+			groupType: 'no-goal',
+			goalIndex: null,
+			label: '',
+			href: null,
+			addTitle: 'Add todo without goal',
+			todos: organizedNoGoal
+		});
+	}
+
+	const customGroups = [];
+	for (const [listId, { listName, todos: customTodos }] of customBuckets) {
+		customGroups.push({
+			id: listId,
+			groupType: 'custom',
+			goalIndex: null,
+			listId,
+			label: listName,
+			href: null,
+			addTitle: `Add todo to ${listName}`,
+			todos: organizeTodosWithHierarchy(customTodos, getTodoOrdering)
+		});
+	}
+
+	const todoGroups = [...groups, ...customGroups];
+	const goalMenuItems = goalGroups.map((group) => ({
+		id: group.id,
+		label: group.label,
+		href: group.href,
+		count: group.todos.length
+	}));
+	const allTodos = [...active].sort((a, b) => getTodoOrdering(a) - getTodoOrdering(b));
+
+	const groupsByTodoId = new Map();
+	for (const group of todoGroups) {
+		for (const todo of group.todos) {
+			groupsByTodoId.set(todo.id, group);
+		}
+	}
+
+	return { todoGroups, goalMenuItems, allTodos, groupsByTodoId, goalGroups };
+}

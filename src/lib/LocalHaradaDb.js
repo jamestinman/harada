@@ -16,15 +16,6 @@ let dbPromise = null;
 const signatureCache = new Map();
 const keyCache = new Map();
 
-function shouldLogPerf() {
-	return browser && (dev || localStorage.getItem('harada_perf') === '1');
-}
-
-function logPerf(label, start, data = {}) {
-	if (!shouldLogPerf()) return;
-	console.log(`[Harada perf] ${label}: ${(performance.now() - start).toFixed(1)}ms`, data);
-}
-
 function ownerKey(userId) {
 	return typeof userId === 'string' && userId ? userId : DEFAULT_OWNER;
 }
@@ -208,14 +199,6 @@ export async function loadLocalHaradaSnapshot(userId = null) {
 		return null;
 	}
 
-	logPerf('IndexedDB loadLocalHaradaSnapshot', start, {
-		tasks: result.tasks.length,
-		notes: result.notes.length,
-		noteTaskLinks: result.noteTaskLinks.length,
-		noteGoalLinks: result.noteGoalLinks.length,
-		taskGoalLinks: result.taskGoalLinks.length
-	});
-
 	return result;
 }
 
@@ -296,13 +279,6 @@ export async function saveLocalHaradaSnapshot({
 	});
 
 	await txDone(tx);
-	logPerf('IndexedDB saveLocalHaradaSnapshot', start, {
-		tasks: tasks.length,
-		notes: notes.length,
-		noteTaskLinks: noteTaskLinks.length,
-		noteGoalLinks: noteGoalLinks.length,
-		taskGoalLinks: taskGoalLinks.length
-	});
 	return true;
 }
 

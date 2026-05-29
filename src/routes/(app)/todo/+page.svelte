@@ -2,7 +2,7 @@
 	import { onMount, tick } from 'svelte';
 	import { afterNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { browser, dev } from '$app/environment';
+	import { browser } from '$app/environment';
 	import { store } from '$stores/store.svelte.js';
 	import { authStore } from '$stores/auth.svelte.js';
 	import {
@@ -13,7 +13,9 @@
 		buildGoalListMeta,
 		buildCustomListMeta,
 		getNoteTitle,
-		buildFeedPinnedRows
+		buildFeedPinnedRows,
+		buildAllTasksFeed,
+		buildTaskNoteIndexMaps
 	} from '$lib/todoUtils.js';
 	import TodoList from '$components/TodoList.svelte';
 	import WorkspaceToolbar from '$components/WorkspaceToolbar.svelte';
@@ -29,41 +31,22 @@
 	let initialTodoListReady = $state(false);
 	let isNarrowLayout = $state(false);
 
-	function shouldLogPerf() {
-		return browser && (dev || localStorage.getItem('harada_perf') === '1');
-	}
-
-	function logPerf(label, start, data = {}) {
-		if (!shouldLogPerf()) return;
-		const ms = performance.now() - start;
-		console.log(`[Harada perf] ${label}: ${ms.toFixed(1)}ms`, data);
-	}
-
-	function measureDerived(label, fn) {
-		const start = browser ? performance.now() : 0;
-		const result = fn();
-		logPerf(label, start, {
-			todos: store.harada_chart.todos?.length ?? 0,
-			notes: store.notes?.length ?? 0,
-			links: store.taskGoalLinks?.length ?? 0
-		});
-		return result;
-	}
-
-  // Use store.harada_chart directly - it's reactive
+  // Todos are normalized on load/mutation in the store
 	const grid = $derived(store.harada_chart.grid);
-	const todos = $derived(store.harada_chart.todos.map((todo) => normalizeTodoListMeta(todo)));
+	const todos = $derived(store.harada_chart.todos);
+	const notes = $derived(store.notes);
+	const noteTaskLinks = $derived(store.noteTaskLinks);
 	const taskGoalLinks = $derived(store.taskGoalLinks);
-	const taskGoalKeySet = $derived.by(() => measureDerived('todo taskGoalKeySet derive', () => {
+	const taskGoalKeySet = $derived.by(() => {
 		const keys = new Set();
 		for (const link of taskGoalLinks) keys.add(`${link.taskId}:${link.goalIndex}`);
 		return keys;
-	}));
-	const linkedTaskIdSet = $derived.by(() => measureDerived('todo linkedTaskIdSet derive', () => {
+	});
+	const linkedTaskIdSet = $derived.by(() => {
 		const ids = new Set();
 		for (const link of taskGoalLinks) ids.add(link.taskId);
 		return ids;
-	}));
+	});
 	const dataLoaded = $derived(!store.isBootstrapping);
 	const todoListReady = $derived(initialTodoListReady && dataLoaded);
 	const targetTodoId = $derived(page.url.searchParams.get('task') || null);
@@ -82,18 +65,12 @@
 
 	function clearHighlight() {
 		activeTodoId = null;
-		if (targetTodoId) goto(page.url.pathname, { replaceState: true, keepFocus: true });
+		if (targetTodoId) goto(page.url.pathname, { replaceState: true, keepFocus: true, noScroll: true });
 	}
 
 	function setHighlightedTaskId(id) {
 		if (!id) return;
 		activeTodoId = id;
-		if (!browser) return;
-		if (page.url.searchParams.get('task') === id) return;
-		skipTaskScroll = true;
-		const url = new URL(page.url.href);
-		url.searchParams.set('task', id);
-		goto(`${url.pathname}${url.search}`, { replaceState: true, keepFocus: true });
 	}
 
 	// Clear currentGoalIndex when on the all tasks page
@@ -153,31 +130,11 @@
 				? { ...todo, ordering: updates.get(todo.id), updatedAt: ts }
 				: todo
 		);
+		for (const id of updates.keys()) store.registerTodoMutation(id);
 	}
 
 	function getVisibleGoalGroupsByOrdering() {
-		return goalIndices
-			.map((goalIndex) => {
-				const cell = grid[goalIndex];
-				return {
-					id: `goal-${goalIndex}`,
-					groupType: 'goal',
-					goalIndex,
-					label: getGoalLabelFromIndex(goalIndex),
-					href: `/todo/${indexToNomenclature(goalIndex)}`,
-					addTitle: 'Add todo to this goal',
-					todos: getVisibleGoalTodos(goalIndex),
-					goalOrdering: getGoalGroupOrdering(goalIndex),
-					updated_at: cell?.updated_at || null
-				};
-			})
-			.filter((group) => group.todos.length > 0)
-			.sort((a, b) => {
-				if (a.goalOrdering !== b.goalOrdering) {
-					return a.goalOrdering - b.goalOrdering;
-				}
-				return a.goalIndex - b.goalIndex;
-			});
+		return tasksFeed.goalGroups;
 	}
 
 	function normalizeGoalGroupOrderings(groups) {
@@ -250,7 +207,7 @@
 			todo_group_ordering: newOrdering
 		};
 		store.harada_chart.grid = nextGrid;
-		store.saveNow();
+		store.registerGridMutation({ immediate: true });
 	}
 
 	function getOrderingAfter(listId, parentId, currentTodoId) {
@@ -303,32 +260,6 @@
 		});
 	}
 
-	function organizeTodosWithHierarchy(todosList) {
-		const byParent = new Map();
-		const ids = new Set(todosList.map((todo) => todo.id));
-		for (const todo of todosList) {
-			const parentKey = todo.parentId && ids.has(todo.parentId) ? todo.parentId : '__root__';
-			if (!byParent.has(parentKey)) byParent.set(parentKey, []);
-			byParent.get(parentKey).push(todo);
-		}
-
-		for (const siblingList of byParent.values()) {
-			siblingList.sort((a, b) => getTodoOrdering(a) - getTodoOrdering(b));
-		}
-
-		const ordered = [];
-		function walk(parentId = null) {
-			const key = parentId ?? '__root__';
-			const siblings = byParent.get(key) || [];
-			for (const todo of siblings) {
-				ordered.push(todo);
-				walk(todo.id);
-			}
-		}
-
-		walk(null);
-		return ordered;
-	}
 
 	function getIndentLevel(todoId, todosList) {
 		let level = 0;
@@ -345,36 +276,36 @@
 		return level;
 	}
 
-	function getVisibleGoalTodos(goalIndex) {
-		const filtered = todos.filter(
-			(t) =>
-				(t.listType === 'goal' || !t.listType) &&
-				(goalIndex === null
-					? t.goalIndex === null && !linkedTaskIdSet.has(t.id)
-					: t.goalIndex === goalIndex ||
-						taskGoalKeySet.has(`${t.id}:${goalIndex}`)) &&
-				!t.isDraft &&
-				t.status !== 'done'
+	function isUnassignedNoGoalTodo(t) {
+		return (
+			(t.listType === 'goal' || !t.listType) &&
+			t.goalIndex == null &&
+			!linkedTaskIdSet.has(t.id)
 		);
-		return organizeTodosWithHierarchy(filtered);
 	}
 
-	function getVisibleCustomListTodos(listId) {
-		const filtered = todos.filter(
-			(t) => t.listType === 'custom' && t.listId === listId && !t.isDraft && t.status !== 'done'
+	function noGoalGroupMeta() {
+		const noGoal = todoGroups.find((g) => g.id === 'no-goal');
+		return (
+			noGoal ?? {
+				id: 'no-goal',
+				groupType: 'no-goal',
+				goalIndex: null,
+				label: '',
+				href: null,
+				addTitle: 'Add todo without goal',
+				todos: []
+			}
 		);
-		return organizeTodosWithHierarchy(filtered);
 	}
 
 	function getVisibleGroupTodos(group) {
-		if (group?.groupType === 'custom') return getVisibleCustomListTodos(group.listId);
-		if (group?.groupType === 'no-goal') return getVisibleGoalTodos(null);
-		return getVisibleGoalTodos(group?.goalIndex ?? null);
+		return group?.todos ?? [];
 	}
 
 	// Get all goals for dropdown
 	const goalIndices = [...new Set(getGoalIndices().map((idx) => canonicalGoalIndex(idx)))];
-	const allGoals = $derived.by(() => measureDerived('todo allGoals derive', () => {
+	const allGoals = $derived.by(() => {
 		return goalIndices.map((idx) => {
 			const cell = grid[idx];
 			const text = (cell?.text ?? '').trim();
@@ -400,53 +331,28 @@
 			// Fallback to index order if timestamps are equal or both null
 			return a.index - b.index;
 		});
-	}));
+	});
 
-	// Build render groups (unassigned first, then goals with todos)
-	const todoGroups = $derived.by(() => measureDerived('todoGroups derive', () => {
-		const unassignedTodos = getVisibleGoalTodos(null);
-		const customListMap = new Map();
-		todos.forEach((todo) => {
-			if (todo.listType !== 'custom' || todo.isDraft || todo.status === 'done') return;
-			if (!customListMap.has(todo.listId)) {
-				customListMap.set(todo.listId, todo.listName || 'New list');
-			}
-		});
-		const customGroups = Array.from(customListMap.entries()).map(([listId, listName]) => ({
-			id: listId,
-			groupType: 'custom',
-			goalIndex: null,
-			listId,
-			label: listName,
-			href: null,
-			addTitle: `Add todo to ${listName}`,
-			todos: getVisibleCustomListTodos(listId)
-		}));
-		const goalGroups = getVisibleGoalGroupsByOrdering();
+	// Build render groups in a single O(n) pass
+	const tasksFeed = $derived.by(() =>
+		buildAllTasksFeed({
+			todos,
+			grid,
+			taskGoalKeySet,
+			linkedTaskIdSet,
+			getTodoOrdering
+		})
+	);
+	const todoGroups = $derived(tasksFeed.todoGroups);
+	const goalMenuItems = $derived(tasksFeed.goalMenuItems);
+	const allTodos = $derived(tasksFeed.allTodos);
+	const groupsByTodoId = $derived(tasksFeed.groupsByTodoId);
 
-		const groups = [...goalGroups];
-		if (unassignedTodos.length > 0) {
-			groups.unshift({
-				id: 'no-goal',
-				groupType: 'no-goal',
-				goalIndex: null,
-				label: '',
-				href: null,
-				addTitle: 'Add todo without goal',
-				todos: unassignedTodos
-			});
-		}
-		return [...groups, ...customGroups];
-	}));
+	const taskNoteIndexMaps = $derived.by(() =>
+		buildTaskNoteIndexMaps(notes, noteTaskLinks, taskGoalLinks, todos)
+	);
 
-	const allTodos = $derived.by(() => measureDerived('allTodos derive', () =>
-		[...todos]
-			.filter((t) => !t.isDraft)
-			.filter((t) => t.status !== 'done')
-			.sort((a, b) => getTodoOrdering(a) - getTodoOrdering(b))
-	));
-
-	const allNotes = $derived.by(() => measureDerived('allNotes derive', () => {
+	const allNotes = $derived.by(() => {
 		const query = searchText.trim().toLowerCase();
 		const sorted = store.notes
 			.filter((note) => !store.isPrimaryTaskNote(note.id))
@@ -457,24 +363,15 @@
 			const title = getNoteTitle(note?.content ?? '').toLowerCase();
 			return title.includes(query) || content.includes(query);
 		});
-	}));
+	});
 
-	const feedPinnedRows = $derived.by(() =>
-		measureDerived('feedPinnedRows derive', () =>
-			buildFeedPinnedRows(todos, getTodoOrdering)
-		)
-	);
+	const feedPinnedRows = $derived(buildFeedPinnedRows(todos, getTodoOrdering));
 
 	let mobileMenuOpen = $state(false);
 	let mobileSidebarHydrated = $state(false);
 
 	onMount(() => {
 		const mountStart = performance.now();
-		console.log('[Harada perf] /todo mounted', {
-			todos: store.harada_chart.todos?.length ?? 0,
-			notes: store.notes?.length ?? 0,
-			bootstrapping: store.isBootstrapping
-		});
 		const requestedView = page.url.searchParams.get('view');
 		if (requestedView === 'notes') activeMainFeed = 'notes';
 
@@ -490,7 +387,6 @@
 		mobileSidebarHydrated = true;
 		requestAnimationFrame(() => {
 			initialTodoListReady = true;
-			logPerf('/todo first frame before TodoList lazy mount', mountStart);
 		});
 		return () => window.removeEventListener('resize', syncNarrowLayout);
 	});
@@ -553,38 +449,13 @@
 		}
 	});
 
-	const goalMenuItems = $derived.by(() =>
-		getVisibleGoalGroupsByOrdering().map((group) => ({
-			id: group.id,
-			label: group.label,
-			href: group.href,
-			count: group.todos.length
-		}))
-	);
 
 	function resolveGroupForTodo(todo) {
 		const t = normalizeTodoListMeta(todo);
-		for (const g of todoGroups) {
-			if (g.groupType === 'custom' && t.listType === 'custom' && g.listId === t.listId) {
-				return g;
-			}
-			if (
-				g.groupType === 'no-goal' &&
-				(t.listType === 'goal' || !t.listType) &&
-				t.goalIndex == null
-			) {
-				return g;
-			}
-			if (
-				g.groupType === 'goal' &&
-				(t.listType === 'goal' || !t.listType) &&
-				((typeof t.goalIndex === 'number' && g.goalIndex === t.goalIndex) ||
-					taskGoalKeySet.has(`${t.id}:${g.goalIndex}`))
-			) {
-				return g;
-			}
+		if (isUnassignedNoGoalTodo(t) && t.pinned === true) {
+			return noGoalGroupMeta();
 		}
-		return null;
+		return groupsByTodoId.get(t.id) ?? null;
 	}
 
 	// Todo management
@@ -617,7 +488,7 @@
 
 		// Set active todo ID so it gets focused
 		activeTodoId = todo.id;
-		store.saveNow();
+		store.registerTodoMutation(todo.id, { immediate: true });
 		return todo;
 	}
 
@@ -634,7 +505,7 @@
 		};
 		store.harada_chart.todos = [...store.harada_chart.todos, todo];
 		activeTodoId = todo.id;
-		store.saveNow();
+		store.registerTodoMutation(todo.id, { immediate: true });
 		return todo;
 	}
 
@@ -727,15 +598,15 @@
 	}
 
 	function getLinkedNotesForTodo(todoId) {
-		return store.getFreeNotesForTask(todoId);
+		return taskNoteIndexMaps.freeNotesByTaskId.get(todoId) ?? [];
 	}
 
 	function getPrimaryNoteForTodo(todoId) {
-		return store.getPrimaryNoteForTask(todoId);
+		return taskNoteIndexMaps.primaryNoteByTaskId.get(todoId) ?? null;
 	}
 
 	function getLinkedGoalIndicesForTodo(todoId) {
-		return store.getLinkedGoalIndicesForTask(todoId);
+		return taskNoteIndexMaps.goalIndicesByTaskId.get(todoId) ?? [];
 	}
 
 	function upsertPrimaryNoteForTodo(todoId, content, group) {
@@ -776,7 +647,7 @@
 			store.bumpGoalAfterTodoActivity(normalizedCurrentTodo.goalIndex);
 		}
 
-		store.saveNow();
+		store.registerTodoMutation(newTodo.id, { immediate: true });
 
 		return newTodo;
 	}

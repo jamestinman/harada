@@ -47,6 +47,11 @@ const defaultCell = (i = null) => {
   return { text, status: 'todo', readme: '', color: 'default', updated_at }
 }
 const GOAL_GROUP_ORDER_STEP = 1024;
+const LOCAL_SAVE_DEBOUNCE_MS = 200;
+const CLOUD_SYNC_DEBOUNCE_MS = 1200;
+const REFRESH_THROTTLE_MS = 10000;
+const REALTIME_SELF_ECHO_MS = 3000;
+
 function createLinkId(prefix) {
 	return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -227,10 +232,23 @@ class Store {
 
 	_isInitialized = false;
 	_realtimeChannel = null;
-	_savingPromise = null;
-	_pendingSave = false;
 	_pendingCloudSync = false;
 	_refreshPromise = null;
+	_localSaveTimer = null;
+	_cloudSyncTimer = null;
+	_localSavingPromise = null;
+	_cloudSavingPromise = null;
+	_localSavePending = false;
+	_cloudSyncPending = false;
+	_dirtyTasks = new Set();
+	_dirtyNotes = new Set();
+	_dirtyNoteTaskLinks = new Set();
+	_dirtyNoteGoalLinks = new Set();
+	_dirtyTaskGoalLinks = new Set();
+	_dirtyGrid = false;
+	_forceFullCloudSync = false;
+	_lastRefreshAt = 0;
+	_recentWrites = new Map();
 
 	constructor() {
 		if (!browser) return;
@@ -257,17 +275,211 @@ class Store {
 			this.isOnline = false;
 		});
 		document.addEventListener('visibilitychange', () => {
-			if (document.visibilityState === 'visible' && this._isInitialized) {
-				this.refreshFromSupabase();
+			if (!this._isInitialized) return;
+			if (document.visibilityState === 'hidden') {
+				void this.saveNow();
+				return;
 			}
+			this.refreshFromSupabase();
 		});
 		window.addEventListener('focus', () => {
 			if (this._isInitialized) {
 				this.refreshFromSupabase();
 			}
 		});
+		window.addEventListener('beforeunload', () => {
+			if (this._localSaveTimer || this._cloudSyncTimer) {
+				void this.saveNow();
+			}
+		});
 
 		this.initialize();
+	}
+
+	_recordRecentWrite(id) {
+		if (!id) return;
+		const now = Date.now();
+		this._recentWrites.set(id, now);
+		// Opportunistically sweep expired keys so the map can't grow unbounded
+		// across a long editing session.
+		if (this._recentWrites.size > 256) {
+			for (const [key, ts] of this._recentWrites) {
+				if (now - ts > REALTIME_SELF_ECHO_MS) this._recentWrites.delete(key);
+			}
+		}
+	}
+
+	_isSelfEcho(id) {
+		if (!id) return false;
+		const ts = this._recentWrites.get(id);
+		if (!ts) return false;
+		if (Date.now() - ts > REALTIME_SELF_ECHO_MS) {
+			this._recentWrites.delete(id);
+			return false;
+		}
+		return true;
+	}
+
+	_markTaskDirty(id) {
+		if (id) {
+			this._dirtyTasks.add(id);
+			this._recordRecentWrite(id);
+		}
+	}
+
+	_markNoteDirty(id) {
+		if (id) {
+			this._dirtyNotes.add(id);
+			this._recordRecentWrite(id);
+		}
+	}
+
+	_markNoteTaskLinkDirty(link) {
+		if (!link) return;
+		const key = link.id || `${link.noteId}:${link.taskId}`;
+		this._dirtyNoteTaskLinks.add(key);
+		this._recordRecentWrite(key);
+	}
+
+	_markNoteGoalLinkDirty(link) {
+		if (!link) return;
+		const key = link.id || `${link.noteId}:${link.goalIndex}`;
+		this._dirtyNoteGoalLinks.add(key);
+		this._recordRecentWrite(key);
+	}
+
+	_markTaskGoalLinkDirty(link) {
+		if (!link) return;
+		const key = link.id || `${link.taskId}:${link.goalIndex}`;
+		this._dirtyTaskGoalLinks.add(key);
+		this._recordRecentWrite(key);
+	}
+
+	_markGridDirty() {
+		this._dirtyGrid = true;
+	}
+
+	_hasPendingDirty() {
+		return !!(
+			this._dirtyTasks.size ||
+			this._dirtyNotes.size ||
+			this._dirtyNoteTaskLinks.size ||
+			this._dirtyNoteGoalLinks.size ||
+			this._dirtyTaskGoalLinks.size ||
+			this._dirtyGrid
+		);
+	}
+
+	_recomputeSaveStatus() {
+		if (this._localSavingPromise || this._cloudSavingPromise) return;
+		// Dirty markers represent "needs cloud sync". For local-only (signed-out) users
+		// there's no cloud target, so once we're not actively saving we're idle.
+		const cloudPossible = !!(authStore.user && supabase);
+		this.saveStatus = cloudPossible && this._hasPendingDirty() ? 'dirty' : 'idle';
+	}
+
+	/**
+	 * Drop dirty markers whose underlying row no longer exists (deleted tasks/notes/links)
+	 * or is still a draft. Deletions are pushed to the cloud via direct soft-delete calls
+	 * and captured locally via the full snapshot, so they must not linger in the dirty sets
+	 * (which would otherwise keep saveStatus stuck and grow without bound).
+	 */
+	_pruneStaleDirty() {
+		const liveTaskIds = new Set(
+			(this.harada_chart.todos || []).filter((t) => t && !t.isDraft).map((t) => t.id)
+		);
+		for (const id of this._dirtyTasks) {
+			if (!liveTaskIds.has(id)) this._dirtyTasks.delete(id);
+		}
+		const liveNoteIds = new Set((this.notes || []).map((n) => n?.id));
+		for (const id of this._dirtyNotes) {
+			if (!liveNoteIds.has(id)) this._dirtyNotes.delete(id);
+		}
+		const liveNoteTaskKeys = new Set(
+			(this.noteTaskLinks || []).map((l) => this._linkKey(l, 'noteTask'))
+		);
+		for (const key of this._dirtyNoteTaskLinks) {
+			if (!liveNoteTaskKeys.has(key)) this._dirtyNoteTaskLinks.delete(key);
+		}
+		const liveNoteGoalKeys = new Set(
+			(this.noteGoalLinks || []).map((l) => this._linkKey(l, 'noteGoal'))
+		);
+		for (const key of this._dirtyNoteGoalLinks) {
+			if (!liveNoteGoalKeys.has(key)) this._dirtyNoteGoalLinks.delete(key);
+		}
+		const liveTaskGoalKeys = new Set(
+			(this.taskGoalLinks || []).map((l) => this._linkKey(l, 'taskGoal'))
+		);
+		for (const key of this._dirtyTaskGoalLinks) {
+			if (!liveTaskGoalKeys.has(key)) this._dirtyTaskGoalLinks.delete(key);
+		}
+	}
+
+	_markAllDirty() {
+		for (const todo of this.harada_chart.todos || []) {
+			if (todo?.id) this._dirtyTasks.add(todo.id);
+		}
+		for (const note of this.notes || []) {
+			if (note?.id) this._dirtyNotes.add(note.id);
+		}
+		for (const link of this.noteTaskLinks || []) this._markNoteTaskLinkDirty(link);
+		for (const link of this.noteGoalLinks || []) this._markNoteGoalLinkDirty(link);
+		for (const link of this.taskGoalLinks || []) this._markTaskGoalLinkDirty(link);
+		this._dirtyGrid = true;
+		this._forceFullCloudSync = true;
+	}
+
+	_clearDirtyAfterSync({
+		taskIds = [],
+		noteIds = [],
+		noteTaskLinkKeys = [],
+		noteGoalLinkKeys = [],
+		taskGoalLinkKeys = [],
+		grid = false
+	} = {}) {
+		for (const id of taskIds) this._dirtyTasks.delete(id);
+		for (const id of noteIds) this._dirtyNotes.delete(id);
+		for (const key of noteTaskLinkKeys) this._dirtyNoteTaskLinks.delete(key);
+		for (const key of noteGoalLinkKeys) this._dirtyNoteGoalLinks.delete(key);
+		for (const key of taskGoalLinkKeys) this._dirtyTaskGoalLinks.delete(key);
+		if (grid) this._dirtyGrid = false;
+		if (
+			this._dirtyTasks.size === 0 &&
+			this._dirtyNotes.size === 0 &&
+			this._dirtyNoteTaskLinks.size === 0 &&
+			this._dirtyNoteGoalLinks.size === 0 &&
+			this._dirtyTaskGoalLinks.size === 0 &&
+			!this._dirtyGrid
+		) {
+			this._forceFullCloudSync = false;
+		}
+	}
+
+	_clearSaveTimers() {
+		if (this._localSaveTimer) {
+			clearTimeout(this._localSaveTimer);
+			this._localSaveTimer = null;
+		}
+		if (this._cloudSyncTimer) {
+			clearTimeout(this._cloudSyncTimer);
+			this._cloudSyncTimer = null;
+		}
+	}
+
+	_scheduleLocalSave() {
+		if (this._localSaveTimer) clearTimeout(this._localSaveTimer);
+		this._localSaveTimer = setTimeout(() => {
+			this._localSaveTimer = null;
+			void this._performLocalSave();
+		}, LOCAL_SAVE_DEBOUNCE_MS);
+	}
+
+	_scheduleCloudSync() {
+		if (this._cloudSyncTimer) clearTimeout(this._cloudSyncTimer);
+		this._cloudSyncTimer = setTimeout(() => {
+			this._cloudSyncTimer = null;
+			void this._performCloudSync();
+		}, CLOUD_SYNC_DEBOUNCE_MS);
 	}
 
 	_applyLocalSnapshot(local) {
@@ -402,6 +614,12 @@ class Store {
 		// Only attempt realtime subscription when Supabase and auth are available
 		if (authStore.user && supabase) {
 			this._subscribeToRealtime();
+			// Flush any migrated rows or pre-login local edits that still need to be
+			// pushed to the cloud. Incremental sync only sends what's actually dirty,
+			// so a clean refresh (nothing dirty) is a no-op.
+			if (this._hasPendingDirty()) {
+				this.queueSave();
+			}
 		}
 	}
 
@@ -412,6 +630,8 @@ class Store {
 
 	async refreshFromSupabase() {
 		if (!browser || !this._isInitialized || !authStore.user || !supabase) return false;
+		const now = Date.now();
+		if (now - this._lastRefreshAt < REFRESH_THROTTLE_MS) return false;
 		if (this._refreshPromise) return this._refreshPromise;
 
 		this.isRefreshing = true;
@@ -419,6 +639,7 @@ class Store {
 			try {
 				const data = await this.loadFromSupabase();
 				if (!data) return false;
+				this._lastRefreshAt = Date.now();
 				return await this._mergeAndApplyRemoteSnapshot(data, { persistLocal: true });
 			} catch (err) {
 				console.error('Background refresh failed:', err);
@@ -780,6 +1001,7 @@ class Store {
 		const { eventType, new: newRow, old: oldRow } = payload;
 		const id = newRow?.id || oldRow?.id;
 		if (!id) return;
+		if (eventType !== 'DELETE' && this._isSelfEcho(id)) return;
 
 		// Soft-deleted or hard-deleted
 		if (eventType === 'DELETE' || newRow?.deleted_at) {
@@ -825,6 +1047,7 @@ class Store {
 		const { eventType, new: newRow, old: oldRow } = payload;
 		const id = newRow?.id || oldRow?.id;
 		if (!id) return;
+		if (eventType !== 'DELETE' && this._isSelfEcho(id)) return;
 
 		if (eventType === 'DELETE' || newRow?.deleted_at) {
 			this.notes = this.notes.filter((note) => note.id !== id);
@@ -858,7 +1081,8 @@ class Store {
 	_applyRealtimeNoteTaskLinkChange(payload) {
 		const { eventType, new: newRow, old: oldRow } = payload;
 		const key = `${newRow?.note_id || oldRow?.note_id}:${newRow?.task_id || oldRow?.task_id}`;
-		if (!key) return;
+		if (!key || key === ':') return;
+		if (eventType !== 'DELETE' && this._isSelfEcho(key)) return;
 		if (eventType === 'DELETE' || newRow?.deleted_at) {
 			this.noteTaskLinks = this.noteTaskLinks.filter(
 				(link) => `${link.noteId}:${link.taskId}` !== key
@@ -894,7 +1118,8 @@ class Store {
 	_applyRealtimeNoteGoalLinkChange(payload) {
 		const { eventType, new: newRow, old: oldRow } = payload;
 		const key = `${newRow?.note_id || oldRow?.note_id}:${newRow?.goal_index || oldRow?.goal_index}`;
-		if (!key) return;
+		if (!key || key.includes('undefined')) return;
+		if (eventType !== 'DELETE' && this._isSelfEcho(key)) return;
 		if (eventType === 'DELETE' || newRow?.deleted_at) {
 			this.noteGoalLinks = this.noteGoalLinks.filter(
 				(link) => `${link.noteId}:${link.goalIndex}` !== key
@@ -922,7 +1147,8 @@ class Store {
 	_applyRealtimeTaskGoalLinkChange(payload) {
 		const { eventType, new: newRow, old: oldRow } = payload;
 		const key = `${newRow?.task_id || oldRow?.task_id}:${newRow?.goal_index || oldRow?.goal_index}`;
-		if (!key) return;
+		if (!key || key.includes('undefined')) return;
+		if (eventType !== 'DELETE' && this._isSelfEcho(key)) return;
 		if (eventType === 'DELETE' || newRow?.deleted_at) {
 			this.taskGoalLinks = this.taskGoalLinks.filter(
 				(link) => `${link.taskId}:${link.goalIndex}` !== key
@@ -947,77 +1173,121 @@ class Store {
 		}
 	}
 
+	registerTodoMutation(id, { immediate = false } = {}) {
+		this._markTaskDirty(id);
+		return immediate ? this.saveNow() : this.queueSave();
+	}
+
+	registerGridMutation({ immediate = false } = {}) {
+		this._markGridDirty();
+		return immediate ? this.saveNow() : this.queueSave();
+	}
+
 	// --- Save ---
 
 	saveNow() {
 		if (!browser || !this._isInitialized) return Promise.resolve();
-		return this._performSave();
+		this._clearSaveTimers();
+		return this._flushAllSaves();
 	}
 
-	// Backward-compatible alias
+	// Debounced save for routine edits — local at 200ms, cloud at 1200ms
 	queueSave() {
-		return this.saveNow();
+		if (!browser || !this._isInitialized) return Promise.resolve();
+		this.saveStatus = 'dirty';
+		this._scheduleLocalSave();
+		this._scheduleCloudSync();
+		return Promise.resolve();
 	}
 
-	async _performSave() {
-		if (!browser) return;
+	async _flushAllSaves() {
+		await Promise.all([this._performLocalSave(), this._performCloudSync()]);
+	}
 
-		if (this._savingPromise) {
-			this._pendingSave = true;
-			return this._savingPromise;
+	async _performLocalSave() {
+		if (!browser) return;
+		// If a save is already running, request another pass once it settles so the
+		// latest in-memory state is always persisted (edits during an in-flight write
+		// must not be dropped).
+		if (this._localSavingPromise) {
+			this._localSavePending = true;
+			return this._localSavingPromise;
 		}
 
-		this._pendingSave = false;
-		this.saveStatus = 'saving';
-
-		const run = async () => {
-			await this._executeSaveOnce();
-			while (this._pendingSave) {
-				this._pendingSave = false;
-				await this._executeSaveOnce();
-			}
-		};
-
-		this._savingPromise = (async () => {
+		this._localSavingPromise = (async () => {
 			try {
-				await run();
+				this.saveStatus = 'saving';
+				do {
+					this._localSavePending = false;
+					await this._saveLocally();
+				} while (this._localSavePending);
+			} catch (err) {
+				console.error('Local save failed:', err);
 			} finally {
-				this._savingPromise = null;
-				this.saveStatus = this._pendingSave ? 'dirty' : 'idle';
+				this._localSavingPromise = null;
+				this._recomputeSaveStatus();
 			}
 		})();
 
-		return this._savingPromise;
+		return this._localSavingPromise;
 	}
 
-	async _executeSaveOnce() {
+	async _performCloudSync() {
 		if (!browser) return;
-
-		try {
-			this._migrateLegacyTaskLinksInMemory();
-			// Always save locally so offline mode works even without Supabase
-			await this._saveLocally();
-
-			if (!authStore.user || !supabase) {
-				// Not authenticated - nothing to save to the cloud
-				this.saveStatus = 'idle';
-				return;
-			}
-
-			this.syncError = null;
-			await this.saveToSupabase(
-				this.harada_chart.grid,
-				(this.harada_chart.todos || []).filter((todo) => !todo?.isDraft),
-				this.notes,
-				this.noteTaskLinks,
-				this.noteGoalLinks,
-				this.taskGoalLinks,
-				'My Harada Chart'
-			);
-		} catch (err) {
-			console.error('Save failed:', err);
-			this.syncError = err.message;
+		if (this._cloudSavingPromise) {
+			this._cloudSyncPending = true;
+			return this._cloudSavingPromise;
 		}
+
+		this._cloudSavingPromise = (async () => {
+			try {
+				this._migrateLegacyTaskLinksInMemory();
+				// Keep dirty sets bounded even when signed out (deleted rows are handled
+				// via the local snapshot + direct soft-delete calls).
+				this._pruneStaleDirty();
+				if (!authStore.user || !supabase) {
+					return;
+				}
+
+				this.saveStatus = 'saving';
+				this.syncError = null;
+				do {
+					this._cloudSyncPending = false;
+					await this.saveToSupabase(
+						this.harada_chart.grid,
+						(this.harada_chart.todos || []).filter((todo) => !todo?.isDraft),
+						this.notes,
+						this.noteTaskLinks,
+						this.noteGoalLinks,
+						this.taskGoalLinks,
+						'My Harada Chart'
+					);
+				} while (this._cloudSyncPending);
+			} catch (err) {
+				console.error('Cloud sync failed:', err);
+				this.syncError = err.message;
+			} finally {
+				this._cloudSavingPromise = null;
+				this._recomputeSaveStatus();
+			}
+		})();
+
+		return this._cloudSavingPromise;
+	}
+
+	_linkKey(link, kind) {
+		if (!link) return null;
+		if (link.id) return link.id;
+		if (kind === 'noteTask') return `${link.noteId}:${link.taskId}`;
+		if (kind === 'noteGoal') return `${link.noteId}:${link.goalIndex}`;
+		if (kind === 'taskGoal') return `${link.taskId}:${link.goalIndex}`;
+		return null;
+	}
+
+	_isLinkDirty(link, dirtySet, kind) {
+		if (this._forceFullCloudSync) return true;
+		const key = this._linkKey(link, kind);
+		return key ? dirtySet.has(key) : false;
 	}
 
 	async _saveLocally() {
@@ -1190,35 +1460,64 @@ class Store {
 			return false;
 		}
 
+		// Deleted rows (handled via direct soft-delete calls) and lingering drafts must
+		// not keep the dirty sets populated forever.
+		this._pruneStaleDirty();
+
+		const fullSync = this._forceFullCloudSync;
+		const hasDirty =
+			fullSync ||
+			this._dirtyGrid ||
+			this._dirtyTasks.size > 0 ||
+			this._dirtyNotes.size > 0 ||
+			this._dirtyNoteTaskLinks.size > 0 ||
+			this._dirtyNoteGoalLinks.size > 0 ||
+			this._dirtyTaskGoalLinks.size > 0;
+
+		if (!hasDirty) return true;
+
 		try {
 			this.syncError = null;
 
-			// Clone to plain objects so $state proxies serialize correctly
-			const grid = this._toPlainArray(gridSnapshot);
+			const syncedTaskIds = [];
+			const syncedNoteIds = [];
+			const syncedNoteTaskLinkKeys = [];
+			const syncedNoteGoalLinkKeys = [];
+			const syncedTaskGoalLinkKeys = [];
 
-			const { error: chartError } = await supabase
-				.from('harada_charts')
-				.upsert({ user_id: authStore.user.id, grid, title }, { onConflict: 'user_id' });
-
-			if (chartError) throw chartError;
+			if (fullSync || this._dirtyGrid) {
+				const grid = this._toPlainArray(gridSnapshot);
+				const { error: chartError } = await supabase
+					.from('harada_charts')
+					.upsert({ user_id: authStore.user.id, grid, title }, { onConflict: 'user_id' });
+				if (chartError) throw chartError;
+			}
 
 			const taskRows = (todosSnapshot || [])
+				.filter((todo) => fullSync || this._dirtyTasks.has(todo.id))
 				.map((todo) => this._todoToTaskRow(todo, authStore.user.id))
 				.filter(Boolean);
-			// Draft tasks are omitted from taskRows; links must not reference them or Postgres
-			// raises FK violations on task_goal_links / note_task_links (23503).
-			const persistedTaskIds = new Set(taskRows.map((row) => row.id));
+			const persistedTaskIds = new Set(
+				(todosSnapshot || [])
+					.map((todo) => this._todoToTaskRow(todo, authStore.user.id))
+					.filter(Boolean)
+					.map((row) => row.id)
+			);
 			const noteRows = (notesSnapshot || [])
+				.filter((note) => fullSync || this._dirtyNotes.has(note.id))
 				.map((note) => this._noteToRow(note, authStore.user.id))
 				.filter(Boolean);
 			const noteTaskLinkRows = (noteTaskLinksSnapshot || [])
+				.filter((link) => this._isLinkDirty(link, this._dirtyNoteTaskLinks, 'noteTask'))
 				.map((link) => this._noteTaskLinkToRow(link, authStore.user.id))
 				.filter(Boolean)
 				.filter((row) => persistedTaskIds.has(row.task_id));
 			const noteGoalLinkRows = (noteGoalLinksSnapshot || [])
+				.filter((link) => this._isLinkDirty(link, this._dirtyNoteGoalLinks, 'noteGoal'))
 				.map((link) => this._noteGoalLinkToRow(link, authStore.user.id))
 				.filter(Boolean);
 			const taskGoalLinkRows = (taskGoalLinksSnapshot || [])
+				.filter((link) => this._isLinkDirty(link, this._dirtyTaskGoalLinks, 'taskGoal'))
 				.map((link) => this._taskGoalLinkToRow(link, authStore.user.id))
 				.filter(Boolean)
 				.filter((row) => persistedTaskIds.has(row.task_id));
@@ -1228,12 +1527,14 @@ class Store {
 					in_rows: taskRows
 				});
 				if (tasksError) throw tasksError;
+				syncedTaskIds.push(...taskRows.map((row) => row.id));
 			}
 			if (noteRows.length > 0) {
 				const { error: notesError } = await supabase.rpc('upsert_notes_if_newer', {
 					in_rows: noteRows
 				});
 				if (notesError) throw notesError;
+				syncedNoteIds.push(...noteRows.map((row) => row.id));
 			}
 			if (noteTaskLinkRows.length > 0) {
 				const { error: noteTaskLinksError } = await supabase.rpc(
@@ -1243,6 +1544,9 @@ class Store {
 					}
 				);
 				if (noteTaskLinksError) throw noteTaskLinksError;
+				syncedNoteTaskLinkKeys.push(
+					...noteTaskLinkRows.map((row) => row.id || `${row.note_id}:${row.task_id}`)
+				);
 			}
 			if (noteGoalLinkRows.length > 0) {
 				const { error: noteGoalLinksError } = await supabase.rpc(
@@ -1252,6 +1556,9 @@ class Store {
 					}
 				);
 				if (noteGoalLinksError) throw noteGoalLinksError;
+				syncedNoteGoalLinkKeys.push(
+					...noteGoalLinkRows.map((row) => row.id || `${row.note_id}:${row.goal_index}`)
+				);
 			}
 			if (taskGoalLinkRows.length > 0) {
 				const { error: taskGoalLinksError } = await supabase.rpc(
@@ -1261,7 +1568,19 @@ class Store {
 					}
 				);
 				if (taskGoalLinksError) throw taskGoalLinksError;
+				syncedTaskGoalLinkKeys.push(
+					...taskGoalLinkRows.map((row) => row.id || `${row.task_id}:${row.goal_index}`)
+				);
 			}
+
+			this._clearDirtyAfterSync({
+				taskIds: syncedTaskIds,
+				noteIds: syncedNoteIds,
+				noteTaskLinkKeys: syncedNoteTaskLinkKeys,
+				noteGoalLinkKeys: syncedNoteGoalLinkKeys,
+				taskGoalLinkKeys: syncedTaskGoalLinkKeys,
+				grid: fullSync || this._dirtyGrid
+			});
 
 			this._pendingCloudSync = false;
 			return true;
@@ -1495,6 +1814,10 @@ class Store {
 		this.noteTaskLinks = [...newLinks.filter(Boolean), ...this.noteTaskLinks];
 		this.noteGoalLinks = [...newGoalLinks.filter(Boolean), ...this.noteGoalLinks];
 		this.harada_chart = { ...this.harada_chart, todos: updatedTodos };
+		for (const note of newNotes) this._markNoteDirty(note.id);
+		for (const link of newLinks) this._markNoteTaskLinkDirty(link);
+		for (const link of newGoalLinks) this._markNoteGoalLinkDirty(link);
+		for (const legacy of legacyTodos) this._markTaskDirty(legacy.id);
 	}
 
 	_migratePrimaryTaskNotesInMemory() {
@@ -1518,6 +1841,7 @@ class Store {
 					link.isPrimary = shouldBePrimary;
 					link.updatedAt = ts;
 					changed = true;
+					this._markNoteTaskLinkDirty(link);
 				}
 			}
 		}
@@ -1550,6 +1874,7 @@ class Store {
 		}
 		if (newGoalLinks.length > 0) {
 			this.taskGoalLinks = [...newGoalLinks.filter(Boolean), ...this.taskGoalLinks];
+			for (const link of newGoalLinks) this._markTaskGoalLinkDirty(link);
 		}
 	}
 
@@ -1601,6 +1926,7 @@ class Store {
 		};
 
 		this.harada_chart = { ...this.harada_chart, grid: nextGrid };
+		this._markGridDirty();
 	}
 
 	updateTodo(id, patch) {
@@ -1639,8 +1965,9 @@ class Store {
 
 		// If we changed this todo's list/goal, propagate that change to all of its descendants
 		const updatedTodoForMeta = updatedTodos.find((t) => t.id === id);
+		let listChanged = false;
 		if (updatedTodoForMeta && previousTodo) {
-			const listChanged =
+			listChanged =
 				updatedTodoForMeta.listId !== previousTodo.listId ||
 				updatedTodoForMeta.listType !== previousTodo.listType ||
 				updatedTodoForMeta.goalIndex !== previousTodo.goalIndex;
@@ -1676,6 +2003,7 @@ class Store {
 				updatedTodos = updatedTodos.map((todo) => {
 					if (!todo || todo.id === id) return todo;
 					if (!isDescendant(todo.id, id)) return todo;
+					this._markTaskDirty(todo.id);
 					return { ...todo, ...sharedMeta, updatedAt: ts };
 				});
 			}
@@ -1684,6 +2012,8 @@ class Store {
 		this.harada_chart = { ...this.harada_chart, todos: updatedTodos };
 
 		const updatedTodo = updatedTodos.find((t) => t.id === id);
+		this._markTaskDirty(id);
+
 		if (updatedTodo && previousTodo) {
 			const now = Date.now();
 			const updatedGoal =
@@ -1692,24 +2022,35 @@ class Store {
 				typeof updatedGoal === 'number' &&
 				!this.taskGoalLinks.some((link) => link.taskId === id && link.goalIndex === updatedGoal)
 			) {
-				this.taskGoalLinks = [
-					normalizeTaskGoalLink({
-						taskId: id,
-						goalIndex: updatedGoal,
-						createdAt: now,
-						updatedAt: now
-					}),
-					...this.taskGoalLinks
-				].filter(Boolean);
+				const newLink = normalizeTaskGoalLink({
+					taskId: id,
+					goalIndex: updatedGoal,
+					createdAt: now,
+					updatedAt: now
+				});
+				this.taskGoalLinks = [newLink, ...this.taskGoalLinks].filter(Boolean);
+				this._markTaskGoalLinkDirty(newLink);
 			}
-
 		}
+
+		const orderingFields = [
+			'goalIndex',
+			'listType',
+			'listId',
+			'listName',
+			'parentId',
+			'ordering',
+			'status',
+			'pinned',
+			'isDraft'
+		];
+		const affectsGoalOrdering = orderingFields.some((key) => key in patch);
 		const goalIndexToUpdate = updatedTodo?.goalIndex ?? previousTodo?.goalIndex;
-		if (typeof goalIndexToUpdate === 'number') {
+		if (typeof goalIndexToUpdate === 'number' && affectsGoalOrdering) {
 			this.bumpGoalAfterTodoActivity(goalIndexToUpdate);
 		}
 
-		this.saveNow();
+		this.queueSave();
 	}
 
 	deleteTodo(id) {
@@ -1721,11 +2062,13 @@ class Store {
 		this.harada_chart = { ...this.harada_chart, todos: nextTodos };
 		this.noteTaskLinks = this.noteTaskLinks.filter((link) => link.taskId !== id);
 		this.taskGoalLinks = this.taskGoalLinks.filter((link) => link.taskId !== id);
+		this._markTaskDirty(id);
 
 		if (todo && typeof todo.goalIndex === 'number') {
 			const nextGrid = [...this.harada_chart.grid];
 			updateGoalTimestamp(nextGrid, todo.goalIndex);
 			this.harada_chart = { ...this.harada_chart, grid: nextGrid };
+			this._markGridDirty();
 		}
 
 		// Write a soft-delete to the tasks table so other devices remove it
@@ -1789,19 +2132,22 @@ class Store {
 			t.id === id ? { ...t, status: nextStatus, updatedAt: Date.now() } : t
 		);
 		this.harada_chart = { ...this.harada_chart, todos: nextTodos };
+		this._markTaskDirty(id);
 
 		if (typeof todo.goalIndex === 'number') {
 			const nextGrid = [...this.harada_chart.grid];
 			updateGoalTimestamp(nextGrid, todo.goalIndex);
 			this.harada_chart = { ...this.harada_chart, grid: nextGrid };
+			this._markGridDirty();
 		}
 
-		this.saveNow();
+		this.queueSave();
 	}
 
 	createNote({ content = '' } = {}) {
 		const note = defaultNote({ content });
 		this.notes = [note, ...this.notes];
+		this._markNoteDirty(note.id);
 		this.saveNow();
 		return note;
 	}
@@ -1819,7 +2165,8 @@ class Store {
 				});
 			})
 			.sort((a, b) => b.updatedAt - a.updatedAt);
-		this.saveNow();
+		this._markNoteDirty(id);
+		this.queueSave();
 	}
 
 	getNotesForTask(taskId) {
@@ -1906,21 +2253,31 @@ class Store {
 					? { ...link, isPrimary, updatedAt: Date.now() }
 					: link
 			);
-			this.saveNow();
+			this._markNoteTaskLinkDirty(existing);
+			this.queueSave();
 			return;
 		}
-		this.noteTaskLinks = [
-			normalizeNoteTaskLink({ noteId, taskId, isPrimary, createdAt: Date.now(), updatedAt: Date.now() }),
-			...this.noteTaskLinks
-		].filter(Boolean);
-		this.saveNow();
+		const newLink = normalizeNoteTaskLink({
+			noteId,
+			taskId,
+			isPrimary,
+			createdAt: Date.now(),
+			updatedAt: Date.now()
+		});
+		this.noteTaskLinks = [newLink, ...this.noteTaskLinks].filter(Boolean);
+		this._markNoteTaskLinkDirty(newLink);
+		this.queueSave();
 	}
 
 	unlinkNoteFromTask(noteId, taskId) {
 		if (!noteId || !taskId) return;
+		const existing = this.noteTaskLinks.find(
+			(link) => link.noteId === noteId && link.taskId === taskId
+		);
 		this.noteTaskLinks = this.noteTaskLinks.filter(
 			(link) => !(link.noteId === noteId && link.taskId === taskId)
 		);
+		if (existing) this._markNoteTaskLinkDirty(existing);
 		if (browser && authStore.user && supabase) {
 			const now = new Date().toISOString();
 			supabase
@@ -1940,25 +2297,29 @@ class Store {
 		if (!noteId || typeof goalIndex !== 'number') return;
 		const persist = options.persist !== false;
 		const canonical = canonicalGoalIndex(goalIndex);
-		if (this.noteGoalLinks.some((link) => link.noteId === noteId && link.goalIndex === canonical)) return;
-		this.noteGoalLinks = [
-			normalizeNoteGoalLink({
-				noteId,
-				goalIndex: canonical,
-				createdAt: Date.now(),
-				updatedAt: Date.now()
-			}),
-			...this.noteGoalLinks
-		].filter(Boolean);
-		if (persist) this.saveNow();
+		if (this.noteGoalLinks.some((link) => link.noteId === noteId && link.goalIndex === canonical))
+			return;
+		const newLink = normalizeNoteGoalLink({
+			noteId,
+			goalIndex: canonical,
+			createdAt: Date.now(),
+			updatedAt: Date.now()
+		});
+		this.noteGoalLinks = [newLink, ...this.noteGoalLinks].filter(Boolean);
+		this._markNoteGoalLinkDirty(newLink);
+		if (persist) this.queueSave();
 	}
 
 	unlinkNoteFromGoal(noteId, goalIndex) {
 		if (!noteId || typeof goalIndex !== 'number') return;
 		const canonical = canonicalGoalIndex(goalIndex);
+		const existing = this.noteGoalLinks.find(
+			(link) => link.noteId === noteId && link.goalIndex === canonical
+		);
 		this.noteGoalLinks = this.noteGoalLinks.filter(
 			(link) => !(link.noteId === noteId && link.goalIndex === canonical)
 		);
+		if (existing) this._markNoteGoalLinkDirty(existing);
 		if (browser && authStore.user && supabase) {
 			const now = new Date().toISOString();
 			supabase
@@ -1971,7 +2332,7 @@ class Store {
 					if (error) console.error('Failed to soft-delete note/goal link:', error);
 				});
 		}
-		this.saveNow();
+		this.queueSave();
 	}
 
 	linkTaskToGoal(taskId, goalIndex) {
@@ -2016,21 +2377,26 @@ class Store {
 		}
 		if (newLinks.length > 0) {
 			this.taskGoalLinks = [...newLinks, ...this.taskGoalLinks].filter(Boolean);
+			for (const link of newLinks) this._markTaskGoalLinkDirty(link);
 		}
 		if (typeof todo.goalIndex !== 'number') {
 			this.updateTodo(taskId, buildGoalListMeta(canonical));
 			return;
 		}
 		this.bumpGoalAfterTodoActivity(canonical);
-		this.saveNow();
+		this.queueSave();
 	}
 
 	unlinkTaskFromGoal(taskId, goalIndex) {
 		if (!taskId || typeof goalIndex !== 'number') return;
 		const canonical = canonicalGoalIndex(goalIndex);
+		const existing = this.taskGoalLinks.find(
+			(link) => link.taskId === taskId && link.goalIndex === canonical
+		);
 		this.taskGoalLinks = this.taskGoalLinks.filter(
 			(link) => !(link.taskId === taskId && link.goalIndex === canonical)
 		);
+		if (existing) this._markTaskGoalLinkDirty(existing);
 		const remainingGoal = this.taskGoalLinks.find((link) => link.taskId === taskId)?.goalIndex ?? null;
 		const todo = this.harada_chart.todos.find((t) => t.id === taskId);
 		if (todo && typeof todo.goalIndex === 'number' && canonicalGoalIndex(todo.goalIndex) === canonical) {
@@ -2048,7 +2414,7 @@ class Store {
 					if (error) console.error('Failed to soft-delete task/goal link:', error);
 				});
 		}
-		this.saveNow();
+		this.queueSave();
 	}
 
 	createLinkedTaskNote(taskId, { content = '', goalIndex = null, isPrimary = false } = {}) {
@@ -2074,6 +2440,7 @@ class Store {
 		this.notes = this.notes.filter((note) => note.id !== id);
 		this.noteTaskLinks = this.noteTaskLinks.filter((link) => link.noteId !== id);
 		this.noteGoalLinks = this.noteGoalLinks.filter((link) => link.noteId !== id);
+		this._markNoteDirty(id);
 
 		if (browser && authStore.user && supabase) {
 			const now = new Date().toISOString();
@@ -2171,7 +2538,6 @@ class Store {
 	}
 
 	clearAll() {
-    // console.log("Grid at first:",this.harada_chart.grid);
 		this.harada_chart = {
 			grid: Array.from({ length: 81 }, (_, i) => defaultCell()),
 			todos: []
@@ -2181,7 +2547,7 @@ class Store {
 		this.noteGoalLinks = [];
 		this.taskGoalLinks = [];
     localSet('harada_onboarding_seen', false);
-    console.log("Grid is now:",this.harada_chart.grid);
+		this._markAllDirty();
 		this.saveNow();
 	}
 }

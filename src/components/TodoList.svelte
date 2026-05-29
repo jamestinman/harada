@@ -91,10 +91,6 @@
 	const highlightTaskId = $derived(activeTodoId ?? targetTodoId);
 	const renderThroughTodoId = $derived(focusTodoId ?? targetTodoId);
 
-	function shouldLogPerf() {
-		return browser && (dev || localStorage.getItem('harada_perf') === '1');
-	}
-
 	function countGroupTodos(listGroups) {
 		let count = 0;
 		for (const group of listGroups || []) {
@@ -130,24 +126,7 @@
 
 	onMount(() => {
 		const start = performance.now();
-		if (shouldLogPerf()) {
-			console.log('[Harada perf] TodoList mounted', {
-				groups: groups.length,
-				rows: countGroupTodos(groups),
-				pinned: feedPinnedRows?.length ?? 0,
-				search: searchText,
-				initialRenderedRows: Math.min(renderedTodoLimit, visibleFlatTodos.length),
-				totalVisibleRows: visibleFlatTodos.length
-			});
-		}
 		tick().then(() => {
-			if (shouldLogPerf()) {
-				console.log(`[Harada perf] TodoList first DOM flush: ${(performance.now() - start).toFixed(1)}ms`, {
-					groups: groups.length,
-					rows: countGroupTodos(groups),
-					renderedRows: Math.min(renderedTodoLimit, visibleFlatTodos.length)
-				});
-			}
 			scheduleProgressiveRender();
 		});
 	});
@@ -198,12 +177,6 @@
 					all.push(todo);
 				}
 			}
-		}
-		if (shouldLogPerf()) {
-			console.log(`[Harada perf] TodoList flatTodos derive: ${(performance.now() - start).toFixed(1)}ms`, {
-				groups: groups.length,
-				rows: all.length
-			});
 		}
 		return all;
 	});
@@ -956,17 +929,6 @@
 		if (e.key === 'Escape' && onClearHighlight) onClearHighlight();
 	}}
 >
-	{#if onCreateTodo}
-		<div class="mb-6 hidden lg:block">
-			<button
-				type="button"
-				onclick={onCreateTodo}
-				class="rounded-btn"
-			>
-				+ New task
-			</button>
-		</div>
-	{/if}
 
 	{#if isMainTodoFeed && visibleFeedPinned.length > 0 && resolveGroupForTodo}
 		<div class="mb-6 space-y-2">

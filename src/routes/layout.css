@@ -572,6 +572,27 @@ h4 {
   @apply min-h-[140px] w-full resize-y;
 }
 
+/* Simplified composer panel fields */
+.composer-title-input {
+  @apply mb-3 !border-0 !bg-transparent !px-0 !py-1 !text-lg font-medium focus:!ring-0;
+  .dark & {
+    @apply !text-slate-100 placeholder:!text-slate-600;
+  }
+  .light & {
+    @apply !text-slate-900 placeholder:!text-slate-400;
+  }
+}
+
+.composer-body-textarea {
+  @apply mb-4 min-h-[8rem] w-full resize-y rounded-md px-3 py-2.5 text-sm leading-relaxed focus:!ring-0;
+  .dark & {
+    @apply !border-0 !bg-white/95 !text-slate-900 placeholder:!text-slate-400;
+  }
+  .light & {
+    @apply !border-0 !bg-white !text-slate-900 placeholder:!text-slate-400;
+  }
+}
+
 .notes-markdown-editor {
   @apply rounded-md border p-3 text-sm;
   .dark & {

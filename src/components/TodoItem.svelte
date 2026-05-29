@@ -7,6 +7,7 @@
 		handleMarkdownEditorKeydown
 	} from '$lib/todoUtils.js';
 	import { store } from '$stores/store.svelte.js';
+	import { todoEditorStore } from '$stores/todoEditor.svelte.js';
 	import GoalSelect from './GoalSelect.svelte';
 	import { ArrowRightToLine, ArrowLeftFromLine, ChevronDown, Check, Pin } from 'lucide-svelte';
 
@@ -132,19 +133,13 @@
 		isEditingTitle = true;
 		if (syncHighlight && onTitleFocus) onTitleFocus(todo.id);
 		await tick();
-		const applyFocus = () => {
-			if (!titleInputElement) return;
-			titleInputElement.focus({ preventScroll: true });
-			if (titleInputElement.value === '') {
-				titleInputElement.select();
-			} else {
-				const len = titleInputElement.value.length;
-				titleInputElement.setSelectionRange(len, len);
-			}
-		};
-		applyFocus();
-		if (document.activeElement !== titleInputElement) {
-			requestAnimationFrame(applyFocus);
+		if (!titleInputElement) return;
+		titleInputElement.focus();
+		if (titleInputElement.value === '') {
+			titleInputElement.select();
+		} else {
+			const len = titleInputElement.value.length;
+			titleInputElement.setSelectionRange(len, len);
 		}
 	}
 
@@ -206,22 +201,42 @@
 		}
 	}
 
-	function startEditingNotes() {
-		editTitle = todo.title || '';
-		editMarkdown = taskNoteContent;
-		const startsEmptyNote = !taskNoteContent.trim();
+	function isMobileEditor() {
+		return typeof window !== 'undefined' && window.innerWidth < 768;
+	}
+
+	function openExpandedEditor({ title, markdown, startsEmptyNote = !markdown.trim() } = {}) {
+		editTitle = title;
+		editMarkdown = markdown;
 		linkPanelOpen = false;
 		linkGoalValue = '';
 		if (onTitleFocus) onTitleFocus(todo.id);
 
-		// Check if mobile (window width < 768px)
-		if (typeof window !== 'undefined' && window.innerWidth < 768) {
+		if (isMobileEditor()) {
 			isEditingMarkdown = startsEmptyNote;
 			showMobileEditor = true;
+			isEditing = false;
 		} else {
 			isEditing = true;
 			isEditingMarkdown = startsEmptyNote;
+			showMobileEditor = false;
 		}
+	}
+
+	function startEditingNotes() {
+		const title = todo.title || '';
+		const markdown = taskNoteContent;
+		todoEditorStore.open(todo.id, { title, markdown });
+		openExpandedEditor({ title, markdown });
+	}
+
+	function restoreExpandedEditorIfNeeded() {
+		if (isFeedPinnedDuplicate) return;
+		if (todoEditorStore.expandedTaskId !== todo.id) return;
+		if (isEditing || showMobileEditor) return;
+		const title = todoEditorStore.draftTitle || todo.title || '';
+		const markdown = todoEditorStore.draftMarkdown || taskNoteContent;
+		openExpandedEditor({ title, markdown });
 	}
 
 	function enterMarkdownEdit() {
@@ -245,6 +260,7 @@
 		if (onUpsertPrimaryNote) {
 			onUpsertPrimaryNote(editMarkdown || '');
 		}
+		todoEditorStore.close(todo.id);
 		isEditing = false;
 		isEditingMarkdown = false;
 		showMobileEditor = false;
@@ -278,17 +294,33 @@
 		}
 	});
 
+	$effect(() => {
+		if (isFeedPinnedDuplicate) return;
+		if (todoEditorStore.expandedTaskId === todo.id && (isEditing || showMobileEditor)) {
+			todoEditorStore.syncDraft({ title: editTitle, markdown: editMarkdown });
+		}
+	});
+
+	$effect(() => {
+		if (isFeedPinnedDuplicate) return;
+		todoEditorStore.expandedTaskId;
+		linkedGoalIndices;
+		restoreExpandedEditorIfNeeded();
+	});
+
 	const linkedGoalsForDisplay = $derived(
 		[...new Set(linkedGoalIndices)].filter((idx) => typeof idx === 'number')
 	);
 
 	function cancelEdit() {
+		todoEditorStore.close(todo.id);
 		isEditing = false;
 		isEditingMarkdown = false;
 		showMobileEditor = false;
 	}
 
 	function handleDelete() {
+		todoEditorStore.close(todo.id);
 		onDelete();
 		isEditing = false;
 		showMobileEditor = false;
@@ -423,10 +455,17 @@
 				/>
 			</div>
 		{:else}
-			<button
-				type="button"
+			<div
+				role="button"
+				tabindex="0"
 				onclick={() => startEditingTitle()}
-				class={`flex-1 text-left text-sm min-h-[1.5rem] py-1 transition ${
+				onkeydown={(e) => {
+					if (e.key === 'Enter' || e.key === ' ') {
+						e.preventDefault();
+						startEditingTitle();
+					}
+				}}
+				class={`flex-1 text-left text-sm min-h-[1.5rem] py-1 transition cursor-text ${
 					todo.status === 'done'
 						? 'line-through'
 						: ''
@@ -448,7 +487,7 @@
 						</div>
 					{/if}
 				</div>
-			</button>
+			</div>
 		{/if}
 
 		<!-- Notes button - opens full editor -->
@@ -602,81 +641,60 @@
 			transition:sheet3d
 			class="composer-panel !rounded-2xl"
 		>
-			<!-- Header -->
-			<div class="mb-4 flex items-center justify-between">
-				<h3 class="composer-title">Edit Todo</h3>
-				<button
-					type="button"
-					onclick={cancelEdit}
-					class="composer-close-button"
-					aria-label="Close editor"
+			<input
+				type="text"
+				bind:value={editTitle}
+				placeholder="Task title"
+				class="composer-title-input"
+			/>
+
+			{@render taskLinkControls()}
+
+			{#if isEditingMarkdown || !editMarkdown.trim()}
+				<textarea
+					bind:this={markdownTextareaElement}
+					bind:value={editMarkdown}
+					placeholder="Add a note…"
+					class="composer-body-textarea mt-3"
+					onkeydown={handleMarkdownEditorKeydown}
+				></textarea>
+			{:else}
+				<div
+					bind:this={markdownPreviewElement}
+					role="button"
+					tabindex="0"
+					class="markdown task-edit-note-preview mt-3"
+					onclick={enterMarkdownEdit}
+					onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && enterMarkdownEdit()}
 				>
-					<svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-					</svg>
-				</button>
-			</div>
-
-			<!-- Title input -->
-			<div class="mb-4">
-				<input
-					type="text"
-					bind:value={editTitle}
-					placeholder="Task"
-					class="composer-input"
-				/>
-			</div>
-
-			<!-- Links -->
-			<div class="mb-4">
-				<span class="todo-panel-label">Links</span>
-				<div class="mt-2">
-					{@render taskLinkControls()}
+					{@html renderMarkdown(editMarkdown)}
 				</div>
-			</div>
+			{/if}
 
-			<!-- Primary note -->
-			<div class="mb-4 space-y-2">
-				<div class="space-y-1">
-					{#if isEditingMarkdown || !editMarkdown.trim()}
-						<textarea
-							bind:this={markdownTextareaElement}
-							bind:value={editMarkdown}
-							placeholder="Task note"
-							class="composer-textarea"
-							onkeydown={handleMarkdownEditorKeydown}
-						></textarea>
-					{:else}
-						<div
-							bind:this={markdownPreviewElement}
-							role="button"
-							tabindex="0"
-							class="markdown cursor-text rounded-md border border-slate-700/70 bg-slate-950/20 p-3 text-sm transition hover:border-violet-500/40 hover:bg-violet-500/10"
-							onclick={enterMarkdownEdit}
-							onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && enterMarkdownEdit()}
-						>
-							{@html renderMarkdown(editMarkdown)}
-						</div>
-					{/if}
+			<div class="task-edit-actions">
+				<div class="ml-auto flex items-center gap-1">
+					<button
+						type="button"
+						onclick={handleDelete}
+						class="task-edit-delete-button"
+					>
+						Delete
+					</button>
+					<button
+						type="button"
+						onclick={cancelEdit}
+						class="task-edit-cancel-button"
+					>
+						Cancel
+					</button>
+					<button
+						type="button"
+						onclick={saveChanges}
+						class="task-edit-save-button"
+					>
+						Save
+					</button>
 				</div>
-			</div>
-
-			<!-- Actions -->
-			<div class="flex flex-col gap-2">
-				<button
-					type="button"
-					onclick={saveChanges}
-					class="w-full rounded-md border border-violet-600/70 bg-violet-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-violet-500"
-				>
-					Save
-				</button>
-				<button
-					type="button"
-					onclick={handleDelete}
-					class="w-full rounded-md border border-rose-700/70 bg-rose-900/40 px-4 py-3 text-sm font-semibold text-rose-200 transition hover:bg-rose-900/60"
-				>
-					Delete
-				</button>
 			</div>
 		</div>
 	</div>

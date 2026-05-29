@@ -18,7 +18,8 @@
 		normalizeTodoListMeta,
 		buildGoalListMeta,
 		buildCustomListMeta,
-		updateGoalTimestamp
+		updateGoalTimestamp,
+		buildTaskNoteIndexMaps
 	} from '$lib/todoUtils.js';
 	import TodoList from '$components/TodoList.svelte';
 	import WorkspaceToolbar from '$components/WorkspaceToolbar.svelte';
@@ -32,11 +33,14 @@
 
 	// Use store.harada_chart directly - it's reactive
 	const grid = $derived(store.harada_chart.grid);
-	const todos = $derived(store.harada_chart.todos.map((todo) => normalizeTodoListMeta(todo)));
+	const todos = $derived(store.harada_chart.todos);
 	const notes = $derived(store.notes);
 	const noteTaskLinks = $derived(store.noteTaskLinks);
 	const noteGoalLinks = $derived(store.noteGoalLinks);
 	const taskGoalLinks = $derived(store.taskGoalLinks);
+	const taskNoteIndexMaps = $derived.by(() =>
+		buildTaskNoteIndexMaps(notes, noteTaskLinks, taskGoalLinks, todos)
+	);
 	const taskGoalKeySet = $derived.by(() => {
 		const keys = new Set();
 		for (const link of taskGoalLinks) keys.add(`${link.taskId}:${link.goalIndex}`);
@@ -60,18 +64,12 @@
 
 	function clearHighlight() {
 		activeTodoId = null;
-		if (targetTodoId) goto(page.url.pathname, { replaceState: true, keepFocus: true });
+		if (targetTodoId) goto(page.url.pathname, { replaceState: true, keepFocus: true, noScroll: true });
 	}
 
 	function setHighlightedTaskId(id) {
 		if (!id) return;
 		activeTodoId = id;
-		if (!browser) return;
-		if (page.url.searchParams.get('task') === id) return;
-		skipTaskScroll = true;
-		const url = new URL(page.url.href);
-		url.searchParams.set('task', id);
-		goto(`${url.pathname}${url.search}`, { replaceState: true, keepFocus: true });
 	}
 	let searchText = $state('');
 	
@@ -576,7 +574,7 @@
 
 		// Set active todo ID so it gets focused
 		activeTodoId = todo.id;
-		if (!draft) store.saveNow();
+		if (!draft) store.registerTodoMutation(todo.id, { immediate: true });
 		return todo;
 	}
 
@@ -610,7 +608,7 @@
 				store.harada_chart.todos = [...store.harada_chart.todos, todo];
 				store.bumpGoalAfterTodoActivity(goalIndex);
 				activeTodoId = todo.id;
-				store.saveNow();
+				store.registerTodoMutation(todo.id, { immediate: true });
 				navigateToNewTask(todo);
 			}
 			return;
@@ -630,7 +628,7 @@
 			if (markdown?.trim()) {
 				store.setPrimaryNoteForTask(todo.id, { content: markdown.trim() });
 			}
-			store.saveNow();
+			store.registerTodoMutation(todo.id, { immediate: true });
 			navigateToNewTask(todo);
 			return;
 		}
@@ -654,7 +652,7 @@
 			store.bumpGoalAfterTodoActivity(targetGoalIndex);
 		}
 
-		store.saveNow();
+		store.registerTodoMutation(todo.id, { immediate: true });
 		navigateToNewTask(todo);
 	}
 
@@ -682,15 +680,15 @@
 	}
 
 	function getLinkedNotesForTodo(todoId) {
-		return store.getFreeNotesForTask(todoId);
+		return taskNoteIndexMaps.freeNotesByTaskId.get(todoId) ?? [];
 	}
 
 	function getPrimaryNoteForTodo(todoId) {
-		return store.getPrimaryNoteForTask(todoId);
+		return taskNoteIndexMaps.primaryNoteByTaskId.get(todoId) ?? null;
 	}
 
 	function getLinkedGoalIndicesForTodo(todoId) {
-		return store.getLinkedGoalIndicesForTask(todoId);
+		return taskNoteIndexMaps.goalIndicesByTaskId.get(todoId) ?? [];
 	}
 
 	function upsertPrimaryNoteForTodo(todoId, content) {
@@ -735,7 +733,7 @@
 			store.bumpGoalAfterTodoActivity(targetGoalIndex);
 		}
 
-		store.saveNow();
+		store.registerTodoMutation(newTodo.id, { immediate: true });
 		return newTodo;
 	}
 
@@ -871,7 +869,7 @@
 
 		// Force reactivity by reassigning
 		store.harada_chart.grid = [...store.harada_chart.grid];
-		store.saveNow();
+		store.registerGridMutation({ immediate: true });
 	}
 
 	// Save edited goal content
@@ -910,7 +908,7 @@
 		
 		isEditingGoal = false;
 
-		store.saveNow();
+		store.registerGridMutation({ immediate: true });
 	}
 
 	// Clear the goal's name and description (tasks and sub-goals are preserved)
@@ -958,7 +956,7 @@
 		isEditingGoal = false;
 
 		// Persist changes and return to HaradaChart screen
-		store.saveNow();
+		store.registerGridMutation({ immediate: true });
 		goto('/todo', { replaceState: true });
 	}
 

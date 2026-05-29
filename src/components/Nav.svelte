@@ -405,61 +405,52 @@ const clearAll = () => {
 		aria-label="Close composer panel"
 	>
 		<div transition:sheet3d class="composer-panel">
-			<div class="mb-4 flex items-center justify-between gap-2">
-				<div class="flex min-w-0 flex-1 rounded-lg border border-slate-600/80 p-0.5">
-					<button
-						type="button"
-						onclick={() => {
-							store.composerPanelTab = 'task';
-							focusTaskTitleInput();
-						}}
-						class="composer-tab flex-1 rounded-md px-3 py-2 text-sm font-semibold transition {store.composerPanelTab ===
-						'task'
-							? 'bg-violet-600 text-white'
-							: 'text-slate-300 hover:bg-slate-800/80'}"
-					>
-						New Task
-					</button>
-					<button
-						type="button"
-						onclick={() => (store.composerPanelTab = 'note')}
-						class="composer-tab flex-1 rounded-md px-3 py-2 text-sm font-semibold transition {store.composerPanelTab ===
-						'note'
-							? 'bg-violet-600 text-white'
-							: 'text-slate-300 hover:bg-slate-800/80'}"
-					>
-						New Note
-					</button>
-				</div>
+			<!-- Tab bar -->
+			<div class="mb-4 flex items-center gap-4 border-b border-slate-200 dark:border-slate-700/60">
+				<button
+					type="button"
+					onclick={() => { store.composerPanelTab = 'task'; focusTaskTitleInput(); }}
+					class="goal-tab {store.composerPanelTab === 'task' ? 'goal-tab-active' : ''}"
+				>
+					Task
+				</button>
+				<button
+					type="button"
+					onclick={() => (store.composerPanelTab = 'note')}
+					class="goal-tab {store.composerPanelTab === 'note' ? 'goal-tab-active' : ''}"
+				>
+					Note
+				</button>
 				<button
 					type="button"
 					onclick={closeComposer}
-					class="composer-close-button shrink-0"
+					class="composer-close-button ml-auto mb-2 shrink-0"
 					aria-label="Close panel"
 				>
-					<svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
 					</svg>
 				</button>
 			</div>
 
 			{#if store.composerPanelTab === 'task'}
-				<div class="mb-4">
-					<input
-						bind:this={composerTitleInputElement}
-						type="text"
-						bind:value={composerTitle}
-						placeholder="Task"
-						class="composer-input"
-					/>
-				</div>
+				<input
+					bind:this={composerTitleInputElement}
+					type="text"
+					bind:value={composerTitle}
+					placeholder="Task title"
+					class="composer-title-input"
+				/>
 
-				<div class="mb-4">
-					<textarea bind:value={composerMarkdown} placeholder="" class="composer-textarea" onkeydown={handleMarkdownEditorKeydown}></textarea>
-				</div>
+				<textarea
+					bind:value={composerMarkdown}
+					placeholder="Add a note…"
+					class="composer-body-textarea"
+					onkeydown={handleMarkdownEditorKeydown}
+				></textarea>
 
 				<div class="mb-4 flex items-center gap-2">
-					<span class="composer-meta-label">Part of:</span>
+					<span class="composer-meta-label shrink-0">Goal:</span>
 					<GoalSelect
 						allGoals={allGoals}
 						bind:value={composerGoalValue}
@@ -470,22 +461,20 @@ const clearAll = () => {
 				</div>
 
 				{#if composerGoalValue === NEW_LIST_OPTION_VALUE}
-					<div class="mb-4">
-						<input
-							type="text"
-							bind:value={composerNewListName}
-							placeholder="List name"
-							class="composer-input"
-						/>
-					</div>
+					<input
+						type="text"
+						bind:value={composerNewListName}
+						placeholder="List name"
+						class="composer-title-input mb-4"
+					/>
 				{/if}
 
-				<div class="flex gap-2">
+				<div class="flex justify-end">
 					<button
 						type="button"
 						onclick={submitComposer}
 						disabled={composerGoalValue === NEW_LIST_OPTION_VALUE && !composerNewListName.trim()}
-						class="w-full rounded-md border border-violet-600/70 bg-violet-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-violet-500"
+						class="task-edit-save-button disabled:opacity-40"
 					>
 						Save
 					</button>
@@ -494,17 +483,19 @@ const clearAll = () => {
 				<textarea
 					bind:value={composerNoteContent}
 					placeholder="Write your note…"
-					class="composer-textarea mb-4 min-h-[12rem]"
+					class="composer-body-textarea min-h-[12rem]"
 					onkeydown={handleMarkdownEditorKeydown}
 					autofocus
 				></textarea>
-				<button
-					type="button"
-					onclick={submitNoteTab}
-					class="w-full rounded-md border border-violet-600/70 bg-violet-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-violet-500"
-				>
-					Create note
-				</button>
+				<div class="flex justify-end">
+					<button
+						type="button"
+						onclick={submitNoteTab}
+						class="task-edit-save-button"
+					>
+						Save note
+					</button>
+				</div>
 			{/if}
 		</div>
 	</div>
