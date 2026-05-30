@@ -27,6 +27,7 @@
 	} from '$lib/workspaceNavResume.js';
 
 	let searchText = $state('');
+	let quickAddText = $state('');
 	let activeMainFeed = $state('todos');
 	let initialTodoListReady = $state(false);
 	let isNarrowLayout = $state(false);
@@ -524,6 +525,13 @@
 		goto(`/todo?${q}`);
 	}
 
+	function submitQuickAddTask() {
+		const title = quickAddText.trim();
+		if (!title) return;
+		quickAddText = '';
+		createTodoFromComposer({ title, shouldNavigate: false });
+	}
+
 	function createTodoFromComposer({ title, markdown, goalIndex, listType, listName, shouldNavigate = true } = {}) {
 		// Handle case when called without parameters (from "+ New Task" button)
 		// Add to no-goal list when not on a specific goal page
@@ -711,7 +719,9 @@
 		<div class="mb-3 md:hidden">
 			<WorkspaceToolbar
 				mode="mobile"
-				bind:searchText
+				inputMode="quickAdd"
+				bind:quickAddText
+				onQuickAdd={submitQuickAddTask}
 				showSidebarToggle={!mobileMenuOpen}
 				onSidebarToggle={() => (mobileMenuOpen = true)}
 				showHamburger={false}
@@ -759,7 +769,13 @@
 
 			<div class="min-w-0">
 				<div class="mb-6 hidden md:block">
-					<WorkspaceToolbar mode="desktop" bind:searchText composeTabDefault="task" />
+					<WorkspaceToolbar
+						mode="desktop"
+						inputMode="quickAdd"
+						bind:quickAddText
+						onQuickAdd={submitQuickAddTask}
+						composeTabDefault="task"
+					/>
 				</div>
 				{#if activeMainFeed === 'todos'}
 					<p class="page-subtitle mb-6">

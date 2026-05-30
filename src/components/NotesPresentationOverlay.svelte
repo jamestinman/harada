@@ -51,7 +51,6 @@
 	}
 
 	function stopSpeaking() {
-		console.log('[Notes TTS][Presentation] stopSpeaking called');
 		speechRunId += 1;
 		activeSpeechController?.abort();
 		activeSpeechController = null;
@@ -61,7 +60,6 @@
 
 	async function speakCurrentNote() {
 		if (!speechSupported) {
-			console.warn('[Notes TTS][Presentation] audio playback not supported');
 			return;
 		}
 		const text = speechTextFromNoteContent(currentNote?.content ?? '');

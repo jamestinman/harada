@@ -104,18 +104,16 @@
 		<div class="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
 			<div class="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-950/50">
 				<svg class="h-5 w-5 text-amber-600 dark:text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-					<path d="M1 6l5 5"/>
-					<path d="M1 1l22 22"/>
-					<path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/>
-					<path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/>
-					<path d="M10.71 5.05A16 16 0 0 1 22.56 9"/>
-					<path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/>
-					<path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
-					<circle cx="12" cy="20" r="1"/>
+					<path d="M12 8V4H8"/>
+					<rect width="16" height="12" x="4" y="8" rx="2"/>
+					<path d="M2 14h2"/>
+					<path d="M20 14h2"/>
+					<path d="M15 13v2"/>
+					<path d="M9 13v2"/>
 				</svg>
 			</div>
-			<h3 class="font-semibold text-slate-900 dark:text-white">Offline support</h3>
-			<p class="mt-1.5 text-sm text-slate-500 dark:text-slate-400">No connection? No problem. Everything works offline and syncs back up the moment you're online again.</p>
+			<h3 class="font-semibold text-slate-900 dark:text-white">World's first natively Agent friendly to-do list</h3>
+			<p class="mt-1.5 text-sm text-slate-500 dark:text-slate-400">Use an AI agent to manage your to-do list with natural language commands like "What's my next task?" or "Add this to my boat project list"</p>
 		</div>
 	</div>
 

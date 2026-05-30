@@ -12,7 +12,7 @@ const config = {
 				assets: 'build',
 				fallback: 'index.html'
 			})
-			: adapterVercel(),
+			: adapterVercel({ runtime: 'nodejs24.x' }),
 		alias: {
 			$components: './src/components',
 			$config: './src/config',

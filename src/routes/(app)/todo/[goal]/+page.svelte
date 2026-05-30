@@ -72,6 +72,7 @@
 		activeTodoId = id;
 	}
 	let searchText = $state('');
+	let quickAddText = $state('');
 	
 	// Goal editing state (declared early so it can be used in derived values)
 	let isEditingGoal = $state(false);
@@ -593,7 +594,14 @@
 		goto(`/todo?${q}`);
 	}
 
-	function createTodoFromComposer({ title, markdown, goalIndex: selectedGoalIndex, listType, listName } = {}) {
+	function submitQuickAddTask() {
+		const title = quickAddText.trim();
+		if (!title) return;
+		quickAddText = '';
+		createTodoFromComposer({ title, shouldNavigate: false });
+	}
+
+	function createTodoFromComposer({ title, markdown, goalIndex: selectedGoalIndex, listType, listName, shouldNavigate = true } = {}) {
 		// Handle case when called without parameters (from "+ New Task" button)
 		// Add to current goal when on a goal page
 		if (!title && !markdown && selectedGoalIndex === undefined && !listType && !listName) {
@@ -609,7 +617,7 @@
 				store.bumpGoalAfterTodoActivity(goalIndex);
 				activeTodoId = todo.id;
 				store.registerTodoMutation(todo.id, { immediate: true });
-				navigateToNewTask(todo);
+				if (shouldNavigate) navigateToNewTask(todo);
 			}
 			return;
 		}
@@ -629,7 +637,7 @@
 				store.setPrimaryNoteForTask(todo.id, { content: markdown.trim() });
 			}
 			store.registerTodoMutation(todo.id, { immediate: true });
-			navigateToNewTask(todo);
+			if (shouldNavigate) navigateToNewTask(todo);
 			return;
 		}
 		const targetGoalIndex =
@@ -652,8 +660,9 @@
 			store.bumpGoalAfterTodoActivity(targetGoalIndex);
 		}
 
+		activeTodoId = todo.id;
 		store.registerTodoMutation(todo.id, { immediate: true });
-		navigateToNewTask(todo);
+		if (shouldNavigate) navigateToNewTask(todo);
 	}
 
 	function createNoteFromComposer(content = '') {
@@ -987,7 +996,9 @@
 		<div class="mb-3 md:hidden">
 			<WorkspaceToolbar
 				mode="mobile"
-				bind:searchText
+				inputMode="quickAdd"
+				bind:quickAddText
+				onQuickAdd={submitQuickAddTask}
 				showSidebarToggle={!mobileMenuOpen}
 				onSidebarToggle={() => (mobileMenuOpen = true)}
 				showHamburger={false}
@@ -1043,7 +1054,13 @@
 				{:else}
 					{#if todoDesktopLayout}
 					<div class="mb-6 hidden md:block">
-						<WorkspaceToolbar mode="desktop" bind:searchText composeTabDefault="task" />
+						<WorkspaceToolbar
+							mode="desktop"
+							inputMode="quickAdd"
+							bind:quickAddText
+							onQuickAdd={submitQuickAddTask}
+							composeTabDefault="task"
+						/>
 					</div>
 					<!-- Header -->
 					<div class="mb-6">
