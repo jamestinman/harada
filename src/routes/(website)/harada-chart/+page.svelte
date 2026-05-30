@@ -1,158 +1,285 @@
+<script>
+	import AppleStoreBtn from '$components/AppleStoreBtn.svelte';
+	import GooglePlayBtn from '$components/GooglePlayBtn.svelte';
+
+	const luckHabits = [
+		'Pick up litter on the field',
+		'Bow to umpires and opponents',
+		'Greet everyone with energy',
+		'Be someone others want to support',
+		'Keep the locker room spotless',
+		'Thank the bus driver',
+		'Read a book every two weeks',
+		'Write thank-you letters'
+	];
+</script>
+
 <svelte:head>
-	<title>The Harada Chart - History &amp; Deep Dive | Haradato</title>
+	<title>The Harada Chart — History &amp; Deep Dive | Haradato</title>
 	<meta
 		name="description"
 		content="The full story of the Harada Method and OW64 chart - from an Osaka classroom to Shohei Ohtani's rise to MLB superstardom."
 	/>
 </svelte:head>
 
-<article class="content-page mx-auto max-w-3xl space-y-12 py-4">
+<article class="content-page space-y-24 pb-12">
+	<!-- ───────────────────────── HERO ───────────────────────── -->
+	<header class="relative -mt-4">
+		<div class="dot-grid pointer-events-none absolute inset-x-0 -top-12 -z-10 h-[380px]"></div>
+		<div class="pointer-events-none absolute inset-x-0 -top-24 -z-10 h-[400px] bg-[radial-gradient(ellipse_60%_60%_at_50%_0%,rgba(16,185,129,0.14),transparent)]"></div>
 
-	<!-- Hero -->
-	<section class="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
-		<h1 class="mb-3 text-4xl font-bold tracking-tight">The Harada Chart</h1>
-		<p class="text-lg text-slate-600 dark:text-slate-400 leading-relaxed">
-			A 64-square sheet of paper that turned the worst sports team in Osaka into national champions, and later guided a teenager named Shohei Ohtani to the top of world baseball.
-		</p>
-    <img src="/onboarding/ohtani-chart.webp" alt="Shohei Ohtani's Harada Chart" class="w-full h-auto rounded-lg" />
-    <div class="w-full mx-auto text-center mt-3"><a href="/harada" class="salesBtn">Make your own Harada Chart</a></div>
-	</section>
-
-	<!-- Origins -->
-	<section>
-		<h2 class="mb-4 text-2xl font-semibold">Origin: Osaka, 1990s</h2>
-		<p class="mb-4 text-slate-700 dark:text-slate-300 leading-relaxed">
-			In the early 1990s, <strong>Takashi Harada</strong> took on one of Japan's most thankless coaching jobs. He was assigned to run the track and field programme at a junior high school in Osaka's most economically deprived neighbourhood - the worst-performing school out of 380 across the city. His students had little confidence, poor discipline, and almost no belief they could amount to anything.
-		</p>
-		<p class="mb-4 text-slate-700 dark:text-slate-300 leading-relaxed">
-			Rather than drilling harder technique, Harada focused on something nobody else was measuring: the students' inner world. He asked each athlete to define a single "highest goal," map out their strengths and weaknesses honestly, design daily routines tied to that goal, and keep a journal to track progress. He then added a fourth dimension that proved decisive - <strong>actively helping others every single day</strong>. Physical skill, self-belief, good habits, and service to others together formed his framework.
-		</p>
-		<p class="text-slate-700 dark:text-slate-300 leading-relaxed">
-			Within three years the team won the regional championship. They held the title for six years running. Twelve of his athletes went on to win <strong>thirteen national gold medals</strong>, making their school the best in Japan for its age group. Nearly all of his once-struggling students earned university scholarships and went on to successful careers.
-		</p>
-	</section>
-
-	<!-- The OW64 chart -->
-	<section>
-		<h2 class="mb-4 text-2xl font-semibold">The Open Window 64 (OW64)</h2>
-		<p class="mb-4 text-slate-700 dark:text-slate-300 leading-relaxed">
-			To make the system teachable and visual, Harada devised a tool he called the <strong>Open Window 64</strong> - a 9×9 grid where the center square holds one central life goal, surrounded by eight pillars of development. Each pillar then anchors its own 3×3 square, with eight concrete sub-goals filling the surrounding cells, giving <strong>64 total action items</strong>.
-		</p>
-		<div class="rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/60 p-5 space-y-3">
-			<h3 class="font-semibold text-slate-800 dark:text-slate-100">How the grid works</h3>
-			<ol class="space-y-2 text-slate-700 dark:text-slate-300 text-sm leading-relaxed">
-				<li><strong>1 central goal</strong> sits in the very middle - your north star. It must be concrete, measurable, and meaningful enough to sustain years of effort.</li>
-				<li><strong>8 surrounding pillars</strong> define the domains you must develop to reach it. For an athlete these might be physique, technique, and mentality; for a founder, product, sales, and team.</li>
-				<li><strong>64 sub-goals</strong> (8 per pillar) are the specific, repeatable daily behaviours that build each pillar over time.</li>
-			</ol>
+		<div class="mx-auto max-w-3xl text-center">
+			<p class="flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-400">
+				<span class="inline-block h-px w-8 bg-emerald-500/60"></span>
+				The Method · A true story
+				<span class="inline-block h-px w-8 bg-emerald-500/60"></span>
+			</p>
+			<h1 class="mt-5 text-balance text-4xl font-bold leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl">
+				The Harada Chart
+			</h1>
+			<p class="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-slate-600 dark:text-slate-300">
+				A 64-square sheet of paper that turned the worst sports team in Osaka into national champions — and later guided a teenager named Shohei Ohtani to the top of world baseball.
+			</p>
 		</div>
-		<p class="mt-4 text-slate-700 dark:text-slate-300 leading-relaxed">
-			The chart's power is its <em>visibility</em>. Everything you need to do - across every dimension of growth - fits on a single page. Nothing is hidden in a buried notes file or forgotten in a disconnected app. You can see at a glance where you are thriving and where you are falling short.
-		</p>
-	</section>
 
-	<!-- From sports to business -->
-	<section>
-		<h2 class="mb-4 text-2xl font-semibold">From the classroom to the boardroom</h2>
-		<p class="mb-4 text-slate-700 dark:text-slate-300 leading-relaxed">
-			After his success in education, Harada left teaching in 2002 to take the method into the corporate world. He reasoned that the same principles - self-reliance, structured goals, daily discipline, and service to others - that transformed struggling teenagers would work equally well for adults in organisations.
-		</p>
-		<p class="mb-4 text-slate-700 dark:text-slate-300 leading-relaxed">
-			He was right. The Harada Method was adopted by major Japanese companies including <strong>Toyota, Panasonic, and Suntory</strong>, and has since been taught to over <strong>90,000 people at more than 280 companies</strong> in Japan. The Japan Management Association selected it as "the world's best system for developing people to their fullest capabilities."
-		</p>
-		<p class="text-slate-700 dark:text-slate-300 leading-relaxed">
-			The method reached a Western audience through <strong>Norman Bodek</strong> - the American publisher known as the "Godfather of Lean" for his decades of work popularising the Toyota Production System. Bodek had spent years feeling that Lean manufacturing was missing a human dimension. When he encountered Harada, he described the method as "the human side of Lean" and dedicated the final years of his career to bringing it to North America and Europe.
-		</p>
-	</section>
+		<figure class="mx-auto mt-10 max-w-2xl">
+			<div class="rotate-[-1deg] overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-2xl shadow-slate-900/10 transition-transform duration-300 hover:rotate-0 dark:border-slate-700 dark:bg-slate-800">
+				<img src="/onboarding/ohtani-chart.webp" alt="Shohei Ohtani's original 64-square Harada chart, written at age 15" class="h-auto w-full rounded-lg" />
+			</div>
+			<figcaption class="mt-4 text-center text-sm italic text-slate-500 dark:text-slate-400">
+				Shohei Ohtani's actual chart, written at 15. It now sits in the Baseball Hall of Fame.
+			</figcaption>
+		</figure>
 
-	<!-- Ohtani -->
-	<section>
-		<h2 class="mb-4 text-2xl font-semibold">Shohei Ohtani's chart</h2>
-		<p class="mb-4 text-slate-700 dark:text-slate-300 leading-relaxed">
-			The Harada Method's most famous practitioner never intended to be a case study. In 2010, a fifteen-year-old from Iwate Prefecture enrolled at Hanamaki Higashi High School, whose head baseball coach, <strong>Hiroshi Sasaki</strong>, had studied the Harada Method and required every player to complete an OW64 chart.
-		</p>
-		<p class="mb-4 text-slate-700 dark:text-slate-300 leading-relaxed">
-			That student was <strong>Shohei Ohtani</strong>. At the centre of his grid he wrote - in careful teenage handwriting - a goal that seemed audacious even for the most talented prospect in Japan:
-		</p>
-		<blockquote class="border-l-4 border-emerald-500 pl-4 italic text-slate-600 dark:text-slate-400 my-4">
-			"Be selected No. 1 in the draft by all eight NPB teams."
-		</blockquote>
-		<p class="mb-4 text-slate-700 dark:text-slate-300 leading-relaxed">
-			Around that goal he arranged eight pillars: <strong>Physique, Control, Sharpness, Speed, Pitch repertoire, Character, Mental toughness</strong> - and, famously, <strong>Luck</strong>. Under each pillar he listed eight daily behaviours.
-		</p>
-		<p class="mb-4 text-slate-700 dark:text-slate-300 leading-relaxed">
-			The luck column became the most discussed section of the chart when it was later published. Ohtani's eight "luck habits" were entirely mundane acts of character:
-		</p>
-		<ul class="mb-4 text-slate-700 dark:text-slate-300 text-sm space-y-1 leading-relaxed">
-			<li>Pick up litter in the dugout and around the field</li>
-			<li>Bow deeply to umpires and opponents</li>
-			<li>Greet everyone with energy</li>
-			<li>Be the kind of person others naturally want to support</li>
-			<li>Keep the locker room spotless</li>
-			<li>Thank the bus driver</li>
-			<li>Read one book every two weeks</li>
-			<li>Write thank-you letters</li>
-		</ul>
-		<p class="mb-4 text-slate-700 dark:text-slate-300 leading-relaxed">
-			His reasoning, repeated in interviews: <em>"If you become the kind of person people want to see succeed, the universe finds a way to help you."</em>
-		</p>
-		<p class="text-slate-700 dark:text-slate-300 leading-relaxed">
-			In 2012, every single NPB team did indeed try to draft Ohtani first overall. He signed with the Hokkaido Nippon-Ham Fighters - the only team to promise he could both pitch and hit. By 2018 he was in Anaheim rewriting what a baseball player could be, and in 2024 he became the first player in history to hit 50 home runs and steal 50 bases in the same season while pitching triple-digit heat. His original chart now sits in the Baseball Hall of Fame in Cooperstown.
-		</p>
-	</section>
-
-	<!-- The principle -->
-	<section>
-		<h2 class="mb-4 text-2xl font-semibold">The core insight</h2>
-		<p class="mb-4 text-slate-700 dark:text-slate-300 leading-relaxed">
-			The Harada Method separates skill from character in neither athletics nor business. Ohtani's chart is explicit: cleaning the dugout and reading books are listed alongside pitching mechanics and strength targets as equal contributors to success. The insight, in Harada's own words:
-		</p>
-		<blockquote class="border-l-4 border-emerald-500 pl-4 italic text-slate-600 dark:text-slate-400 my-4">
-			"The reason people fail to achieve their goals is not because they lack ability, but because they set and pursue those goals the wrong way."
-		</blockquote>
-		<p class="text-slate-700 dark:text-slate-300 leading-relaxed">
-			World-class success, the method argues, is the accumulated residue of world-class daily habits. The fastest way to install those habits is to make them visible, countable, and tied to a purpose bigger than ego.
-		</p>
-	</section>
-
-	<!-- Haradato -->
-	<section class="rounded-xl border border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/40 p-6">
-		<h2 class="mb-3 text-2xl font-semibold text-emerald-800 dark:text-emerald-300">Haradato: the chart as a living system</h2>
-		<p class="mb-4 text-slate-700 dark:text-slate-300 leading-relaxed">
-			Haradato brings the OW64 chart to iPhone and web, and adds one layer that a paper grid cannot: a full <strong>todo list behind every cell</strong>. Each of your 64 sub-goals becomes a portal to a dedicated task manager, so the daily actions Harada prescribed are no longer aspirations you have to remember - they are items you can schedule, track, and check off.
-		</p>
-		<ul class="space-y-2 text-slate-700 dark:text-slate-300 text-sm">
-			<li class="flex gap-2">
-				<span class="text-emerald-600 dark:text-emerald-400 shrink-0">•</span>
-				<span><strong class="text-slate-800 dark:text-slate-200">One central goal</strong> - visible every time you open the app</span>
-			</li>
-			<li class="flex gap-2">
-				<span class="text-emerald-600 dark:text-emerald-400 shrink-0">•</span>
-				<span><strong class="text-slate-800 dark:text-slate-200">8 pillars, 64 sub-goals</strong> - all on one interactive grid</span>
-			</li>
-			<li class="flex gap-2">
-				<span class="text-emerald-600 dark:text-emerald-400 shrink-0">•</span>
-				<span><strong class="text-slate-800 dark:text-slate-200">Notes and tasks per cell</strong> - context stays attached to the goal it serves</span>
-			</li>
-			<li class="flex gap-2">
-				<span class="text-emerald-600 dark:text-emerald-400 shrink-0">•</span>
-				<span><strong class="text-slate-800 dark:text-slate-200">Progress at a glance</strong> - see which pillars you're building and where you need more work</span>
-			</li>
-		</ul>
-		<div class="mt-5 flex gap-3">
-			<a
-				href="/app"
-				class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500"
-			>
-				Download the app
-			</a>
-			<a
-				href="/harada"
-				class="rounded-lg border border-slate-300 dark:border-slate-600 px-4 py-2 text-sm font-medium hover:bg-white dark:hover:bg-slate-800"
-			>
-				Use on the web
-			</a>
+		<div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+			<a href="/harada" class="cta-primary">Make your own — free</a>
+			<a href="#how-it-works" class="cta-ghost">How the chart works</a>
 		</div>
-	</section>
+	</header>
 
+	<!-- ───────────────────── STAT STRIP ───────────────────── -->
+	<div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
+		{#each [
+			{ stat: '#1', label: 'from the worst of 380 city schools' },
+			{ stat: '13', label: 'national gold medals won' },
+			{ stat: '90k+', label: 'people trained in the method' },
+			{ stat: '280+', label: 'companies, incl. Toyota & Panasonic' }
+		] as item}
+			<div class="rounded-2xl border border-slate-200 bg-white p-5 text-center dark:border-slate-800 dark:bg-slate-900">
+				<p class="text-3xl font-extrabold text-emerald-600 dark:text-emerald-400 sm:text-4xl">{item.stat}</p>
+				<p class="mt-2 text-xs leading-snug text-slate-500 dark:text-slate-400">{item.label}</p>
+			</div>
+		{/each}
+	</div>
+
+	<!-- ─────────────────────── ARTICLE BODY ─────────────────────── -->
+	<div class="mx-auto max-w-3xl space-y-20">
+		<!-- 01 Origin -->
+		<section>
+			<p class="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-400">01 — Origin</p>
+			<h2 class="mt-2 text-3xl font-bold tracking-tight">Osaka, 1990s</h2>
+			<div class="mt-5 space-y-4 text-lg leading-relaxed text-slate-700 dark:text-slate-300">
+				<p>
+					In the early 1990s, <strong>Takashi Harada</strong> took on one of Japan's most thankless coaching jobs: the track and field programme at a junior high school in Osaka's most deprived neighbourhood — the worst-performing school out of 380 across the city. His students had little confidence, poor discipline, and almost no belief they could amount to anything.
+				</p>
+				<p>
+					Rather than drilling harder technique, Harada focused on something nobody else was measuring: the students' inner world. He asked each athlete to define a single "highest goal," map their strengths and weaknesses honestly, design daily routines tied to that goal, and keep a journal. Then he added a fourth dimension that proved decisive — <strong>actively helping others every single day</strong>. Physical skill, self-belief, good habits, and service to others together formed his framework.
+				</p>
+				<p>
+					Within three years the team won the regional championship and held it for six years running. Twelve of his athletes won <strong>thirteen national gold medals</strong>, making their school the best in Japan for its age group. Nearly all of his once-struggling students earned university scholarships.
+				</p>
+			</div>
+		</section>
+
+		<!-- 02 OW64 -->
+		<section id="how-it-works" class="scroll-mt-24">
+			<p class="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-400">02 — The tool</p>
+			<h2 class="mt-2 text-3xl font-bold tracking-tight">The Open Window 64</h2>
+			<p class="mt-5 text-lg leading-relaxed text-slate-700 dark:text-slate-300">
+				To make the system teachable and visual, Harada devised a tool he called the <strong>Open Window 64</strong> — a 9×9 grid. A central life goal sits in the middle, surrounded by eight pillars of development. Each pillar anchors its own 3×3 block of eight concrete sub-goals, giving <strong>64 total action items</strong>.
+			</p>
+
+			<!-- 1 → 8 → 64 visual -->
+			<div class="mt-8 grid gap-4 sm:grid-cols-3">
+				{#each [
+					{ n: '1', img: '/onboarding/central-goal.png', title: 'One central goal', body: 'Concrete, measurable, and meaningful enough to sustain years of effort.' },
+					{ n: '8', img: '/onboarding/sub-goals.png', title: 'Eight pillars', body: 'The domains you must develop — physique, technique, mentality, character.' },
+					{ n: '64', img: '/onboarding/all-goals.png', title: 'Sixty-four actions', body: 'Eight repeatable daily behaviours per pillar that build each one over time.' }
+				] as step}
+					<div class="relative flex flex-col items-center rounded-2xl border border-slate-200 bg-white p-5 text-center dark:border-slate-800 dark:bg-slate-900">
+						<span class="absolute -top-3 left-5 rounded-full bg-emerald-600 px-2.5 py-0.5 text-xs font-bold text-white shadow">{step.n}</span>
+						<img src={step.img} alt={step.title} class="mb-4 mt-1 h-28 w-auto object-contain" loading="lazy" />
+						<h3 class="font-semibold text-slate-900 dark:text-white">{step.title}</h3>
+						<p class="mt-1.5 text-sm leading-relaxed text-slate-500 dark:text-slate-400">{step.body}</p>
+					</div>
+				{/each}
+			</div>
+
+			<p class="mt-8 text-lg leading-relaxed text-slate-700 dark:text-slate-300">
+				The chart's power is its <em>visibility</em>. Everything you need to do — across every dimension of growth — fits on a single page. Nothing is hidden in a buried notes file or a forgotten app. You can see at a glance where you are thriving and where you are falling short.
+			</p>
+		</section>
+
+		<!-- 03 Business -->
+		<section>
+			<p class="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-400">03 — Scale</p>
+			<h2 class="mt-2 text-3xl font-bold tracking-tight">From the classroom to the boardroom</h2>
+			<div class="mt-5 space-y-4 text-lg leading-relaxed text-slate-700 dark:text-slate-300">
+				<p>
+					After his success in education, Harada left teaching in 2002 to take the method into the corporate world. The same principles — self-reliance, structured goals, daily discipline, and service to others — that transformed struggling teenagers, he reasoned, would work for adults in organisations.
+				</p>
+				<p>
+					He was right. The method was adopted by <strong>Toyota, Panasonic, and Suntory</strong>, and has since been taught to over <strong>90,000 people at more than 280 companies</strong>. The Japan Management Association called it "the world's best system for developing people to their fullest capabilities."
+				</p>
+				<p>
+					It reached the West through <strong>Norman Bodek</strong> — the publisher known as the "Godfather of Lean." Having long felt Lean manufacturing was missing a human dimension, he called the Harada Method "the human side of Lean" and spent his final years bringing it to North America and Europe.
+				</p>
+			</div>
+		</section>
+
+		<!-- 04 Ohtani -->
+		<section>
+			<p class="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-400">04 — The legend</p>
+			<h2 class="mt-2 text-3xl font-bold tracking-tight">Shohei Ohtani's chart</h2>
+			<div class="mt-5 space-y-4 text-lg leading-relaxed text-slate-700 dark:text-slate-300">
+				<p>
+					In 2010, a fifteen-year-old from Iwate Prefecture enrolled at Hanamaki Higashi High School, whose baseball coach, <strong>Hiroshi Sasaki</strong>, required every player to complete an OW64 chart. That student was <strong>Shohei Ohtani</strong>. At the centre of his grid he wrote a goal that seemed audacious even for the most talented prospect in Japan:
+				</p>
+			</div>
+
+			<blockquote class="my-8 border-l-4 border-emerald-500 bg-emerald-50 py-4 pl-6 pr-4 text-xl font-medium italic text-slate-700 dark:bg-emerald-950/30 dark:text-slate-200">
+				"Be selected No. 1 in the draft by all eight NPB teams."
+			</blockquote>
+
+			<div class="space-y-4 text-lg leading-relaxed text-slate-700 dark:text-slate-300">
+				<p>
+					Around it he arranged eight pillars: Physique, Control, Sharpness, Speed, Pitch repertoire, Character, Mental toughness — and, famously, <strong>Luck</strong>. The luck column became the most discussed part of the chart. Ohtani's eight "luck habits" were entirely mundane acts of character:
+				</p>
+			</div>
+
+			<ul class="mt-6 grid gap-3 sm:grid-cols-2">
+				{#each luckHabits as habit}
+					<li class="flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+						<svg class="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M16.704 5.296a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.296-7.29a1 1 0 011.408 0z" clip-rule="evenodd"/></svg>
+						{habit}
+					</li>
+				{/each}
+			</ul>
+
+			<div class="mt-6 space-y-4 text-lg leading-relaxed text-slate-700 dark:text-slate-300">
+				<p>
+					His reasoning, repeated in interviews: <em>"If you become the kind of person people want to see succeed, the universe finds a way to help you."</em>
+				</p>
+				<p>
+					In 2012, every single NPB team did try to draft Ohtani first overall. By 2018 he was in Anaheim rewriting what a baseball player could be, and in 2024 he became the first player in history to hit 50 home runs and steal 50 bases in a season while pitching triple-digit heat.
+				</p>
+			</div>
+		</section>
+
+		<!-- 05 The insight -->
+		<section>
+			<p class="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-400">05 — The insight</p>
+			<h2 class="mt-2 text-3xl font-bold tracking-tight">Why it works</h2>
+			<div class="mt-5 space-y-4 text-lg leading-relaxed text-slate-700 dark:text-slate-300">
+				<p>
+					The Harada Method refuses to separate skill from character. Ohtani's chart is explicit: cleaning the dugout and reading books sit alongside pitching mechanics and strength targets as equal contributors to success.
+				</p>
+			</div>
+
+			<blockquote class="my-8 border-l-4 border-emerald-500 bg-emerald-50 py-4 pl-6 pr-4 text-xl font-medium italic text-slate-700 dark:bg-emerald-950/30 dark:text-slate-200">
+				"People fail to reach their goals not because they lack ability, but because they set and pursue those goals the wrong way."
+				<cite class="mt-2 block text-sm font-normal not-italic text-slate-500 dark:text-slate-400">— Takashi Harada</cite>
+			</blockquote>
+
+			<p class="text-lg leading-relaxed text-slate-700 dark:text-slate-300">
+				World-class success, the method argues, is the accumulated residue of world-class daily habits. The fastest way to install those habits is to make them visible, countable, and tied to a purpose bigger than ego.
+			</p>
+		</section>
+	</div>
+
+	<!-- ───────────────── CLOSING CTA: living system ───────────────── -->
+	<div class="relative overflow-hidden rounded-3xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-8 shadow-sm sm:p-12 dark:border-emerald-900/50 dark:from-emerald-950/40 dark:to-slate-900">
+		<div class="mx-auto max-w-2xl text-center">
+			<p class="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-400">The chart, as a living system</p>
+			<h2 class="mt-3 text-balance text-3xl font-bold tracking-tight sm:text-4xl">Bring your Harada chart to life</h2>
+			<p class="mx-auto mt-4 max-w-xl text-slate-600 dark:text-slate-300">
+				Haradato puts the OW64 chart on your phone and the web — and adds what paper can't: a real to-do list and notes behind every one of your 64 squares.
+			</p>
+		</div>
+
+		<ul class="mx-auto mt-8 grid max-w-2xl gap-3 sm:grid-cols-2">
+			{#each [
+				'One central goal, visible every time you open the app',
+				'8 pillars and 64 sub-goals on one interactive grid',
+				'Tasks and markdown notes attached to every cell',
+				'Progress at a glance — and synced across all devices'
+			] as feature}
+				<li class="flex items-start gap-3 text-sm text-slate-700 dark:text-slate-300">
+					<svg class="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M16.704 5.296a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.296-7.29a1 1 0 011.408 0z" clip-rule="evenodd"/></svg>
+					{feature}
+				</li>
+			{/each}
+		</ul>
+
+		<div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+			<a href="/harada" class="cta-primary">Start your chart — free</a>
+		</div>
+		<div class="mt-5 flex flex-wrap items-center justify-center gap-3">
+			<AppleStoreBtn />
+			<GooglePlayBtn />
+		</div>
+	</div>
 </article>
+
+<style>
+	.dot-grid {
+		background-image: radial-gradient(circle, rgba(16, 185, 129, 0.28) 1px, transparent 1.4px);
+		background-size: 24px 24px;
+		-webkit-mask-image: radial-gradient(ellipse 70% 80% at 50% 0%, #000 10%, transparent 70%);
+		mask-image: radial-gradient(ellipse 70% 80% at 50% 0%, #000 10%, transparent 70%);
+	}
+
+	.cta-primary {
+		display: inline-block;
+		border-radius: 0.75rem;
+		background: rgb(5 150 105);
+		padding: 0.7rem 1.4rem;
+		font-size: 0.95rem;
+		font-weight: 600;
+		color: white;
+		box-shadow: 0 8px 20px -8px rgba(5, 150, 105, 0.6);
+		transition: transform 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+	}
+	.cta-primary:hover {
+		background: rgb(16 185 129);
+		transform: translateY(-1px);
+		box-shadow: 0 12px 24px -8px rgba(5, 150, 105, 0.7);
+	}
+
+	.cta-ghost {
+		display: inline-block;
+		border-radius: 0.75rem;
+		border: 1px solid rgb(203 213 225);
+		padding: 0.7rem 1.4rem;
+		font-size: 0.95rem;
+		font-weight: 600;
+		color: inherit;
+		transition: background-color 0.15s ease, border-color 0.15s ease;
+	}
+	.cta-ghost:hover {
+		background: rgb(241 245 249);
+	}
+	:global(.dark) .cta-ghost {
+		border-color: rgb(71 85 105);
+	}
+	:global(.dark) .cta-ghost:hover {
+		background: rgb(30 41 59);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.cta-primary,
+		.cta-ghost {
+			transition: none;
+		}
+	}
+</style>
