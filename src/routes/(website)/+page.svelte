@@ -48,10 +48,10 @@
 					The Harada Method · since 1990s Osaka
 				</p>
 				<h1 class="mt-5 text-balance text-4xl font-bold leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl">
-					The goal system behind a <span class="text-emerald-600 dark:text-emerald-400">baseball legend</span> — now an app for your whole life.
+					The <span class="text-emerald-600 dark:text-emerald-400">legendary goal system</span> now an app for your whole life.
 				</h1>
 				<p class="mt-6 max-w-xl text-lg leading-relaxed text-slate-600 dark:text-slate-300">
-					Haradato brings the Harada Method — <strong class="font-semibold text-slate-800 dark:text-slate-100">one chart, eight pillars, 64 daily habits</strong> — into a free app that keeps the tasks you do today wired to the life you're trying to build.
+					Haradato brings the Harada Method - <strong class="font-semibold text-slate-800 dark:text-slate-100">one chart, eight pillars, 64 daily habits</strong> - into a free app that keeps the tasks you do today wired to the life you're trying to build.
 				</p>
 				<div class="mt-8 flex flex-wrap items-center gap-3">
 					<a href="/harada" class="cta-primary">Start your chart — free</a>
