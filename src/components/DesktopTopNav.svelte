@@ -148,11 +148,11 @@
 				Pricing
 			</a>
 			<a
-				href="/harada-chart"
-					class={activeWebsite === 'chart' ? websiteLinkActive : linkBase}
-					aria-current={activeWebsite === 'chart' ? 'page' : undefined}
+				href="/for-agents"
+					class={activeWebsite === 'agents' ? websiteLinkActive : linkBase}
+					aria-current={activeWebsite === 'agents' ? 'page' : undefined}
 				>
-					What is a Harada Chart?
+					Get your AI Agent involved
 				</a>
 			</nav>
 		{/if}
@@ -171,7 +171,7 @@
 			{:else if !isOnline}
 				<div
 					class="flex flex-col items-end gap-0 text-right"
-					title={userName ? `Offline — signed in as ${userName}` : 'Offline'}
+					title={userName ? `Offline - signed in as ${userName}` : 'Offline'}
 				>
 					<span class="text-xs font-bold tracking-wide text-amber-500">OFFLINE</span>
 					{#if userName}

@@ -38,7 +38,7 @@
 		return 'empty'; // Not a goal position
 	}
 
-	// Base sizing shared by every dot — color is overlaid separately
+	// Base sizing shared by every dot - color is overlaid separately
 	const DOT_BASE = 'h-1.5 w-1.5 rounded-full transition-all';
 
 	function getCellClass(cellType, isCurrentGoal) {

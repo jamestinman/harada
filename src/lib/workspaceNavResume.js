@@ -76,11 +76,12 @@ export function workspaceNavActiveSection(pathname) {
 
 /**
  * Marketing site centre nav.
- * @returns {'harada' | 'todo' | 'notes' | 'chart' | 'pricing' | null}
+ * @returns {'harada' | 'todo' | 'notes' | 'chart' | 'pricing' | 'agents' | null}
  */
 export function websiteNavActiveSection(pathname) {
 	const p = normalizeWorkspacePathname(pathname);
 	if (p === '/harada-chart' || p.startsWith('/harada-chart/')) return 'chart';
+	if (p === '/for-agents' || p.startsWith('/for-agents/')) return 'agents';
 	if (p === '/harada' || p.startsWith('/harada/')) return 'harada';
 	if (p.startsWith('/todo')) return 'todo';
 	if (p.startsWith('/notes')) return 'notes';

@@ -1191,7 +1191,7 @@ class Store {
 		return this._flushAllSaves();
 	}
 
-	// Debounced save for routine edits — local at 200ms, cloud at 1200ms
+	// Debounced save for routine edits - local at 200ms, cloud at 1200ms
 	queueSave() {
 		if (!browser || !this._isInitialized) return Promise.resolve();
 		this.saveStatus = 'dirty';

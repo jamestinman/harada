@@ -27,10 +27,10 @@
 </script>
 
 <svelte:head>
-	<title>Haradato — The Harada Method as an app for life goals, tasks & notes</title>
+	<title>Haradato - The Harada Method as an app for life goals, tasks & notes</title>
 	<meta
 		name="description"
-		content="The Japanese goal-setting method behind Shohei Ohtani, now a free app. One chart, eight pillars, 64 daily habits — linked to your to-do lists and notes."
+		content="Inspired by the Harada Method: one chart, eight areas, 64 goals and categories to organise your whole life - each linked to real to-do lists and markdown notes. Free."
 	/>
 </svelte:head>
 
@@ -48,13 +48,13 @@
 					The Harada Method · since 1990s Osaka
 				</p>
 				<h1 class="mt-5 text-balance text-4xl font-bold leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl">
-					The <span class="text-emerald-600 dark:text-emerald-400">legendary goal system</span> now an app for your whole life.
+					The <span class="text-emerald-600 dark:text-emerald-400">legendary goal system</span>, now an app for your whole life.
 				</h1>
 				<p class="mt-6 max-w-xl text-lg leading-relaxed text-slate-600 dark:text-slate-300">
-					Haradato brings the Harada Method - <strong class="font-semibold text-slate-800 dark:text-slate-100">one chart, eight pillars, 64 daily habits</strong> - into a free app that keeps the tasks you do today wired to the life you're trying to build.
+					Inspired by the Harada Method, Haradato gives you <strong class="font-semibold text-slate-800 dark:text-slate-100">one chart, 8 areas, 64 goals and categories</strong> to map everything in your life onto a single page, with links from each to real tasks and notes.
 				</p>
 				<div class="mt-8 flex flex-wrap items-center gap-3">
-					<a href="/harada" class="cta-primary">Start your chart — free</a>
+					<a href="/harada" class="cta-primary">Start your chart - free</a>
 					<a href="/harada-chart" class="cta-ghost">See how it works</a>
 				</div>
 				<p class="mt-5 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-slate-500 dark:text-slate-400">
@@ -70,7 +70,7 @@
 				<div class="overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-2 shadow-2xl shadow-slate-900/10 ring-1 ring-black/5 dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/40">
 					<img
 						src="/img/screenshot.webp"
-						alt="A Haradato life-goal chart — one central goal surrounded by eight colour-coded pillars"
+						alt="A Haradato life-goal chart - one central goal surrounded by eight colour-coded pillars"
 						class="h-auto w-full rounded-2xl"
 						width="960"
 						height="960"
@@ -86,24 +86,29 @@
 	<!-- ───────────────────── STORY / PROOF ───────────────────── -->
 	<div class="grid items-center gap-10 lg:grid-cols-[0.85fr_1.15fr]">
 		<figure class="order-2 lg:order-1">
-			<div class="rotate-[-1.5deg] overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl transition-transform duration-300 hover:rotate-0 dark:border-slate-700 dark:bg-slate-800">
+			<a
+				href="/harada-chart"
+				class="group block rotate-[-1.5deg] overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl transition-transform duration-300 hover:rotate-0 dark:border-slate-700 dark:bg-slate-800"
+				aria-label="Read the full story of the Harada chart"
+			>
 				<img
 					src="/onboarding/ohtani-chart.webp"
 					alt="Shohei Ohtani's original 64-square Harada chart, written at age 15"
-					class="h-auto w-full rounded-lg"
+					class="h-auto w-full rounded-lg transition-opacity duration-300 group-hover:opacity-95"
 					loading="lazy"
 				/>
-			</div>
+			</a>
 			<figcaption class="mt-4 text-center text-sm italic text-slate-500 dark:text-slate-400">
-				Shohei Ohtani's actual chart, written at 15. Centre goal: drafted #1 by all eight teams.
+				A completed 64-square chart - one ambition, mapped across every area that supports it.
+				<a href="/harada-chart" class="font-medium not-italic text-emerald-600 underline-offset-4 hover:underline dark:text-emerald-400">See the story →</a>
 			</figcaption>
 		</figure>
 
 		<div class="order-1 lg:order-2">
 			<p class="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-400">A method with a track record</p>
-			<h2 class="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">From the worst school in Osaka to the Hall of Fame</h2>
+			<h2 class="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">From an Osaka classroom to companies across Japan</h2>
 			<p class="mt-4 leading-relaxed text-slate-600 dark:text-slate-300">
-				In the 1990s, coach Takashi Harada took the lowest-ranked school of 380 in Osaka and asked every student to map their life onto a single grid. Within three years they were national champions — and the method has been guiding people to the top ever since.
+				In the 1990s, a teacher named Takashi Harada took the lowest-ranked school of 380 in Osaka and asked every student to map their life onto a single grid. Within three years they were national champions. The same approach later spread through Japanese business - and inspired the app you're looking at.
 			</p>
 			<dl class="mt-8 grid grid-cols-3 gap-4">
 				<div class="rounded-2xl border border-slate-200 bg-white p-4 text-center dark:border-slate-800 dark:bg-slate-900">
@@ -130,17 +135,17 @@
 	<div class="text-center">
 		<p class="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-400">The Open Window 64</p>
 		<h2 class="mx-auto mt-3 max-w-2xl text-balance text-3xl font-bold tracking-tight sm:text-4xl">
-			One big goal, broken into habits you can actually do
+			Your whole life, compartmentalised on one page
 		</h2>
 		<p class="mx-auto mt-4 max-w-xl text-slate-600 dark:text-slate-300">
-			The chart turns a single ambition into 64 concrete daily actions — so nothing important stays vague, and nothing gets lost.
+			The chart breaks everything you're juggling into eight areas and 64 cells - each one a goal or a category - so it all has a place and nothing important gets lost.
 		</p>
 
 		<div class="mt-12 grid gap-6 sm:grid-cols-3">
 			{#each [
-				{ n: '1', img: '/onboarding/central-goal.png', title: 'Name your goal', body: 'Put one meaningful, measurable goal at the very centre. Your north star.' },
-				{ n: '8', img: '/onboarding/sub-goals.png', title: 'Choose 8 pillars', body: 'The areas you must develop to get there — health, craft, mindset, relationships.' },
-				{ n: '64', img: '/onboarding/all-goals.png', title: 'Fill in 64 actions', body: 'Eight repeatable daily behaviours per pillar. The habits that compound into results.' }
+				{ n: '1', img: '/onboarding/central-goal.png', title: 'Set your centre', body: 'Put what matters most in the middle - your headline goal, or simply the life you\'re building toward.' },
+				{ n: '8', img: '/onboarding/sub-goals.png', title: 'Map 8 areas', body: 'Eight pillars around it - the major areas of your life: health, work, relationships, growth, whatever matters to you.' },
+				{ n: '64', img: '/onboarding/all-goals.png', title: 'Fill the 64 cells', body: 'Each cell is a goal or a category. Compartmentalise everything on your mind until it finally has a home.' }
 			] as step, i}
 				<div class="group relative flex flex-col items-center rounded-3xl border border-slate-200 bg-white p-6 text-center shadow-sm transition-shadow hover:shadow-md dark:border-slate-800 dark:bg-slate-900">
 					<span class="absolute -top-3 left-6 rounded-full bg-emerald-600 px-2.5 py-0.5 text-xs font-bold text-white shadow">{step.n}</span>
@@ -159,7 +164,7 @@
 		<div class="text-center">
 			<p class="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-400">One connected system</p>
 			<h2 class="mx-auto mt-3 max-w-2xl text-balance text-3xl font-bold tracking-tight sm:text-4xl">
-				Goals, tasks and notes — finally in the same place
+				Goals, tasks and notes - finally in the same place
 			</h2>
 			<p class="mx-auto mt-4 max-w-xl text-slate-600 dark:text-slate-300">
 				Every cell on your chart opens into a real to-do list and markdown notes. Planning and doing stop living in separate apps.
@@ -172,9 +177,9 @@
 				<div class="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400">
 					<svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 12H3"/><path d="M16 6H3"/><path d="M16 18H3"/><path d="m18 9 3 3-3 3"/></svg>
 				</div>
-				<h3 class="text-2xl font-bold tracking-tight">Tasks that ladder up to a goal</h3>
+				<h3 class="text-2xl font-bold tracking-tight">Tasks that belong to a goal or area</h3>
 				<p class="mt-3 leading-relaxed text-slate-600 dark:text-slate-300">
-					Behind every square is a focused to-do list. Add a task and it's already tied to the goal it serves — so your day always points somewhere that matters. Drag to reorder, nest sub-tasks, mark progress.
+					Behind every square is a focused to-do list. Add a task and it's already filed under the goal or category it belongs to - so your day always points somewhere that matters. Drag to reorder, nest sub-tasks, mark progress.
 				</p>
 			</div>
 			<div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg ring-1 ring-black/5 dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/30">
@@ -190,7 +195,7 @@
 				</div>
 				<h3 class="text-2xl font-bold tracking-tight">Plain-markdown notes, attached to anything</h3>
 				<p class="mt-3 leading-relaxed text-slate-600 dark:text-slate-300">
-					Write specs, journals, prompts or plans in portable Markdown — pinned to the task or goal they belong to. Human-readable, always yours, and synced across every device.
+					Write specs, journals, prompts or plans in portable Markdown - pinned to the task or goal they belong to. Human-readable, always yours, and synced across every device.
 				</p>
 			</div>
 			<div class="lg:order-1">

@@ -219,7 +219,7 @@
 		return new Set(visibleFlatTodos.slice(0, effectiveRenderedTodoLimit).map((todo) => todo.id));
 	});
 
-	// Only reset virtualized window on search — adding a task must not collapse the list.
+	// Only reset virtualized window on search - adding a task must not collapse the list.
 	$effect(() => {
 		const query = searchText ?? '';
 		if (query === lastSearchForRender) return;
