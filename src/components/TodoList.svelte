@@ -999,7 +999,7 @@
 						class="mb-4 {enableGroupDrag && group.groupType === 'goal' ? 'cursor-grab active:cursor-grabbing' : ''}"
 						onpointerdown={(event) => handleGroupPointerDown(event, group.id)}
 					>
-						<div class="relative flex items-center">
+						<div class="flex items-center gap-0.5 md:relative md:gap-0">
 							{#if isGroupCollapsible(group)}
 								<button
 									type="button"
@@ -1008,7 +1008,7 @@
 										e.stopPropagation();
 										toggleGroupCollapse(group.id);
 									}}
-									class="absolute -left-6 top-1/2 -translate-y-1/2 rounded p-0.5 transition todo-collapse-toggle"
+									class="shrink-0 rounded p-0.5 transition todo-collapse-toggle md:absolute md:-left-6 md:top-1/2 md:-translate-y-1/2"
 									title={isGroupCollapsed(group.id) ? 'Expand goal tasks' : 'Collapse goal tasks'}
 									aria-label={isGroupCollapsed(group.id) ? 'Expand goal tasks' : 'Collapse goal tasks'}
 									aria-expanded={!isGroupCollapsed(group.id)}
@@ -1019,7 +1019,7 @@
 									/>
 								</button>
 							{/if}
-							<div class="flex items-center gap-2">
+							<div class="flex min-w-0 items-center gap-2">
 								<h2 class="todo-group-heading">
 									{#if group.href}
 										<a

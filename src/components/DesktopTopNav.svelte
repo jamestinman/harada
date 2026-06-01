@@ -85,8 +85,11 @@
 
 		<!-- Brand -->
 		<div class="flex min-w-0 items-center gap-2">
-			<SquareMap href="/harada" interactive={false} className="shrink-0" />
-			<a href="/" class="truncate text-lg font-semibold tracking-tight {brandClass}">
+    <!-- <SquareMap href="/harada" interactive={false} className="shrink-0" /> -->
+    <a href="/">
+      <img src="/img/haradato.webp" alt="Haradato" class="w-8 h-8" />
+    </a>
+			<a href="/harada" class="truncate text-lg font-semibold tracking-tight {brandClass}">
 				Haradato
 			</a>
 		</div>

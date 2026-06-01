@@ -58,13 +58,26 @@
 
 	<section class="space-y-3">
 		<h2 class="text-lg font-semibold text-slate-900 dark:text-slate-50">
-			Analytics and tracking
+			Analytics, advertising, and cookies
 		</h2>
 		<p class="text-sm text-slate-700 dark:text-slate-200">
-			We do not use invasive third-party advertising trackers. If we add lightweight analytics in
-			the future, it will be for understanding high-level usage (for example which
-			features are used most) and not for building marketing profiles about you. Any such analytics
-			would avoid storing personally identifiable information wherever possible.
+			On our public website (not in the iOS or Android apps), we use Google Ads conversion
+			measurement via Google Tag. This may set cookies or use similar technologies to understand
+			whether an ad led you to visit Haradato. We use Google Consent Mode: in the European
+			Economic Area, United Kingdom, and Switzerland, advertising storage stays off until you
+			accept cookies on the banner. Elsewhere, tags may run with a granted default unless you
+			reject them via Cookie settings in the site footer.
+		</p>
+		<p class="text-sm text-slate-700 dark:text-slate-200">
+			Your choice is stored in your browser (local storage) so we can remember it on later visits.
+			You can withdraw consent at any time using Cookie settings. For more about Google’s
+			processing, see
+			<a
+				href="https://policies.google.com/privacy"
+				class="text-emerald-600 dark:text-emerald-400 hover:underline font-medium"
+				rel="noopener noreferrer"
+				target="_blank">Google’s Privacy Policy</a
+			>.
 		</p>
 	</section>
 
@@ -93,6 +106,10 @@
 			<li>
 				You can clear on-device storage (local storage and Preferences) using your system settings
 				or by uninstalling the app.
+			</li>
+			<li>
+				On the website, use Cookie settings in the footer to accept or reject advertising cookies,
+				or clear site data in your browser to reset that choice.
 			</li>
 		</ul>
 	</section>

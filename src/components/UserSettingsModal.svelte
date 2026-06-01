@@ -125,6 +125,10 @@ let agentBusy = $state(false);
 		const result = await authStore.signOut();
 		if (result.success) {
 			isOpen = false;
+			// Wipe local data + onboarding flag so the next user starts fresh
+			// (and the setup wizard runs again). Runs after sign-out, so the
+			// empty chart is only persisted locally, never synced to the cloud.
+			store.clearAll();
 		}
 	}
 

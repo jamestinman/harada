@@ -1,26 +1,61 @@
 <script>
 	import { browser } from '$app/environment';
+	import { goto } from '$app/navigation';
 	import { setContext } from 'svelte';
 	import DesktopTopNav from '$components/DesktopTopNav.svelte';
 	import AuthModal from '$components/AuthModal.svelte';
 	import UserSettingsModal from '$components/UserSettingsModal.svelte';
 	import { authStore } from '$stores/auth.svelte.js';
 	import { store } from '$stores/store.svelte.js';
+	import { isWebsiteTrackingActive } from '$lib/websiteTracking.js';
 
 	let { children } = $props();
 	let showAuthModal = $state(false);
 	let showSettingsModal = $state(false);
+
+	/** @type {typeof import('$components/WebsiteTrackingBoot.svelte').default | null} */
+	let WebsiteTrackingBoot = $state(null);
+	/** @type {typeof import('$stores/consent.svelte.js').consentStore | null} */
+	let consentStore = $state(null);
+
+	const showWebsiteTracking = $derived(browser && isWebsiteTrackingActive());
+
+	// Entire block omitted from iOS/Android static bundles at compile time.
+	if (!__STATIC_APP_BUILD__) {
+		import('$components/WebsiteTrackingBoot.svelte').then((m) => {
+			WebsiteTrackingBoot = m.default;
+		});
+		import('$stores/consent.svelte.js').then((m) => {
+			consentStore = m.consentStore;
+		});
+	}
 
 	setContext('websiteAccount', {
 		openSignIn: () => (showAuthModal = true),
 		openSettings: () => (showSettingsModal = true)
 	});
 
+	// Wipe all local data + onboarding flag so a logged-out visitor can start
+	// completely fresh (and re-trigger the setup wizard).
+	function resetAll() {
+		if (!browser) return;
+		const ok = confirm(
+			'Reset everything and start fresh?\n\nThis clears your chart, tasks and notes stored on this device. It cannot be undone (unless you have an account and login again)'
+		);
+		if (!ok) return;
+		store.clearAll();
+		goto('/harada');
+	}
+
 	$effect(() => {
 		if (!browser) return;
 		document.documentElement.classList.toggle('dark', store.theme === 'dark');
 	});
 </script>
+
+{#if WebsiteTrackingBoot && showWebsiteTracking}
+	<WebsiteTrackingBoot />
+{/if}
 
 <div class="{store.theme} min-h-dvh bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
 	<DesktopTopNav
@@ -38,10 +73,27 @@
 			<p>Haradato - your AI-accessible brain extension.</p>
 			<div class="flex items-center gap-4">
 				<a href="/pricing" class="hover:text-emerald-600 dark:hover:text-emerald-400">Pricing</a>
-				<a href="/privacy" class="hover:text-emerald-600 dark:hover:text-emerald-400">Privacy</a>
 				<a href="/to-do-lists" class="hover:text-emerald-600 dark:hover:text-emerald-400">To-do Lists</a>
 				<a href="/articles" class="hover:text-emerald-600 dark:hover:text-emerald-400">Articles</a>
 				<a href="/for-agents" class="hover:text-emerald-600 dark:hover:text-emerald-400">For Agents</a>
+				{#if consentStore && showWebsiteTracking}
+					<button
+						type="button"
+						class="hover:text-emerald-600 dark:hover:text-emerald-400"
+						onclick={() => consentStore.openPreferences()}
+					>
+						Cookie settings
+					</button>
+				{/if}
+				{#if !authStore.user}
+					<button
+						type="button"
+						class="hover:text-rose-600 dark:hover:text-rose-400"
+						onclick={resetAll}
+					>
+						Reset all
+					</button>
+				{/if}
 			</div>
 		</div>
 	</footer>

@@ -17,6 +17,7 @@
 	import UserSettingsModal from './UserSettingsModal.svelte';
 	import AuthModal from './AuthModal.svelte';
 	import HowItWorksModal from './HowItWorksModal.svelte';
+	import OnboardingWizard from './OnboardingWizard.svelte';
 
 	const showFixedMobileNavButton = $derived.by(() => {
 		const path = page?.url?.pathname ?? '/';
@@ -123,6 +124,10 @@ const clearAll = () => {
 		const result = await authStore.signOut();
 		if (result.success) {
 			store.mobileNavMenuOpen = false;
+			// Wipe local data + onboarding flag so the next user starts fresh
+			// (and the setup wizard runs again). Runs after sign-out, so the
+			// empty chart is only persisted locally, never synced to the cloud.
+			store.clearAll();
 		}
 	}
 
@@ -134,10 +139,8 @@ const clearAll = () => {
 	onMount(() => {
 		if (!browser) return;
 
-		if (!localGet('harada_onboarding_seen', false)) {
-			store.showHowItWorksModal = true;
-      localSet('harada_onboarding_seen', true);
-		}
+		// First-run onboarding is handled by the Harada chart page (the guided
+		// setup wizard), so nothing auto-opens here.
 
 		const anyWindow = window;
 		const api = anyWindow?.HaradatoElectron;
@@ -292,6 +295,16 @@ const clearAll = () => {
 					Sign In
 				</button>
 			{/if}
+			<button
+				type="button"
+				onclick={() => {
+					store.mobileNavMenuOpen = false;
+					store.showOnboardingWizard = true;
+				}}
+				class="mobile-menu-item"
+			>
+				Set up my chart
+			</button>
 			<button
 				type="button"
 				onclick={() => {
@@ -508,3 +521,4 @@ const clearAll = () => {
 {/if}
 
 <HowItWorksModal bind:isOpen={store.showHowItWorksModal} />
+<OnboardingWizard bind:isOpen={store.showOnboardingWizard} />

@@ -141,7 +141,7 @@ function normalizeTaskGoalLink(link) {
 }
 
 class Store {
-	version = $state('1.0.20');
+	version = $state('1.0.21');
 	activeTab = $state('harada');
 	selectedGoalFilter = $state('all');
 	selectedGoalForNew = $state('');
@@ -155,6 +155,7 @@ class Store {
 	isOnline = $state(browser ? navigator.onLine : true);
 	syncError = $state(null);
   showHowItWorksModal = $state(false);
+  showOnboardingWizard = $state(false);
 
 	/** Shared mobile slide-over menu (Nav panel); toggled from todo/notes headers too */
 	mobileNavMenuOpen = $state(false);

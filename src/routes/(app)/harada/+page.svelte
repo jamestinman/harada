@@ -1,11 +1,29 @@
 <script>
+	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
+	import { localGet, localSet } from '$lib/PersistentStorage.mjs';
 	import { store } from '$stores/store.svelte.js';
 	import HaradaChart from '$components/HaradaChart.svelte';
 
 	// Use store.harada_chart directly - it's reactive and handles all saving/syncing
 	const grid = $derived(store.harada_chart.grid);
 	const todos = $derived(store.harada_chart.todos);
+
+	function isChartEmpty() {
+		const g = store.harada_chart?.grid;
+		if (!Array.isArray(g)) return true;
+		return g.every((cell) => !(cell?.text ?? '').trim());
+	}
+
+	// First run: a blank chart is intimidating, so guide new users through a
+	// quick setup wizard instead of dropping them on an empty grid. Shows once.
+	onMount(() => {
+		if (!browser) return;
+		if (!localGet('harada_onboarding_seen', false) && isChartEmpty()) {
+			store.showOnboardingWizard = true;
+			localSet('harada_onboarding_seen', true);
+		}
+	});
 
 	// Clear currentGoalIndex when on the main chart page
 	$effect(() => {
