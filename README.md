@@ -1,6 +1,20 @@
 # Haradato
 Harada chart with to-do list backend - a goal-setting and productivity app with cloud sync
 
+## Test (prep scripts build + `npx cap sync` for each platform)
+npm run ios
+npm run android
+npm run electron
+
+Desktop dev syncs web assets into `electron/app/` via `npm run electron:sync` (or `./prepare.sh`).
+
+### Desktop release (DMG)
+```sh
+npm run electron:make
+# or: ./buildRelease.sh prod electron
+```
+Then open `electron/dist/` and run e.g. `Haradato-1.0.0-arm64.dmg`.
+
 ## Grid Structure
 Overall, the grid uses chess-like coordinates: `[letter][number]` (e.g. `E5`).
 
@@ -120,12 +134,13 @@ Use the helper scripts to bump versions, build web assets, sync Capacitor, and c
 # Prep only (build web + cap sync for available platforms)
 ./prepare.sh prod
 
-# Build all available release targets (android/ios/macos if present)
+# Build all available release targets (android/ios/macos/electron if present)
 ./buildRelease.sh prod
 
 # Build selected targets only
 ./buildRelease.sh prod android ios
 ./buildRelease.sh prod macos
+./buildRelease.sh prod electron
 ```
 
 Expected outputs:
@@ -133,6 +148,7 @@ Expected outputs:
 - Android bundle: `android/app/build/outputs/bundle/release/app-release.aab`
 - iOS archive: `ios/App/build/App.xcarchive`
 - macOS archive (if `macos` platform exists): `macos/App/build/App-macos.xcarchive`
+- Electron DMG (if `electron/` exists): `electron/dist/Haradato-<version>-<arch>.dmg`
 
 Notes:
 
@@ -153,7 +169,6 @@ Notes:
 
 
 ## TODO / Roadmap
-- Desktop Electron version(s)
 - Monetisation
   - Ads?
   - Pro - remove ads for £2.99

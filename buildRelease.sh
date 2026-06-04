@@ -4,7 +4,7 @@ set -euo pipefail
 # Build release artifacts for available native platforms:
 # - bumps version metadata via tools/updateVersion.sh
 # - builds web assets and syncs native projects via prepare.sh
-# - builds Android bundle (.aab), iOS archive (.xcarchive), and optional macOS archive
+# - builds Android bundle (.aab), iOS archive (.xcarchive), optional macOS archive, and Electron DMG
 
 MODE="${1:-prod}"
 shift || true
@@ -17,11 +17,12 @@ if [[ "$MODE" != "dev" && "$MODE" != "prod" ]]; then
   echo "❌ Error: Invalid mode. Use 'dev' or 'prod'"
   echo ""
   echo "Usage: ./buildRelease.sh [dev|prod] [platform...]"
-  echo "Platforms: android ios macos all"
+  echo "Platforms: android ios macos electron all"
   echo "Examples:"
   echo "  ./buildRelease.sh prod"
   echo "  ./buildRelease.sh prod android ios"
   echo "  ./buildRelease.sh prod macos"
+  echo "  ./buildRelease.sh prod electron"
   exit 1
 fi
 
@@ -35,11 +36,13 @@ ensure_node_from_nvmrc "$ROOT_DIR"
 SELECTED_ANDROID=false
 SELECTED_IOS=false
 SELECTED_MACOS=false
+SELECTED_ELECTRON=false
 
 if [[ $# -eq 0 ]]; then
   [[ -d "$ROOT_DIR/android" ]] && SELECTED_ANDROID=true
   [[ -d "$ROOT_DIR/ios" ]] && SELECTED_IOS=true
   [[ -d "$ROOT_DIR/macos" ]] && SELECTED_MACOS=true
+  [[ -d "$ROOT_DIR/electron" ]] && SELECTED_ELECTRON=true
 else
   for platform in "$@"; do
     case "$platform" in
@@ -52,13 +55,17 @@ else
       macos)
         SELECTED_MACOS=true
         ;;
+      electron)
+        SELECTED_ELECTRON=true
+        ;;
       all)
         SELECTED_ANDROID=true
         SELECTED_IOS=true
         SELECTED_MACOS=true
+        SELECTED_ELECTRON=true
         ;;
       *)
-        echo "❌ Error: Invalid platform '$platform'. Use: android ios macos all"
+        echo "❌ Error: Invalid platform '$platform'. Use: android ios macos electron all"
         exit 1
         ;;
     esac
@@ -77,16 +84,20 @@ if [[ "$SELECTED_MACOS" == true && ! -d "$ROOT_DIR/macos" ]]; then
   echo "⚠️  Skipping macOS build (macos platform not present)."
   SELECTED_MACOS=false
 fi
+if [[ "$SELECTED_ELECTRON" == true && ! -d "$ROOT_DIR/electron" ]]; then
+  echo "⚠️  Skipping Electron build (electron platform not present)."
+  SELECTED_ELECTRON=false
+fi
 
-if [[ "$SELECTED_ANDROID" != true && "$SELECTED_IOS" != true && "$SELECTED_MACOS" != true ]]; then
+if [[ "$SELECTED_ANDROID" != true && "$SELECTED_IOS" != true && "$SELECTED_MACOS" != true && "$SELECTED_ELECTRON" != true ]]; then
   echo "❌ No valid target platforms selected."
-  echo "Run: npx cap add android|ios|macos first, then retry."
+  echo "Run: npx cap add android|ios|macos first, or ensure electron/ exists, then retry."
   exit 1
 fi
 
 echo "═══════════════════════════════════════════════════════════"
 echo "🔨 Building release (${MODE})"
-echo "Targets: android=${SELECTED_ANDROID} ios=${SELECTED_IOS} macos=${SELECTED_MACOS}"
+echo "Targets: android=${SELECTED_ANDROID} ios=${SELECTED_IOS} macos=${SELECTED_MACOS} electron=${SELECTED_ELECTRON}"
 echo "═══════════════════════════════════════════════════════════"
 echo ""
 
@@ -165,6 +176,16 @@ if [[ "$SELECTED_MACOS" == true ]]; then
     echo "    Check /tmp/macos_archive.log"
   fi
   cd "$ROOT_DIR"
+  echo ""
+fi
+
+if [[ "$SELECTED_ELECTRON" == true ]]; then
+  echo "Building Electron desktop package..."
+  cd electron
+  npm run electron:make
+  cd "$ROOT_DIR"
+  echo "✅ Electron build complete: electron/dist/"
+  open "$ROOT_DIR/electron/dist" || true
   echo ""
 fi
 

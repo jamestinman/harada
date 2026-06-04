@@ -150,6 +150,7 @@
 			>
 				Pricing
 			</a>
+      <span>|</span>
 			<a
 				href="/for-agents"
 					class={activeWebsite === 'agents' ? websiteLinkActive : linkBase}

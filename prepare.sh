@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Prepare web/native assets for Capacitor platforms:
 # - builds web assets
-# - syncs Capacitor native projects (android/ios/macos if present)
+# - syncs Capacitor native projects (android/ios/macos/electron if present)
 
 set -euo pipefail
 
@@ -34,7 +34,7 @@ echo "Building web assets (vite)..."
 BUILD_TARGET=static npm run build
 
 PLATFORMS=()
-for platform in android ios macos; do
+for platform in android ios macos electron; do
   if [[ -d "$ROOT_DIR/$platform" ]]; then
     PLATFORMS+=("$platform")
   fi

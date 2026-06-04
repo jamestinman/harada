@@ -1,12 +1,14 @@
 {
 	"name": "haradato",
 	"private": true,
-	"version": "1.0.21",
+	"version": "1.0.22",
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev --open",
 		"build": "vite build",
-		"electron": "cd electron && npm run electron:start-live",
+		"electron:sync": "BUILD_TARGET=static npm run build && npx cap sync electron",
+		"electron": "npm run electron:sync && cd electron && npm run electron:start-live",
+		"electron:make": "npm run electron:sync && cd electron && npm run electron:make",
 		"ios": "./prepare.sh dev && BUILD_TARGET=static vite build && npx cap run ios --target=\"370C98FE-A014-483B-8DA2-96F896BBE035\"",
 		"android": "./prepare.sh dev && BUILD_TARGET=static vite build && npx cap run android",
 		"preview": "vite preview",

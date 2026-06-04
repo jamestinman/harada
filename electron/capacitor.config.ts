@@ -2,8 +2,8 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.haradato.app',
-  appName: 'Haradato',
-  webDir: 'build',
+  appName: 'haradato',
+  webDir: 'build'
 };
 
 export default config;

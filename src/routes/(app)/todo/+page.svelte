@@ -26,8 +26,6 @@
 		isWorkspaceNarrowLayout
 	} from '$lib/workspaceNavResume.js';
 
-	let searchText = $state('');
-	let quickAddText = $state('');
 	let activeMainFeed = $state('todos');
 	let initialTodoListReady = $state(false);
 	let isNarrowLayout = $state(false);
@@ -354,7 +352,7 @@
 	);
 
 	const allNotes = $derived.by(() => {
-		const query = searchText.trim().toLowerCase();
+		const query = store.todoWorkspaceQuery.trim().toLowerCase();
 		const sorted = store.notes
 			.filter((note) => !store.isPrimaryTaskNote(note.id))
 			.sort((a, b) => (b?.updatedAt ?? 0) - (a?.updatedAt ?? 0));
@@ -368,8 +366,13 @@
 
 	const feedPinnedRows = $derived(buildFeedPinnedRows(todos, getTodoOrdering));
 
+	const mobileTodoSearchActive = $derived(
+		isNarrowLayout && store.todoWorkspaceQuery.trim().length > 0
+	);
+
 	let mobileMenuOpen = $state(false);
 	let mobileSidebarHydrated = $state(false);
+	let prevTodoWorkspaceQuery = $state('');
 
 	onMount(() => {
 		const mountStart = performance.now();
@@ -397,6 +400,39 @@
 		if (!page.url.pathname.startsWith('/todo')) return;
 		if (!isWorkspaceNarrowLayout()) return;
 		persistTodoMobileSidebar(mobileMenuOpen);
+	});
+
+	$effect(() => {
+		if (!browser) return;
+		if (!isNarrowLayout) {
+			store.todoMobileShowsGoalList = false;
+			return;
+		}
+		store.todoMobileShowsGoalList = mobileMenuOpen;
+	});
+
+	$effect(() => {
+		if (!browser || !isNarrowLayout) return;
+		const q = store.todoWorkspaceQuery;
+		const trimmed = q.trim();
+		const started = !prevTodoWorkspaceQuery.trim() && trimmed;
+		prevTodoWorkspaceQuery = q;
+		if (started) {
+			store.latchTodoMobileSearchScope(mobileMenuOpen, true);
+		}
+	});
+
+	$effect(() => {
+		if (!browser || !isNarrowLayout) return;
+		if (!store.todoWorkspaceQuery.trim() || !mobileMenuOpen) return;
+		store.latchTodoMobileSearchScope(true, true);
+	});
+
+	$effect(() => {
+		if (!browser || !isNarrowLayout) return;
+		if (!store.todoWorkspaceQuery.trim()) return;
+		activeMainFeed = 'todos';
+		mobileMenuOpen = false;
 	});
 
 	$effect(() => {
@@ -526,9 +562,9 @@
 	}
 
 	function submitQuickAddTask() {
-		const title = quickAddText.trim();
+		const title = store.todoWorkspaceQuery.trim();
 		if (!title) return;
-		quickAddText = '';
+		store.todoWorkspaceQuery = '';
 		createTodoFromComposer({ title, shouldNavigate: false });
 	}
 
@@ -720,9 +756,9 @@
 			<WorkspaceToolbar
 				mode="mobile"
 				inputMode="quickAdd"
-				bind:quickAddText
+				bind:quickAddText={store.todoWorkspaceQuery}
 				onQuickAdd={submitQuickAddTask}
-				showSidebarToggle={!mobileMenuOpen}
+				showSidebarToggle={!mobileMenuOpen && !mobileTodoSearchActive}
 				onSidebarToggle={() => (mobileMenuOpen = true)}
 				showHamburger={false}
 				composeTabDefault="task"
@@ -733,14 +769,6 @@
 		<div class="grid gap-8 grid-cols-[18rem_minmax(0,1fr)]">
 			<aside class="h-[calc(100vh-5.5rem)] overflow-y-auto px-2 pt-2 pb-3">
 				<h2 class="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">TASKS</h2>
-				<div class="mb-3 px-1">
-					<input
-						type="search"
-						placeholder="Search..."
-						bind:value={searchText}
-						class="w-full rounded-lg bg-slate-500/10 px-3 py-1.5 text-sm text-slate-800 placeholder-slate-400 outline-none focus:ring-1 focus:ring-violet-500/50 dark:bg-slate-700/30 dark:text-slate-100 dark:placeholder-slate-500"
-					/>
-				</div>
 				<div class="relative ml-2 border-l border-slate-200/50 pl-2 dark:border-slate-700/40 space-y-0.5">
 					<button
 						type="button"
@@ -772,7 +800,7 @@
 					<WorkspaceToolbar
 						mode="desktop"
 						inputMode="quickAdd"
-						bind:quickAddText
+						bind:quickAddText={store.todoWorkspaceQuery}
 						onQuickAdd={submitQuickAddTask}
 						composeTabDefault="task"
 					/>
@@ -804,7 +832,7 @@
 							allowCrossListMove={true}
 							enableGroupDrag={true}
 							onMoveGroup={moveGoalGroup}
-							searchText={searchText}
+							searchText={store.todoWorkspaceQuery}
 						{targetTodoId}
 						activeTodoId={activeTodoId}
 						{focusTodoId}
@@ -850,6 +878,74 @@
 			</div>
 		</div>
 
+		{:else if mobileTodoSearchActive}
+			{#if activeMainFeed === 'todos'}
+				{#if todoListReady}
+					<TodoList
+						groups={todoGroups}
+						isMainTodoFeed={true}
+						feedPinnedRows={feedPinnedRows}
+						{resolveGroupForTodo}
+						{allGoals}
+						onUpdate={updateTodo}
+						onDelete={deleteTodo}
+						onToggleStatus={cycleTodoStatus}
+						onCreateNext={createNextTodo}
+						onDeletePrevious={deleteAndFocusPrevious}
+						onMakeSubtask={makeSubtask}
+						onOutdent={(todoId) => outdentTodo(todoId)}
+						onTitleFocus={setHighlightedTaskId}
+						getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
+						canIndent={canIndentTodo}
+						canOutdent={(todoId) => canOutdentTodo(todoId)}
+						onCreateTodo={createTodoFromComposer}
+						onMoveTodo={moveTodo}
+						allowCrossListMove={true}
+						enableGroupDrag={true}
+						onMoveGroup={moveGoalGroup}
+						searchText={store.todoWorkspaceQuery}
+						{targetTodoId}
+						activeTodoId={activeTodoId}
+						{focusTodoId}
+						onFocusTitleHandled={handleFocusTitleHandled}
+						{getPrimaryNoteForTodo}
+						{getLinkedNotesForTodo}
+						{getLinkedGoalIndicesForTodo}
+						onUpsertPrimaryNote={upsertPrimaryNoteForTodo}
+						onClearHighlight={clearHighlight}
+					/>
+				{:else}
+					<div class="todo-panel p-4 text-sm text-slate-700 dark:text-slate-300">
+						{dataLoaded ? 'Preparing task list...' : 'Loading tasks...'}
+					</div>
+				{/if}
+			{:else}
+				<p class="page-subtitle mb-4">
+					{allNotes.length} note{allNotes.length !== 1 ? 's' : ''}, newest first
+				</p>
+				{#if allNotes.length === 0}
+					<div class="todo-panel p-4 text-sm text-slate-700 dark:text-slate-300">No notes match this view.</div>
+				{:else}
+					<div class="space-y-0.5">
+						{#each allNotes as note (note.id)}
+							<button
+								type="button"
+								onclick={() => openNote(note.id)}
+								class="block w-full rounded-lg px-3 py-2.5 text-left transition hover:bg-slate-500/10 dark:hover:bg-white/5"
+							>
+								<p class="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{getNoteTitle(note.content)}</p>
+								<div class="flex items-baseline gap-1.5 mt-0.5">
+									<span class="shrink-0 text-xs text-slate-500 dark:text-slate-400">{formatUpdatedAt(note.updatedAt)}</span>
+									<span class="truncate text-xs text-slate-500 dark:text-slate-400">{getNotePreview(note.content) || 'No content yet'}</span>
+								</div>
+								{#if getNoteGoalLabel(note.id)}
+									<p class="truncate text-xs text-slate-400 dark:text-slate-500 mt-0.5">{getNoteGoalLabel(note.id)}</p>
+								{/if}
+							</button>
+						{/each}
+					</div>
+				{/if}
+			{/if}
 		{:else}
 		<div class="overflow-hidden">
 			<div
@@ -859,14 +955,6 @@
 				<div class="w-1/2 pr-4">
 				<div class="h-[calc(100vh-8rem)] overflow-y-auto px-2 pt-2 pb-3">
 					<h2 class="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">TASKS</h2>
-					<div class="mb-3 px-1">
-						<input
-							type="search"
-							placeholder="Search..."
-							bind:value={searchText}
-							class="w-full rounded-lg bg-slate-500/10 px-3 py-1.5 text-sm text-slate-800 placeholder-slate-400 outline-none focus:ring-1 focus:ring-violet-500/50 dark:bg-slate-700/30 dark:text-slate-100 dark:placeholder-slate-500"
-						/>
-					</div>
 					<div class="relative ml-2 border-l border-slate-200/50 pl-2 dark:border-slate-700/40 space-y-0.5">
 						<button
 							type="button"
@@ -925,7 +1013,7 @@
 								allowCrossListMove={true}
 								enableGroupDrag={true}
 								onMoveGroup={moveGoalGroup}
-								searchText={searchText}
+								searchText={store.todoWorkspaceQuery}
 							{targetTodoId}
 							activeTodoId={activeTodoId}
 							{focusTodoId}

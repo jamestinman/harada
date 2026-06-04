@@ -141,7 +141,7 @@ function normalizeTaskGoalLink(link) {
 }
 
 class Store {
-	version = $state('1.0.21');
+	version = $state('1.0.22');
 	activeTab = $state('harada');
 	selectedGoalFilter = $state('all');
 	selectedGoalForNew = $state('');
@@ -156,6 +156,30 @@ class Store {
 	syncError = $state(null);
   showHowItWorksModal = $state(false);
   showOnboardingWizard = $state(false);
+
+	/** Toolbar on todo pages: filters the current task list while typing; Enter creates a task and clears this. */
+	todoWorkspaceQuery = $state('');
+
+	/**
+	 * Mobile todo: true when the TASKS goal-list drawer is showing (not task content).
+	 * Distinct from currentGoalIndex / URL — user can be on a goal route while browsing the list.
+	 */
+	todoMobileShowsGoalList = $state(false);
+
+	/**
+	 * Mobile search filter breadth, latched when the query goes from empty to non-empty.
+	 * 'all' = All Tasks feed; 'goal' = current /todo/[goal] scope only.
+	 */
+	todoMobileSearchScope = $state(/** @type {'all' | 'goal'} */ ('all'));
+
+	latchTodoMobileSearchScope(showsGoalList, onAllTasksRoute = false) {
+		this.todoMobileSearchScope = showsGoalList || onAllTasksRoute ? 'all' : 'goal';
+	}
+
+	/** User opened a specific goal (e.g. goal title link) while a mobile search query is active */
+	focusTodoMobileSearchOnGoal() {
+		this.todoMobileSearchScope = 'goal';
+	}
 
 	/** Shared mobile slide-over menu (Nav panel); toggled from todo/notes headers too */
 	mobileNavMenuOpen = $state(false);

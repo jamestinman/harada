@@ -218,15 +218,18 @@ export class ElectronCapacitorApp {
 
 // Set a CSP up for our application based on the custom scheme
 export function setupContentSecurityPolicy(customScheme: string): void {
+  const defaultSrc = electronIsDev
+    ? `${customScheme}://* 'unsafe-inline' devtools://* 'unsafe-eval' data:`
+    : `${customScheme}://* 'unsafe-inline' data:`;
+  // Supabase auth, REST, and realtime need HTTPS/WSS outside the custom scheme.
+  const connectSrc = `${customScheme}://* https://*.supabase.co wss://*.supabase.co`;
+  const csp = `default-src ${defaultSrc}; connect-src ${connectSrc}`;
+
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        'Content-Security-Policy': [
-          electronIsDev
-            ? `default-src ${customScheme}://* 'unsafe-inline' devtools://* 'unsafe-eval' data:`
-            : `default-src ${customScheme}://* 'unsafe-inline' data:`,
-        ],
+        'Content-Security-Policy': [csp],
       },
     });
   });

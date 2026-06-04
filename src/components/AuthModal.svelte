@@ -121,16 +121,16 @@
 
 {#if isOpen}
 	<div
-		class="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4"
+		class="settings-backdrop"
 		onclick={handleBackdropClick}
 		onkeydown={handleBackdropKeydown}
 		role="button"
 		tabindex="-1"
 		aria-label="Close modal"
 	>
-		<div class="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-			<div class="flex justify-between items-center mb-6">
-				<h2 class="text-2xl font-bold">
+		<div class="auth-modal" role="dialog" aria-modal="true">
+			<div class="mb-6 flex items-center justify-between">
+				<h2 class="auth-modal-title">
 					{#if mode === 'signin'}
 						Sign In
 					{:else if mode === 'signup'}
@@ -140,8 +140,10 @@
 					{/if}
 				</h2>
 				<button
+					type="button"
 					onclick={() => (isOpen = false)}
-					class="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+					class="settings-close-button text-2xl leading-none"
+					aria-label="Close"
 				>
 					&times;
 				</button>
@@ -149,9 +151,7 @@
 
 			{#if message}
 				<div
-					class="mb-4 p-3 rounded {messageType === 'error'
-						? 'bg-red-100 text-red-700'
-						: 'bg-green-100 text-green-700'}"
+					class={messageType === 'error' ? 'auth-modal-alert-error' : 'auth-modal-alert-success'}
 				>
 					{message}
 				</div>
@@ -159,12 +159,11 @@
 
 			<form onsubmit={handleSubmit}>
 				<div class="mb-4">
-					<label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+					<label for="auth-email" class="auth-modal-label">Email</label>
 					<input
 						type="email"
-						id="email"
+						id="auth-email"
 						bind:value={email}
-						class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
 						placeholder="you@example.com"
 						required
 					/>
@@ -172,14 +171,11 @@
 
 				{#if mode !== 'reset'}
 					<div class="mb-4">
-						<label for="password" class="block text-sm font-medium text-gray-700 mb-1"
-							>Password</label
-						>
+						<label for="auth-password" class="auth-modal-label">Password</label>
 						<input
 							type="password"
-							id="password"
+							id="auth-password"
 							bind:value={password}
-							class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
 							placeholder="••••••••"
 							required
 						/>
@@ -188,14 +184,11 @@
 
 				{#if mode === 'signup'}
 					<div class="mb-4">
-						<label for="confirmPassword" class="block text-sm font-medium text-gray-700 mb-1"
-							>Confirm Password</label
-						>
+						<label for="auth-confirm-password" class="auth-modal-label">Confirm Password</label>
 						<input
 							type="password"
-							id="confirmPassword"
+							id="auth-confirm-password"
 							bind:value={confirmPassword}
-							class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
 							placeholder="••••••••"
 							required
 						/>
@@ -205,7 +198,7 @@
 				<button
 					type="submit"
 					disabled={authStore.loading}
-					class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+					class="w-full rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-slate-900"
 				>
 					{#if authStore.loading}
 						Loading...
@@ -219,26 +212,26 @@
 				</button>
 			</form>
 
-			<div class="mt-4 text-center text-sm">
+			<div class="mt-4 text-center">
 				{#if mode === 'signin'}
-					<p class="text-gray-600">
+					<p class="auth-modal-footer">
 						Don't have an account?
-						<button onclick={() => switchMode('signup')} class="text-blue-600 hover:underline">
+						<button type="button" onclick={() => switchMode('signup')} class="auth-modal-link">
 							Sign up
 						</button>
 					</p>
-					<button onclick={() => switchMode('reset')} class="text-blue-600 hover:underline mt-2">
+					<button type="button" onclick={() => switchMode('reset')} class="auth-modal-link mt-2">
 						Forgot password?
 					</button>
 				{:else if mode === 'signup'}
-					<p class="text-gray-600">
+					<p class="auth-modal-footer">
 						Already have an account?
-						<button onclick={() => switchMode('signin')} class="text-blue-600 hover:underline">
+						<button type="button" onclick={() => switchMode('signin')} class="auth-modal-link">
 							Sign in
 						</button>
 					</p>
 				{:else}
-					<button onclick={() => switchMode('signin')} class="text-blue-600 hover:underline">
+					<button type="button" onclick={() => switchMode('signin')} class="auth-modal-link">
 						Back to sign in
 					</button>
 				{/if}

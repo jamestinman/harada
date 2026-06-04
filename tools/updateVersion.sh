@@ -7,6 +7,7 @@ set -euo pipefail
 # - android/app/build.gradle (versionCode + versionName)
 # - ios/App/App.xcodeproj/project.pbxproj (MARKETING_VERSION + CURRENT_PROJECT_VERSION)
 # - macos/App/App.xcodeproj/project.pbxproj (if present)
+# - electron/package.json (Electron app version for DMG/build metadata)
 #
 # Usage:
 #   ./tools/updateVersion.sh
@@ -24,6 +25,7 @@ ROOT_DIR="$(
 )"
 
 PKG_JSON="$ROOT_DIR/package.json"
+ELECTRON_PKG_JSON="$ROOT_DIR/electron/package.json"
 STORE_FILE="$ROOT_DIR/src/stores/store.svelte.js"
 ANDROID_GRADLE="$ROOT_DIR/android/app/build.gradle"
 IOS_PBXPROJ="$ROOT_DIR/ios/App/App.xcodeproj/project.pbxproj"
@@ -86,16 +88,23 @@ fi
 printf 'Bumping version: %s -> %s\n' "$current_version" "$new_version"
 printf 'Build number: %s\n' "$next_build_number"
 
-# 1) package.json
-node -e '
-  const fs = require("fs");
-  const path = process.argv[1];
-  const newVersion = process.argv[2];
-  const raw = fs.readFileSync(path, "utf8");
-  const json = JSON.parse(raw);
-  json.version = newVersion;
-  fs.writeFileSync(path, JSON.stringify(json, null, "\t") + "\n");
-' "$PKG_JSON" "$new_version"
+# 1) package.json (+ electron/package.json when present)
+bump_package_json_version() {
+  node -e '
+    const fs = require("fs");
+    const path = process.argv[1];
+    const newVersion = process.argv[2];
+    const raw = fs.readFileSync(path, "utf8");
+    const json = JSON.parse(raw);
+    json.version = newVersion;
+    fs.writeFileSync(path, JSON.stringify(json, null, "\t") + "\n");
+  ' "$1" "$new_version"
+}
+
+bump_package_json_version "$PKG_JSON"
+if [[ -f "$ELECTRON_PKG_JSON" ]]; then
+  bump_package_json_version "$ELECTRON_PKG_JSON"
+fi
 
 # 2) src/stores/store.svelte.js
 node -e '
@@ -179,7 +188,7 @@ if [[ -f "$MACOS_PBXPROJ" ]]; then
   update_pbxproj "$MACOS_PBXPROJ"
 fi
 
-echo "Done. Updated package.json + store version and native version metadata for available platforms."
+echo "Done. Updated package.json, electron (if present), store version, and native version metadata for available platforms."
 
 # Output version for parent scripts to capture
 echo "NEW_VERSION=$new_version" > "$ROOT_DIR/.version_bump"

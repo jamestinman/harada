@@ -19,7 +19,9 @@
 		buildGoalListMeta,
 		buildCustomListMeta,
 		updateGoalTimestamp,
-		buildTaskNoteIndexMaps
+		buildTaskNoteIndexMaps,
+		buildAllTasksFeed,
+		buildFeedPinnedRows
 	} from '$lib/todoUtils.js';
 	import TodoList from '$components/TodoList.svelte';
 	import WorkspaceToolbar from '$components/WorkspaceToolbar.svelte';
@@ -46,6 +48,11 @@
 		for (const link of taskGoalLinks) keys.add(`${link.taskId}:${link.goalIndex}`);
 		return keys;
 	});
+	const linkedTaskIdSet = $derived.by(() => {
+		const ids = new Set();
+		for (const link of taskGoalLinks) ids.add(link.taskId);
+		return ids;
+	});
 	const dataLoaded = $derived(!store.isBootstrapping);
 	const targetTodoId = $derived(page.url.searchParams.get('task') || null);
 	let activeGoalTab = $state('tasks');
@@ -71,9 +78,6 @@
 		if (!id) return;
 		activeTodoId = id;
 	}
-	let searchText = $state('');
-	let quickAddText = $state('');
-	
 	// Goal editing state (declared early so it can be used in derived values)
 	let isEditingGoal = $state(false);
 	let editedGoalTitle = $state('');
@@ -457,6 +461,19 @@
 		}))
 	);
 
+	const allTasksFeed = $derived.by(() =>
+		buildAllTasksFeed({
+			todos,
+			grid,
+			taskGoalKeySet,
+			linkedTaskIdSet,
+			getTodoOrdering
+		})
+	);
+	const allTasksTodoGroups = $derived(allTasksFeed.todoGroups);
+	const allTasksGroupsByTodoId = $derived(allTasksFeed.groupsByTodoId);
+	const allTasksFeedPinnedRows = $derived(buildFeedPinnedRows(todos, getTodoOrdering));
+
 	const associatedGoalNotes = $derived.by(() => {
 		if (typeof goalIndex !== 'number') return [];
 		const goalTaskIds = new Set(
@@ -484,10 +501,19 @@
 
 	let mobileMenuOpen = $state(false);
 	let mobileSidebarHydrated = $state(false);
+	let prevTodoWorkspaceQuery = $state('');
 
 	/** Tailwind `md` (768px): only one of desktop vs mobile goal/todo trees mounts - duplicate inputs + TodoList caused goal title / focus bugs. */
 	let todoDesktopLayout = $state(
 		browser ? window.matchMedia('(min-width: 768px)').matches : false
+	);
+
+	const mobileTodoSearchActive = $derived(
+		!todoDesktopLayout && store.todoWorkspaceQuery.trim().length > 0
+	);
+
+	const mobileSearchUsesAllTasks = $derived(
+		mobileTodoSearchActive && store.todoMobileSearchScope === 'all'
 	);
 
 	onMount(() => {
@@ -514,6 +540,40 @@
 	});
 
 	$effect(() => {
+		if (!browser) return;
+		if (todoDesktopLayout) {
+			store.todoMobileShowsGoalList = false;
+			return;
+		}
+		store.todoMobileShowsGoalList = mobileMenuOpen;
+	});
+
+	$effect(() => {
+		if (!browser || todoDesktopLayout) return;
+		const q = store.todoWorkspaceQuery;
+		const trimmed = q.trim();
+		const started = !prevTodoWorkspaceQuery.trim() && trimmed;
+		prevTodoWorkspaceQuery = q;
+		if (started) {
+			store.latchTodoMobileSearchScope(mobileMenuOpen, false);
+		}
+	});
+
+	/** Re-opened goal list while a query is active → search across all tasks again */
+	$effect(() => {
+		if (!browser || todoDesktopLayout) return;
+		if (!store.todoWorkspaceQuery.trim() || !mobileMenuOpen) return;
+		store.latchTodoMobileSearchScope(true, false);
+	});
+
+	$effect(() => {
+		if (!browser || todoDesktopLayout) return;
+		if (!store.todoWorkspaceQuery.trim()) return;
+		activeGoalTab = 'tasks';
+		mobileMenuOpen = false;
+	});
+
+	$effect(() => {
 		if (!browser || !dataLoaded || !targetTodoId) return;
 		activeGoalTab = 'tasks';
 		mobileMenuOpen = false;
@@ -524,7 +584,12 @@
 	});
 
 	afterNavigate(() => {
-		if (!browser || !dataLoaded) return;
+		if (!browser) return;
+		if (!todoDesktopLayout && store.todoWorkspaceQuery.trim()) {
+			store.focusTodoMobileSearchOnGoal();
+			mobileMenuOpen = false;
+		}
+		if (!dataLoaded) return;
 		const task = page.url.searchParams.get('task');
 		if (!task) return;
 		activeTodoId = task;
@@ -595,9 +660,9 @@
 	}
 
 	function submitQuickAddTask() {
-		const title = quickAddText.trim();
+		const title = store.todoWorkspaceQuery.trim();
 		if (!title) return;
-		quickAddText = '';
+		store.todoWorkspaceQuery = '';
 		createTodoFromComposer({ title, shouldNavigate: false });
 	}
 
@@ -700,11 +765,43 @@
 		return taskNoteIndexMaps.goalIndicesByTaskId.get(todoId) ?? [];
 	}
 
-	function upsertPrimaryNoteForTodo(todoId, content) {
+	function upsertPrimaryNoteForTodo(todoId, content, group) {
 		if (content?.trim()) {
 			store.updateTodo(todoId, { isDraft: false });
 		}
-		store.setPrimaryNoteForTask(todoId, { content, goalIndex });
+		const maybeGoalIndex = group?.groupType === 'goal' ? group.goalIndex : goalIndex;
+		store.setPrimaryNoteForTask(todoId, { content, goalIndex: maybeGoalIndex });
+	}
+
+	function isUnassignedNoGoalTodo(t) {
+		return (
+			(t.listType === 'goal' || !t.listType) &&
+			t.goalIndex == null &&
+			!linkedTaskIdSet.has(t.id)
+		);
+	}
+
+	function noGoalGroupMeta() {
+		const noGoal = allTasksTodoGroups.find((g) => g.id === 'no-goal');
+		return (
+			noGoal ?? {
+				id: 'no-goal',
+				groupType: 'no-goal',
+				goalIndex: null,
+				label: '',
+				href: null,
+				addTitle: 'Add todo without goal',
+				todos: []
+			}
+		);
+	}
+
+	function resolveAllTasksGroupForTodo(todo) {
+		const t = normalizeTodoListMeta(todo);
+		if (isUnassignedNoGoalTodo(t) && t.pinned === true) {
+			return noGoalGroupMeta();
+		}
+		return allTasksGroupsByTodoId.get(t.id) ?? null;
 	}
 
 	function deleteTodo(id) {
@@ -723,8 +820,7 @@
 		const targetListId = normalizedCurrentTodo.listId;
 		const targetParentId = normalizedCurrentTodo.parentId ?? null;
 		const newOrdering = getOrderingAfter(targetListId, targetParentId, currentTodoId);
-		
-		// Create new todo
+
 		const newTodo = {
 			...defaultTodo(),
 			goalIndex: normalizedCurrentTodo.goalIndex,
@@ -802,7 +898,6 @@
 	}
 
 	function deleteAndFocusPrevious(currentTodoId, targetGoalIndex = goalIndex) {
-		// Find the current todo's index in the goalTodos array
 		const goalTodosList = getVisibleGoalTodos(targetGoalIndex);
 		const currentIndex = goalTodosList.findIndex((t) => t.id === currentTodoId);
 		
@@ -997,9 +1092,9 @@
 			<WorkspaceToolbar
 				mode="mobile"
 				inputMode="quickAdd"
-				bind:quickAddText
+				bind:quickAddText={store.todoWorkspaceQuery}
 				onQuickAdd={submitQuickAddTask}
-				showSidebarToggle={!mobileMenuOpen}
+				showSidebarToggle={!mobileMenuOpen && !mobileTodoSearchActive}
 				onSidebarToggle={() => (mobileMenuOpen = true)}
 				showHamburger={false}
 				composeTabDefault="task"
@@ -1009,14 +1104,6 @@
 		<div class="hidden gap-8 md:grid md:grid-cols-[18rem_minmax(0,1fr)]">
 		<aside class="h-[calc(100vh-5.5rem)] overflow-y-auto px-2 pt-2 pb-3">
 			<h2 class="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">TASKS</h2>
-				<div class="mb-3 px-1">
-					<input
-						type="search"
-						placeholder="Search..."
-						bind:value={searchText}
-						class="w-full rounded-lg bg-slate-500/10 px-3 py-1.5 text-sm text-slate-800 placeholder-slate-400 outline-none focus:ring-1 focus:ring-violet-500/50 dark:bg-slate-700/30 dark:text-slate-100 dark:placeholder-slate-500"
-					/>
-				</div>
 				<div class="relative ml-2 border-l border-slate-200/50 pl-2 dark:border-slate-700/40 space-y-0.5">
 					<a
 						href="/todo"
@@ -1057,7 +1144,7 @@
 						<WorkspaceToolbar
 							mode="desktop"
 							inputMode="quickAdd"
-							bind:quickAddText
+							bind:quickAddText={store.todoWorkspaceQuery}
 							onQuickAdd={submitQuickAddTask}
 							composeTabDefault="task"
 						/>
@@ -1218,7 +1305,7 @@
 							onMoveTodo={moveTodo}
 							allowCrossListMove={false}
 							enableGroupDrag={false}
-							searchText={searchText}
+							searchText={store.todoWorkspaceQuery}
 						{targetTodoId}
 						activeTodoId={activeTodoId}
 						{focusTodoId}
@@ -1263,6 +1350,76 @@
 			</div>
 		</div>
 
+		{#if mobileTodoSearchActive}
+			{#if dataLoaded && goalIndex !== null}
+				{#if mobileSearchUsesAllTasks}
+					<TodoList
+						groups={allTasksTodoGroups}
+						isMainTodoFeed={true}
+						feedPinnedRows={allTasksFeedPinnedRows}
+						resolveGroupForTodo={resolveAllTasksGroupForTodo}
+						{allGoals}
+						onUpdate={updateTodo}
+						onDelete={deleteTodo}
+						onToggleStatus={cycleTodoStatus}
+						onCreateNext={(todoId, group) => createNextTodo(todoId, group?.goalIndex ?? null)}
+						onDeletePrevious={(todoId, group) => deleteAndFocusPrevious(todoId, group?.goalIndex ?? null)}
+						onMakeSubtask={(todoId, group) => makeSubtask(todoId, group?.goalIndex ?? null)}
+						onOutdent={(todoId) => outdentTodo(todoId)}
+						onTitleFocus={setHighlightedTaskId}
+						getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
+						canIndent={(todoId, group) => canIndentTodo(todoId, group?.goalIndex ?? null)}
+						canOutdent={(todoId) => canOutdentTodo(todoId)}
+						onCreateTodo={createTodoFromComposer}
+						onMoveTodo={moveTodo}
+						allowCrossListMove={true}
+						enableGroupDrag={false}
+						searchText={store.todoWorkspaceQuery}
+						{targetTodoId}
+						activeTodoId={activeTodoId}
+						{focusTodoId}
+						onFocusTitleHandled={handleFocusTitleHandled}
+						{getPrimaryNoteForTodo}
+						{getLinkedNotesForTodo}
+						{getLinkedGoalIndicesForTodo}
+						onUpsertPrimaryNote={upsertPrimaryNoteForTodo}
+						onClearHighlight={clearHighlight}
+					/>
+				{:else}
+					<TodoList
+						groups={goalGroups}
+						{allGoals}
+						onAddToGroup={(group) => addTodo(group.goalIndex)}
+						onUpdate={updateTodo}
+						onDelete={deleteTodo}
+						onToggleStatus={cycleTodoStatus}
+						onCreateNext={(todoId, group) => createNextTodo(todoId, group.goalIndex)}
+						onDeletePrevious={(todoId, group) => deleteAndFocusPrevious(todoId, group.goalIndex)}
+						onMakeSubtask={(todoId, group) => makeSubtask(todoId, group.goalIndex)}
+						onOutdent={(todoId) => outdentTodo(todoId)}
+						onTitleFocus={setHighlightedTaskId}
+						getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
+						canIndent={(todoId, group) => canIndentTodo(todoId, group.goalIndex)}
+						canOutdent={(todoId) => canOutdentTodo(todoId)}
+						disableAutoFocus={hasNoCustomTitle || isEditingGoal}
+						onCreateTodo={createTodoFromComposer}
+						onMoveTodo={moveTodo}
+						allowCrossListMove={false}
+						enableGroupDrag={false}
+						searchText={store.todoWorkspaceQuery}
+						{targetTodoId}
+						activeTodoId={activeTodoId}
+						{focusTodoId}
+						onFocusTitleHandled={handleFocusTitleHandled}
+						{getPrimaryNoteForTodo}
+						{getLinkedNotesForTodo}
+						{getLinkedGoalIndicesForTodo}
+						onUpsertPrimaryNote={upsertPrimaryNoteForTodo}
+						onClearHighlight={clearHighlight}
+					/>
+				{/if}
+			{/if}
+		{:else}
 		<div class="md:hidden overflow-hidden">
 			<div
 				class="flex w-[200%] transition-transform duration-300 ease-out"
@@ -1271,14 +1428,6 @@
 				<div class="w-1/2 pr-4">
 				<div class="h-[calc(100vh-8rem)] overflow-y-auto px-2 pt-2 pb-3">
 					<h2 class="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">TASKS</h2>
-					<div class="mb-3 px-1">
-						<input
-							type="search"
-							placeholder="Search..."
-							bind:value={searchText}
-							class="w-full rounded-lg bg-slate-500/10 px-3 py-1.5 text-sm text-slate-800 placeholder-slate-400 outline-none focus:ring-1 focus:ring-violet-500/50 dark:bg-slate-700/30 dark:text-slate-100 dark:placeholder-slate-500"
-						/>
-					</div>
 					<div class="relative ml-2 border-l border-slate-200/50 pl-2 dark:border-slate-700/40 space-y-0.5">
 						<a
 							href="/todo"
@@ -1472,7 +1621,7 @@
 								onMoveTodo={moveTodo}
 								allowCrossListMove={false}
 								enableGroupDrag={false}
-								searchText={searchText}
+								searchText={store.todoWorkspaceQuery}
 							{targetTodoId}
 							activeTodoId={activeTodoId}
 							{focusTodoId}
@@ -1517,5 +1666,6 @@
 				</div>
 			</div>
 		</div>
+		{/if}
 	</div>
 </div>

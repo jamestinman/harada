@@ -8,7 +8,7 @@
 		searchText = $bindable(''),
 		quickAddText = $bindable(''),
 		searchPlaceholder = 'Search',
-		quickAddPlaceholder = 'New task…',
+		quickAddPlaceholder = 'New task or search...',
 		showSidebarToggle = false,
 		onSidebarToggle = null,
 		showHamburger = false,
