@@ -11,6 +11,9 @@
 	<div class="text-center">
 		<h1 class="text-3xl font-bold tracking-tight sm:text-4xl">Everything you need is free. No strings attached.</h1>
     <p class="mx-auto max-w-lg text-base text-slate-500 dark:text-slate-400">Add-ons for AI and publishing coming soon.</p>
+		<p class="mx-auto mt-3 max-w-lg text-sm text-slate-500 dark:text-slate-400">
+			<a href="/free-todoist-alternative" class="font-semibold text-emerald-600 underline-offset-4 hover:underline dark:text-emerald-400">Compare as a free Todoist alternative →</a>
+		</p>
 	</div>
 
 	<!-- Tier cards -->

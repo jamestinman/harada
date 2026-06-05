@@ -180,6 +180,7 @@
 				<h3 class="text-2xl font-bold tracking-tight">Tasks that belong to a goal or area</h3>
 				<p class="mt-3 leading-relaxed text-slate-600 dark:text-slate-300">
 					Behind every square is a focused to-do list. Add a task and it's already filed under the goal or category it belongs to - so your day always points somewhere that matters. Drag to reorder, nest sub-tasks, mark progress.
+					<a href="/free-todoist-alternative" class="font-semibold text-emerald-600 underline-offset-4 hover:underline dark:text-emerald-400">Looking for a free Todoist alternative?</a>
 				</p>
 			</div>
 			<div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg ring-1 ring-black/5 dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/30">

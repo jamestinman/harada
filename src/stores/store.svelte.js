@@ -162,7 +162,7 @@ class Store {
 
 	/**
 	 * Mobile todo: true when the TASKS goal-list drawer is showing (not task content).
-	 * Distinct from currentGoalIndex / URL — user can be on a goal route while browsing the list.
+	 * Distinct from currentGoalIndex / URL - user can be on a goal route while browsing the list.
 	 */
 	todoMobileShowsGoalList = $state(false);
 

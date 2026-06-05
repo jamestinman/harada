@@ -10,7 +10,7 @@ import {
 	websiteTrackingBuildEnabled
 } from '$lib/websiteTracking.js';
 
-/** Google Ads conversion tag — omitted from Capacitor static (iOS/Android) builds. */
+/** Google Ads conversion tag - omitted from Capacitor static (iOS/Android) builds. */
 export const GOOGLE_ADS_ID = 'AW-18068536389';
 
 export const googleTagEnabled = websiteTrackingBuildEnabled;

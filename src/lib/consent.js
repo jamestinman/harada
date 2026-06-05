@@ -4,12 +4,12 @@ import {
 	websiteTrackingBuildEnabled
 } from '$lib/websiteTracking.js';
 
-/** @deprecated Use {@link isWebsiteTrackingActive} — compile-time flag for static builds. */
+/** @deprecated Use {@link isWebsiteTrackingActive} - compile-time flag for static builds. */
 export const consentUiEnabled = websiteTrackingBuildEnabled;
 
 export const CONSENT_STORAGE_KEY = 'haradato-consent-v1';
 
-/** EEA, UK, and Switzerland — Google Consent Mode region list. */
+/** EEA, UK, and Switzerland - Google Consent Mode region list. */
 export const CONSENT_REQUIRED_REGIONS = [
 	'AT',
 	'BE',

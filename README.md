@@ -8,12 +8,13 @@ npm run electron
 
 Desktop dev syncs web assets into `electron/app/` via `npm run electron:sync` (or `./prepare.sh`).
 
-### Desktop release (DMG)
+### Desktop build (DMG)
 ```sh
 npm run electron:make
 # or: ./buildRelease.sh prod electron
+open ~/git/harada/electron/dist/
 ```
-Then open `electron/dist/` and run e.g. `Haradato-1.0.0-arm64.dmg`.
+Then run e.g. `Haradato-1.0.0-arm64.dmg`.
 
 ## Grid Structure
 Overall, the grid uses chess-like coordinates: `[letter][number]` (e.g. `E5`).

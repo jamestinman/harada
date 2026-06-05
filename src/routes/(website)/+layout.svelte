@@ -74,6 +74,7 @@
 			<div class="flex items-center gap-4">
 				<a href="/pricing" class="hover:text-emerald-600 dark:hover:text-emerald-400">Pricing</a>
 				<a href="/to-do-lists" class="hover:text-emerald-600 dark:hover:text-emerald-400">To-do Lists</a>
+				<a href="/free-todoist-alternative" class="hover:text-emerald-600 dark:hover:text-emerald-400">Free Todoist Alternative</a>
 				<a href="/articles" class="hover:text-emerald-600 dark:hover:text-emerald-400">Articles</a>
 				<a href="/for-agents" class="hover:text-emerald-600 dark:hover:text-emerald-400">For Agents</a>
 				{#if consentStore && showWebsiteTracking}

@@ -11,6 +11,7 @@
 		<h1 class="text-3xl font-semibold">To-do lists with markdown notes</h1>
 		<p class="mt-3 text-slate-700 dark:text-slate-300">
 			Haradato gives you focused to-do lists that can be connected to goals, while each task can also carry markdown notes for deeper thinking and execution details.
+			<a href="/free-todoist-alternative" class="font-semibold text-emerald-600 underline-offset-4 hover:underline dark:text-emerald-400">Looking for a free Todoist alternative?</a>
 		</p>
     <a href="/todo"><img src="/onboarding/todo.webp" alt="Haradato to-do lists" class="w-[800px] rounded-2xl mx-auto" /></a>
     <div class="w-full mx-auto text-center mt-3"><a href="/todo" class="salesBtn">Get started</a></div>
