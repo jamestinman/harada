@@ -769,6 +769,15 @@
 		<div class="grid gap-8 grid-cols-[18rem_minmax(0,1fr)]">
 			<aside class="h-[calc(100vh-5.5rem)] overflow-y-auto px-2 pt-2 pb-3">
 				<h2 class="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">TASKS</h2>
+				<div class="mb-3 px-1">
+					<WorkspaceToolbar
+						mode="desktop"
+						inputMode="quickAdd"
+						bind:quickAddText={store.todoWorkspaceQuery}
+						onQuickAdd={submitQuickAddTask}
+						composeTabDefault="task"
+					/>
+				</div>
 				<div class="relative ml-2 border-l border-slate-200/50 pl-2 dark:border-slate-700/40 space-y-0.5">
 					<button
 						type="button"
@@ -796,15 +805,6 @@
 			</aside>
 
 			<div class="min-w-0">
-				<div class="mb-6 hidden md:block">
-					<WorkspaceToolbar
-						mode="desktop"
-						inputMode="quickAdd"
-						bind:quickAddText={store.todoWorkspaceQuery}
-						onQuickAdd={submitQuickAddTask}
-						composeTabDefault="task"
-					/>
-				</div>
 				{#if activeMainFeed === 'todos'}
 					<p class="page-subtitle mb-6">
 						{allTodos.length} todo{allTodos.length !== 1 ? 's' : ''} across {todoGroups.filter((g) => g.id !== 'no-goal').length} goal{todoGroups.filter((g) => g.id !== 'no-goal').length !== 1 ? 's' : ''}

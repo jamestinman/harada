@@ -15,6 +15,7 @@
 	import { fetchNoteSpeechBlob, speechTextFromNoteContent } from '$lib/noteSpeech.js';
 	import GoalSelect from './GoalSelect.svelte';
 	import WorkspaceToolbar from './WorkspaceToolbar.svelte';
+	import ClearableTextInput from './ClearableTextInput.svelte';
 	import NotesPresentationOverlay from './NotesPresentationOverlay.svelte';
 	import { ChevronLeft, Trash2, Maximize2, Volume2, Square } from 'lucide-svelte';
 	import {
@@ -632,11 +633,12 @@ $effect(() => {
 		<aside class="h-[calc(100vh-5.5rem)] overflow-y-auto px-2 pt-2 pb-3">
 			<h2 class="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">NOTES</h2>
 			<div class="mb-3 px-1">
-				<input
-					type="search"
+				<ClearableTextInput
 					placeholder="Search..."
 					bind:value={searchText}
+					wrapperClass="relative w-full"
 					class="w-full rounded-lg bg-slate-500/10 px-3 py-1.5 text-sm text-slate-800 placeholder-slate-400 outline-none focus:ring-1 focus:ring-violet-500/50 dark:bg-slate-700/30 dark:text-slate-100 dark:placeholder-slate-500"
+					clearLabel="Clear search"
 				/>
 			</div>
 			{#if typeof scopedGoalIndex === 'number'}
@@ -793,11 +795,12 @@ $effect(() => {
 				<div class="h-[calc(100vh-8rem)] overflow-y-auto px-2 pt-2 pb-3">
 					<h2 class="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">NOTES</h2>
 					<div class="mb-3 px-1">
-						<input
-							type="search"
+						<ClearableTextInput
 							placeholder="Search..."
 							bind:value={searchText}
+							wrapperClass="relative w-full"
 							class="w-full rounded-lg bg-slate-500/10 px-3 py-1.5 text-sm text-slate-800 placeholder-slate-400 outline-none focus:ring-1 focus:ring-violet-500/50 dark:bg-slate-700/30 dark:text-slate-100 dark:placeholder-slate-500"
+							clearLabel="Clear search"
 						/>
 					</div>
 					{#if typeof scopedGoalIndex === 'number'}

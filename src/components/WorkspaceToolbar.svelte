@@ -1,6 +1,7 @@
 <script>
 	import { ChevronLeft, Menu, Plus, SquarePen } from 'lucide-svelte';
 	import { store } from '$stores/store.svelte.js';
+	import ClearableTextInput from './ClearableTextInput.svelte';
 
 	let {
 		mode = 'desktop',
@@ -42,7 +43,7 @@
 	}
 
 	const inputClass =
-		'min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-100 placeholder:text-slate-500 shadow-sm focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/60';
+		'w-full rounded-md border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-100 placeholder:text-slate-500 shadow-sm focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/60';
 	const iconBtnClass =
 		'shrink-0 inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-600 bg-slate-900/45 text-slate-100 transition hover:border-violet-500/60 hover:bg-violet-500/10';
 	const submitBtnClass =
@@ -52,15 +53,20 @@
 {#if mode === 'desktop'}
 	<div class="flex w-full min-w-0 items-center gap-3">
 		{#if inputMode === 'quickAdd'}
-			<input
-				type="text"
-				placeholder={quickAddPlaceholder}
+			<ClearableTextInput
 				bind:value={quickAddText}
+				placeholder={quickAddPlaceholder}
 				onkeydown={handleQuickAddKeydown}
 				class={inputClass}
+				clearLabel="Clear search"
 			/>
 		{:else}
-			<input type="text" placeholder={searchPlaceholder} bind:value={searchText} class={inputClass} />
+			<ClearableTextInput
+				bind:value={searchText}
+				placeholder={searchPlaceholder}
+				class={inputClass}
+				clearLabel="Clear search"
+			/>
 		{/if}
 		<button
 			type="button"
@@ -89,15 +95,20 @@
 			</button>
 		{/if}
 		{#if inputMode === 'quickAdd'}
-			<input
-				type="text"
-				placeholder={quickAddPlaceholder}
+			<ClearableTextInput
 				bind:value={quickAddText}
+				placeholder={quickAddPlaceholder}
 				onkeydown={handleQuickAddKeydown}
 				class={inputClass}
+				clearLabel="Clear search"
 			/>
 		{:else}
-			<input type="text" placeholder={searchPlaceholder} bind:value={searchText} class={inputClass} />
+			<ClearableTextInput
+				bind:value={searchText}
+				placeholder={searchPlaceholder}
+				class={inputClass}
+				clearLabel="Clear search"
+			/>
 		{/if}
 		<button
 			type="button"

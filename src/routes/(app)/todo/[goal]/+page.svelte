@@ -516,6 +516,12 @@
 		mobileTodoSearchActive && store.todoMobileSearchScope === 'all'
 	);
 
+	const desktopGlobalSearchActive = $derived(
+		todoDesktopLayout && store.todoWorkspaceQuery.trim().length > 0
+	);
+
+	let goalSearchQuery = $state('');
+
 	onMount(() => {
 		const mq = window.matchMedia('(min-width: 768px)');
 		const syncTodoLayout = () => {
@@ -663,6 +669,13 @@
 		const title = store.todoWorkspaceQuery.trim();
 		if (!title) return;
 		store.todoWorkspaceQuery = '';
+		createTodoFromComposer({ title, shouldNavigate: false });
+	}
+
+	function submitQuickAddGoalTask() {
+		const title = goalSearchQuery.trim();
+		if (!title) return;
+		goalSearchQuery = '';
 		createTodoFromComposer({ title, shouldNavigate: false });
 	}
 
@@ -1104,6 +1117,15 @@
 		<div class="hidden gap-8 md:grid md:grid-cols-[18rem_minmax(0,1fr)]">
 		<aside class="h-[calc(100vh-5.5rem)] overflow-y-auto px-2 pt-2 pb-3">
 			<h2 class="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">TASKS</h2>
+			<div class="mb-3 px-1">
+				<WorkspaceToolbar
+					mode="desktop"
+					inputMode="quickAdd"
+					bind:quickAddText={store.todoWorkspaceQuery}
+					onQuickAdd={submitQuickAddTask}
+					composeTabDefault="task"
+				/>
+			</div>
 				<div class="relative ml-2 border-l border-slate-200/50 pl-2 dark:border-slate-700/40 space-y-0.5">
 					<a
 						href="/todo"
@@ -1140,12 +1162,46 @@
 					</div>
 				{:else}
 					{#if todoDesktopLayout}
+					{#if desktopGlobalSearchActive}
+						<TodoList
+							groups={allTasksTodoGroups}
+							isMainTodoFeed={true}
+							feedPinnedRows={allTasksFeedPinnedRows}
+							resolveGroupForTodo={resolveAllTasksGroupForTodo}
+							{allGoals}
+							onUpdate={updateTodo}
+							onDelete={deleteTodo}
+							onToggleStatus={cycleTodoStatus}
+							onCreateNext={(todoId, group) => createNextTodo(todoId, group?.goalIndex ?? null)}
+							onDeletePrevious={(todoId, group) => deleteAndFocusPrevious(todoId, group?.goalIndex ?? null)}
+							onMakeSubtask={(todoId, group) => makeSubtask(todoId, group?.goalIndex ?? null)}
+							onOutdent={(todoId) => outdentTodo(todoId)}
+							onTitleFocus={setHighlightedTaskId}
+							getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
+							canIndent={(todoId, group) => canIndentTodo(todoId, group?.goalIndex ?? null)}
+							canOutdent={(todoId) => canOutdentTodo(todoId)}
+							onCreateTodo={createTodoFromComposer}
+							onMoveTodo={moveTodo}
+							allowCrossListMove={true}
+							enableGroupDrag={false}
+							searchText={store.todoWorkspaceQuery}
+							{targetTodoId}
+							activeTodoId={activeTodoId}
+							{focusTodoId}
+							onFocusTitleHandled={handleFocusTitleHandled}
+							{getPrimaryNoteForTodo}
+							{getLinkedNotesForTodo}
+							{getLinkedGoalIndicesForTodo}
+							onUpsertPrimaryNote={upsertPrimaryNoteForTodo}
+							onClearHighlight={clearHighlight}
+						/>
+					{:else}
 					<div class="mb-6 hidden md:block">
 						<WorkspaceToolbar
 							mode="desktop"
 							inputMode="quickAdd"
-							bind:quickAddText={store.todoWorkspaceQuery}
-							onQuickAdd={submitQuickAddTask}
+							bind:quickAddText={goalSearchQuery}
+							onQuickAdd={submitQuickAddGoalTask}
 							composeTabDefault="task"
 						/>
 					</div>
@@ -1305,7 +1361,7 @@
 							onMoveTodo={moveTodo}
 							allowCrossListMove={false}
 							enableGroupDrag={false}
-							searchText={store.todoWorkspaceQuery}
+							searchText={goalSearchQuery}
 						{targetTodoId}
 						activeTodoId={activeTodoId}
 						{focusTodoId}
@@ -1344,6 +1400,7 @@
 								{/each}
 							{/if}
 						</div>
+					{/if}
 					{/if}
 					{/if}
 				{/if}

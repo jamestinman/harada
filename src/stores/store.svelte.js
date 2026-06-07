@@ -157,7 +157,7 @@ class Store {
   showHowItWorksModal = $state(false);
   showOnboardingWizard = $state(false);
 
-	/** Toolbar on todo pages: filters the current task list while typing; Enter creates a task and clears this. */
+	/** Mobile top bar + desktop sidebar: global task search / quick-add; Enter creates a task and clears this. */
 	todoWorkspaceQuery = $state('');
 
 	/**
