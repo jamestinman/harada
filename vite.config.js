@@ -9,6 +9,16 @@ const isStaticAppBuild = process.env.BUILD_TARGET === 'static';
 
 export default defineConfig({
 	plugins: [tailwindcss(), sveltekit()],
+	server: {
+		host: '0.0.0.0',
+		port: 5026,
+		allowedHosts: ['haradato.test'],
+		hmr: {
+			host: 'haradato.test',
+			protocol: 'wss',
+			clientPort: 443
+		}
+	},
 	define: {
 		__STATIC_APP_BUILD__: JSON.stringify(isStaticAppBuild)
 	},

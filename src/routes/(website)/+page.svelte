@@ -57,6 +57,13 @@
 					<a href="/harada" class="cta-primary">Start your chart - free</a>
 					<a href="/harada-chart" class="cta-ghost">See how it works</a>
 				</div>
+				<div class="mt-6">
+					<p class="mb-3 text-sm font-medium text-slate-600 dark:text-slate-400">Get the app</p>
+					<div class="flex flex-wrap items-center gap-3">
+						<AppleStoreBtn />
+						<GooglePlayBtn />
+					</div>
+				</div>
 				<p class="mt-5 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-slate-500 dark:text-slate-400">
 					<span class="inline-flex items-center gap-1.5"><span class="text-emerald-500">✓</span> Free forever</span>
 					<span class="inline-flex items-center gap-1.5"><span class="text-emerald-500">✓</span> No sign-up needed</span>

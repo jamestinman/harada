@@ -1,10 +1,10 @@
 {
 	"name": "haradato",
 	"private": true,
-	"version": "1.0.22",
+	"version": "1.0.23",
 	"type": "module",
 	"scripts": {
-		"dev": "vite dev --open",
+		"dev": "vite dev --port 5026 --open",
 		"build": "vite build",
 		"electron:sync": "BUILD_TARGET=static npm run build && npx cap sync electron",
 		"electron": "npm run electron:sync && cd electron && npm run electron:start-live",

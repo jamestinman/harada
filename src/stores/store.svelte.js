@@ -141,7 +141,7 @@ function normalizeTaskGoalLink(link) {
 }
 
 class Store {
-	version = $state('1.0.22');
+	version = $state('1.0.23');
 	activeTab = $state('harada');
 	selectedGoalFilter = $state('all');
 	selectedGoalForNew = $state('');
