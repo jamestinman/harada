@@ -15,6 +15,9 @@
 	const isApp = $derived(variant === 'app');
 	const isLight = $derived(store.theme === 'light');
 	const isOnline = $derived(store.isOnline);
+	const needsSignIn = $derived(
+		isOnline && !authStore.loading && !authStore.user && !!authStore.lastKnownUser
+	);
 
 	const todoResumeHref = $derived.by(() => {
 		void page.url.pathname;
@@ -79,7 +82,7 @@
 </script>
 
 <header
-	class="z-40 border-b {headerBg} {isApp ? 'fixed left-0 right-0 top-0 hidden lg:block' : ''}"
+	class="z-40 border-b {headerBg} {isApp ? `fixed left-0 right-0 hidden lg:block ${needsSignIn ? 'top-9' : 'top-0'}` : ''}"
 >
 	<div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
 
@@ -172,12 +175,16 @@
 				>
 					{userName}
 				</button>
-			{:else if !isOnline}
+			{:else if !isOnline || needsSignIn}
 				<div
 					class="flex flex-col items-end gap-0 text-right"
-					title={userName ? `Offline - signed in as ${userName}` : 'Offline'}
+					title={userName ? (needsSignIn ? `Signed out - was ${userName}` : `Offline - signed in as ${userName}`) : needsSignIn ? 'Session expired' : 'Offline'}
 				>
-					<span class="text-xs font-bold tracking-wide text-amber-500">OFFLINE</span>
+					{#if needsSignIn}
+						<span class="text-xs font-bold tracking-wide text-red-500">NOT SIGNED IN</span>
+					{:else}
+						<span class="text-xs font-bold tracking-wide text-amber-500">OFFLINE</span>
+					{/if}
 					{#if userName}
 						<span class="max-w-[8rem] truncate text-xs {isLight ? 'text-slate-500' : 'text-slate-400'}"
 							>{userName}</span

@@ -1120,9 +1120,8 @@
 			<div class="mb-3 px-1">
 				<WorkspaceToolbar
 					mode="desktop"
-					inputMode="quickAdd"
-					bind:quickAddText={store.todoWorkspaceQuery}
-					onQuickAdd={submitQuickAddTask}
+					inputMode="search"
+					bind:searchText={store.todoWorkspaceQuery}
 					composeTabDefault="task"
 				/>
 			</div>

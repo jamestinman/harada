@@ -18,6 +18,8 @@ class AuthStore {
 	/** Resolves once the initial getSession() check has finished */
 	_readyPromise = /** @type {Promise<void> | null} */ (null);
 	_readyResolve = /** @type {(() => void) | null} */ (null);
+	/** Registered by Nav so other UI (e.g. SignInBanner) can open the auth modal */
+	openSignInModal = /** @type {() => void} */ (() => {});
 
 	constructor() {
 		if (browser) {
@@ -52,13 +54,9 @@ class AuthStore {
 
 			supabase.auth.onAuthStateChange((event, session) => {
 				if (event === 'SIGNED_OUT') {
-					// Only treat it as a real sign-out when we're actually online.
+					// Keep lastKnownUser unless the user explicitly signs out (see signOut()).
 					// When offline the token can't be refreshed so Supabase fires SIGNED_OUT
 					// even though the user hasn't intentionally logged out.
-					const isOnline = navigator.onLine;
-					if (isOnline) {
-						this._clearLastKnownUser();
-					}
 					// Always clear live session/user - saves won't try to push to Supabase
 					this.session = null;
 					this.user = null;

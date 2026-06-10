@@ -139,6 +139,10 @@ const clearAll = () => {
 	onMount(() => {
 		if (!browser) return;
 
+		authStore.openSignInModal = () => {
+			showAuthModal = true;
+		};
+
 		// First-run onboarding is handled by the Harada chart page (the guided
 		// setup wizard), so nothing auto-opens here.
 
@@ -166,6 +170,7 @@ const clearAll = () => {
 		});
 
 		return () => {
+			authStore.openSignInModal = () => {};
 			if (typeof unsubscribe === 'function') {
 				unsubscribe();
 			}
@@ -181,6 +186,9 @@ const clearAll = () => {
 	});
 
 	const isOnline = $derived(store.isOnline);
+	const needsSignIn = $derived(
+		isOnline && !authStore.loading && !authStore.user && !!authStore.lastKnownUser
+	);
 
 	// Resolve display name from live user, or fall back to cached last-known user when offline
 	const userName = $derived.by(() => {
@@ -245,7 +253,7 @@ const clearAll = () => {
 	<div
 		class="fixed z-40 lg:hidden"
 		style="
-			top: calc(env(safe-area-inset-top, 0px) + 1rem);
+			top: calc(env(safe-area-inset-top, 0px) + {needsSignIn ? '2.75rem' : '1rem'});
 			right: calc(env(safe-area-inset-right, 0px) + 1rem);
 		"
 	>
@@ -276,13 +284,29 @@ const clearAll = () => {
 					{/if}
 				</div>
 				<button type="button" onclick={openSettings} class="mobile-menu-item">Settings</button>
-			{:else if !isOnline}
+			{:else if !isOnline || needsSignIn}
 				<div class="mobile-menu-header">
-					<div class="mobile-menu-header-name text-amber-500 dark:text-amber-400">OFFLINE</div>
+					{#if needsSignIn}
+						<div class="mobile-menu-header-name text-red-500 dark:text-red-400">NOT SIGNED IN</div>
+					{:else}
+						<div class="mobile-menu-header-name text-amber-500 dark:text-amber-400">OFFLINE</div>
+					{/if}
 					{#if userName}
 						<div class="mobile-menu-header-email">{userName}</div>
 					{/if}
 				</div>
+				{#if needsSignIn}
+					<button
+						type="button"
+						onclick={() => {
+							store.mobileNavMenuOpen = false;
+							showAuthModal = true;
+						}}
+						class="mobile-menu-item !font-bold !text-red-600 dark:!text-red-400"
+					>
+						Sign In
+					</button>
+				{/if}
 			{:else}
 				<button
 					type="button !text-red-600 !font-bold"

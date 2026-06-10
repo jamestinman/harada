@@ -351,8 +351,20 @@
 		buildTaskNoteIndexMaps(notes, noteTaskLinks, taskGoalLinks, todos)
 	);
 
+	let allTasksSearchQuery = $state('');
+
+	const desktopGlobalSearchActive = $derived(
+		!isNarrowLayout && store.todoWorkspaceQuery.trim().length > 0
+	);
+
+	const viewSearchQuery = $derived(
+		isNarrowLayout || desktopGlobalSearchActive
+			? store.todoWorkspaceQuery
+			: allTasksSearchQuery
+	);
+
 	const allNotes = $derived.by(() => {
-		const query = store.todoWorkspaceQuery.trim().toLowerCase();
+		const query = viewSearchQuery.trim().toLowerCase();
 		const sorted = store.notes
 			.filter((note) => !store.isPrimaryTaskNote(note.id))
 			.sort((a, b) => (b?.updatedAt ?? 0) - (a?.updatedAt ?? 0));
@@ -568,6 +580,13 @@
 		createTodoFromComposer({ title, shouldNavigate: false });
 	}
 
+	function submitQuickAddAllTasksTask() {
+		const title = allTasksSearchQuery.trim();
+		if (!title) return;
+		allTasksSearchQuery = '';
+		createTodoFromComposer({ title, shouldNavigate: false });
+	}
+
 	function createTodoFromComposer({ title, markdown, goalIndex, listType, listName, shouldNavigate = true } = {}) {
 		// Handle case when called without parameters (from "+ New Task" button)
 		// Add to no-goal list when not on a specific goal page
@@ -772,9 +791,8 @@
 				<div class="mb-3 px-1">
 					<WorkspaceToolbar
 						mode="desktop"
-						inputMode="quickAdd"
-						bind:quickAddText={store.todoWorkspaceQuery}
-						onQuickAdd={submitQuickAddTask}
+						inputMode="search"
+						bind:searchText={store.todoWorkspaceQuery}
 						composeTabDefault="task"
 					/>
 				</div>
@@ -805,10 +823,23 @@
 			</aside>
 
 			<div class="min-w-0">
+				{#if !desktopGlobalSearchActive}
+					<div class="mb-6">
+						<WorkspaceToolbar
+							mode="desktop"
+							inputMode="quickAdd"
+							bind:quickAddText={allTasksSearchQuery}
+							onQuickAdd={submitQuickAddAllTasksTask}
+							composeTabDefault="task"
+						/>
+					</div>
+				{/if}
 				{#if activeMainFeed === 'todos'}
-					<p class="page-subtitle mb-6">
-						{allTodos.length} todo{allTodos.length !== 1 ? 's' : ''} across {todoGroups.filter((g) => g.id !== 'no-goal').length} goal{todoGroups.filter((g) => g.id !== 'no-goal').length !== 1 ? 's' : ''}
-					</p>
+					{#if !desktopGlobalSearchActive}
+						<p class="page-subtitle mb-6">
+							{allTodos.length} todo{allTodos.length !== 1 ? 's' : ''} across {todoGroups.filter((g) => g.id !== 'no-goal').length} goal{todoGroups.filter((g) => g.id !== 'no-goal').length !== 1 ? 's' : ''}
+						</p>
+					{/if}
 					{#if todoListReady}
 						<TodoList
 							groups={todoGroups}
@@ -832,7 +863,7 @@
 							allowCrossListMove={true}
 							enableGroupDrag={true}
 							onMoveGroup={moveGoalGroup}
-							searchText={store.todoWorkspaceQuery}
+							searchText={viewSearchQuery}
 						{targetTodoId}
 						activeTodoId={activeTodoId}
 						{focusTodoId}
@@ -903,7 +934,7 @@
 						allowCrossListMove={true}
 						enableGroupDrag={true}
 						onMoveGroup={moveGoalGroup}
-						searchText={store.todoWorkspaceQuery}
+						searchText={viewSearchQuery}
 						{targetTodoId}
 						activeTodoId={activeTodoId}
 						{focusTodoId}
@@ -1013,7 +1044,7 @@
 								allowCrossListMove={true}
 								enableGroupDrag={true}
 								onMoveGroup={moveGoalGroup}
-								searchText={store.todoWorkspaceQuery}
+								searchText={viewSearchQuery}
 							{targetTodoId}
 							activeTodoId={activeTodoId}
 							{focusTodoId}

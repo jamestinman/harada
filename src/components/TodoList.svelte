@@ -4,6 +4,7 @@
 	import { ChevronDown } from 'lucide-svelte';
 	import TodoItem from '$components/TodoItem.svelte';
 	import { filterFeedPinnedRowsBySearch } from '$lib/todoUtils.js';
+	import { store } from '$stores/store.svelte.js';
 
 	let {
 		groups = [],
@@ -1024,6 +1025,9 @@
 									{#if group.href}
 										<a
 											href={group.href}
+											onclick={() => {
+												store.todoWorkspaceQuery = '';
+											}}
 											class="hover:text-violet-400 transition-colors"
 											ondragstart={(e) => e.preventDefault()}
 										>

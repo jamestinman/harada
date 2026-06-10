@@ -11,11 +11,16 @@
 		buildGoalListMeta
 	} from '$lib/todoUtils.js';
 	import Nav from '$components/Nav.svelte';
+	import SignInBanner from '$components/SignInBanner.svelte';
 	import { persistWorkspacePath } from '$lib/workspaceNavResume.js';
 	import '../layout.css';
 
 	let { children } = $props();
 	let lastAuthUserId = $state(undefined);
+
+	const needsSignIn = $derived(
+		store.isOnline && !authStore.loading && !authStore.user && !!authStore.lastKnownUser
+	);
 
 	// Use icon.png for OG: favicon.png is 192×192 (below Meta/WhatsApp minimum 200×200 for link images)
 	const ogImageUrl = $derived(`${page.url.origin}/icon.png`);
@@ -217,9 +222,13 @@
 
 <div
   id="root-container"
-	class="{store.theme} min-h-dvh overflow-x-hidden pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] lg:pt-[6.5rem]"
+	class="{store.theme} min-h-dvh overflow-x-hidden {needsSignIn ? 'pt-[calc(env(safe-area-inset-top,0px)+2.75rem)] lg:pt-[8.5rem]' : 'pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] lg:pt-[6.5rem]'}"
 	style="padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem);"
 >
+	{#if needsSignIn}
+		<SignInBanner onSignIn={() => authStore.openSignInModal()} />
+	{/if}
+
 	{@render children()}
 
   <Nav
