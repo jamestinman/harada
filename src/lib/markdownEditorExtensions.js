@@ -180,16 +180,21 @@ const editorBaseTheme = EditorView.theme({
 
 /**
  * @param {string} [placeholderText]
+ * @param {{ treatFirstLineAsTitle?: boolean }} [options]
  */
-export function createMarkdownEditorExtensions(placeholderText = '') {
+export function createMarkdownEditorExtensions(placeholderText = '', options = {}) {
+	const { treatFirstLineAsTitle = false } = options;
 	const extensions = [
 		markdown(),
 		EditorView.lineWrapping,
 		editorBaseTheme,
 		syntaxHighlighting(markdownHighlightStyle),
-		noteTitleLineExtension(),
 		markdownListKeymap
 	];
+
+	if (treatFirstLineAsTitle) {
+		extensions.push(noteTitleLineExtension());
+	}
 
 	if (placeholderText) {
 		extensions.push(placeholderExtension(placeholderText));

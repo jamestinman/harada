@@ -176,6 +176,54 @@ h4 {
   }
 }
 
+.task-edit-note.notes-hybrid-markdown-editor {
+  @apply !border-0 !p-0 resize-y;
+}
+
+.task-edit-note.notes-hybrid-markdown-editor .cm-editor,
+.task-edit-note.notes-hybrid-markdown-editor .cm-scroller {
+  @apply !bg-transparent;
+}
+
+.task-edit-note.notes-hybrid-markdown-editor:has(.cm-focused),
+.task-edit-note.notes-hybrid-markdown-editor.cm-focused {
+  @apply !ring-0;
+}
+
+.dark .task-edit-note.notes-hybrid-markdown-editor {
+  --cm-caret-color: #7c3aed;
+  --cm-code-bg: rgba(15, 23, 42, 0.1);
+  --cm-link-color: #6d28d9;
+  --cm-quote-color: #64748b;
+}
+
+.light .task-edit-note.notes-hybrid-markdown-editor {
+  --cm-caret-color: #7c3aed;
+}
+
+.todo-panel-hybrid-editor.notes-hybrid-markdown-editor {
+  @apply text-[11px] leading-snug;
+}
+
+.todo-panel-hybrid-editor.notes-hybrid-markdown-editor .cm-content,
+.todo-panel-hybrid-editor.notes-hybrid-markdown-editor .cm-line {
+  @apply text-[11px] leading-snug;
+}
+
+.composer-hybrid-editor.notes-hybrid-markdown-editor {
+  @apply mb-4 min-h-[8rem] w-full resize-y rounded-md focus:!ring-0;
+  .dark & {
+    @apply !border-0 !bg-white/95;
+  }
+  .light & {
+    @apply !border-0 !bg-white;
+  }
+}
+
+.composer-hybrid-editor.notes-hybrid-markdown-editor:has(.cm-focused) {
+  @apply !ring-0;
+}
+
 /* Rendered markdown preview (click to edit) */
 .task-edit-note-preview {
   @apply cursor-text rounded px-2 py-1 text-sm transition-colors;

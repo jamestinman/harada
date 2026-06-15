@@ -26,6 +26,20 @@ function badRequest(message) {
 	return jsonWithCors({ error: message }, { status: 400 });
 }
 
+function serviceUnavailable(message, { fallback = true } = {}) {
+	return jsonWithCors({ error: message, fallback }, { status: 503 });
+}
+
+async function readGeminiError(response) {
+	const detail = await response.text();
+	try {
+		const payload = JSON.parse(detail);
+		return payload?.error?.message ?? detail;
+	} catch {
+		return detail || 'Gemini TTS request failed';
+	}
+}
+
 function pcmToWav(pcm) {
 	const header = Buffer.alloc(44);
 	const byteRate = PCM_SAMPLE_RATE * PCM_CHANNELS * (PCM_BITS_PER_SAMPLE / 8);
@@ -62,7 +76,7 @@ export async function POST({ request, fetch }) {
 
 	if (!GOOGLE_API_KEY) {
 		console.error(`[Notes TTS][Server][${requestId}] missing GOOGLE_API_KEY`);
-		return jsonWithCors({ error: 'Missing GOOGLE_API_KEY' }, { status: 500 });
+		return serviceUnavailable('Gemini TTS is not configured');
 	}
 
 	let body;
@@ -116,10 +130,10 @@ export async function POST({ request, fetch }) {
 			console.error(
 				`[Notes TTS][Server][${requestId}] Gemini request timed out after ${GEMINI_FETCH_TIMEOUT_MS}ms`
 			);
-			return jsonWithCors({ error: 'Gemini TTS request timed out' }, { status: 504 });
+			return serviceUnavailable('Gemini TTS request timed out');
 		}
 		console.error(`[Notes TTS][Server][${requestId}] Gemini fetch threw error:`, error);
-		return jsonWithCors({ error: 'Gemini TTS network error' }, { status: 502 });
+		return serviceUnavailable('Gemini TTS network error');
 	} finally {
 		clearTimeout(timeout);
 	}
@@ -128,9 +142,9 @@ export async function POST({ request, fetch }) {
 	);
 
 	if (!geminiResponse.ok) {
-		const detail = await geminiResponse.text();
-		console.error(`[Notes TTS][Server][${requestId}] Gemini request failed:`, detail);
-		return jsonWithCors({ error: 'Gemini TTS request failed' }, { status: 502 });
+		const message = await readGeminiError(geminiResponse);
+		console.error(`[Notes TTS][Server][${requestId}] Gemini request failed:`, message);
+		return serviceUnavailable(message);
 	}
 
 	const payload = await geminiResponse.json();
@@ -144,7 +158,7 @@ export async function POST({ request, fetch }) {
 		console.error(
 			`[Notes TTS][Server][${requestId}] Gemini response did not include inline audio data`
 		);
-		return jsonWithCors({ error: 'Gemini response did not include audio' }, { status: 502 });
+		return serviceUnavailable('Gemini response did not include audio');
 	}
 
 	const pcm = Buffer.from(base64Audio, 'base64');

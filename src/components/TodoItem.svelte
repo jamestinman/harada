@@ -2,13 +2,12 @@
 	import { tick } from 'svelte';
 	import { cubicOut } from 'svelte/easing';
 	import {
-		indexToNomenclature,
-		renderMarkdown,
-		handleMarkdownEditorKeydown
+		indexToNomenclature
 	} from '$lib/todoUtils.js';
 	import { store } from '$stores/store.svelte.js';
 	import { todoEditorStore } from '$stores/todoEditor.svelte.js';
 	import GoalSelect from './GoalSelect.svelte';
+	import NoteHybridMarkdownEditor from './NoteHybridMarkdownEditor.svelte';
 	import { ArrowRightToLine, ArrowLeftFromLine, ChevronDown, Check, Pin } from 'lucide-svelte';
 
 	let { 
@@ -51,15 +50,13 @@
 
 	let isEditing = $state(false);
 	let isEditingTitle = $state(false);
-	let isEditingMarkdown = $state(false);
 	let showMobileEditor = $state(false);
 	let editTitle = $state('');
 	let editMarkdown = $state('');
 	let linkPanelOpen = $state(false);
 	let linkGoalValue = $state('');
 	let titleInputElement = $state(null);
-	let markdownTextareaElement = $state(null);
-	let markdownPreviewElement = $state(null);
+	let markdownEditorElement = $state(null);
 	let isCreatingNext = $state(false);
 	let autoFocusedTodoId = $state(null);
 
@@ -205,7 +202,13 @@
 		return typeof window !== 'undefined' && window.innerWidth < 768;
 	}
 
-	function openExpandedEditor({ title, markdown, startsEmptyNote = !markdown.trim() } = {}) {
+	function focusMarkdownEditor() {
+		setTimeout(() => {
+			markdownEditorElement?.focusEnd();
+		}, 0);
+	}
+
+	function openExpandedEditor({ title, markdown, focusNote = !markdown.trim() } = {}) {
 		editTitle = title;
 		editMarkdown = markdown;
 		linkPanelOpen = false;
@@ -213,14 +216,13 @@
 		if (onTitleFocus) onTitleFocus(todo.id);
 
 		if (isMobileEditor()) {
-			isEditingMarkdown = startsEmptyNote;
 			showMobileEditor = true;
 			isEditing = false;
 		} else {
 			isEditing = true;
-			isEditingMarkdown = startsEmptyNote;
 			showMobileEditor = false;
 		}
+		if (focusNote) focusMarkdownEditor();
 	}
 
 	function startEditingNotes() {
@@ -239,20 +241,6 @@
 		openExpandedEditor({ title, markdown });
 	}
 
-	function enterMarkdownEdit() {
-		if (isEditingMarkdown) return;
-		const previewHeight = markdownPreviewElement?.offsetHeight ?? null;
-		isEditingMarkdown = true;
-		setTimeout(() => {
-			if (markdownTextareaElement) {
-				if (previewHeight) markdownTextareaElement.style.height = `${previewHeight}px`;
-				markdownTextareaElement.focus();
-				const len = markdownTextareaElement.value.length;
-				markdownTextareaElement.setSelectionRange(len, len);
-			}
-		}, 0);
-	}
-
 	function saveChanges() {
 		onUpdate({
 			title: editTitle
@@ -262,7 +250,6 @@
 		}
 		todoEditorStore.close(todo.id);
 		isEditing = false;
-		isEditingMarkdown = false;
 		showMobileEditor = false;
 		if (onTitleFocus) onTitleFocus(todo.id);
 	}
@@ -315,7 +302,6 @@
 	function cancelEdit() {
 		todoEditorStore.close(todo.id);
 		isEditing = false;
-		isEditingMarkdown = false;
 		showMobileEditor = false;
 	}
 
@@ -578,26 +564,13 @@
 
 		{@render taskLinkControls()}
 
-		{#if isEditingMarkdown || !editMarkdown.trim()}
-			<textarea
-				bind:this={markdownTextareaElement}
-				bind:value={editMarkdown}
-				placeholder="Add a note..."
-				class="task-edit-note"
-				onkeydown={handleMarkdownEditorKeydown}
-			></textarea>
-		{:else}
-			<div
-				bind:this={markdownPreviewElement}
-				role="button"
-				tabindex="0"
-				class="markdown task-edit-note-preview"
-				onclick={enterMarkdownEdit}
-				onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && enterMarkdownEdit()}
-			>
-				{@html renderMarkdown(editMarkdown)}
-			</div>
-		{/if}
+		<NoteHybridMarkdownEditor
+			bind:this={markdownEditorElement}
+			bind:value={editMarkdown}
+			placeholder="Add a note..."
+			minHeight="4.5rem"
+			class="task-edit-note"
+		/>
 
 		<div class="task-edit-actions">
 			<div class="ml-auto flex items-center gap-1">
@@ -650,26 +623,13 @@
 
 			{@render taskLinkControls()}
 
-			{#if isEditingMarkdown || !editMarkdown.trim()}
-				<textarea
-					bind:this={markdownTextareaElement}
-					bind:value={editMarkdown}
-					placeholder="Add a note…"
-					class="composer-body-textarea mt-3"
-					onkeydown={handleMarkdownEditorKeydown}
-				></textarea>
-			{:else}
-				<div
-					bind:this={markdownPreviewElement}
-					role="button"
-					tabindex="0"
-					class="markdown task-edit-note-preview mt-3"
-					onclick={enterMarkdownEdit}
-					onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && enterMarkdownEdit()}
-				>
-					{@html renderMarkdown(editMarkdown)}
-				</div>
-			{/if}
+			<NoteHybridMarkdownEditor
+				bind:this={markdownEditorElement}
+				bind:value={editMarkdown}
+				placeholder="Add a note…"
+				minHeight="8rem"
+				class="task-edit-note mt-3"
+			/>
 
 			<div class="task-edit-actions">
 				<div class="ml-auto flex items-center gap-1">

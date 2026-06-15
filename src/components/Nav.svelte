@@ -5,7 +5,7 @@
 	import { cubicOut } from 'svelte/easing';
 	import { page } from '$app/state';
 	import { browser } from '$app/environment';
-	import { NEW_LIST_OPTION_VALUE, parseListSelection, handleMarkdownEditorKeydown } from '$lib/todoUtils.js';
+	import { NEW_LIST_OPTION_VALUE, parseListSelection } from '$lib/todoUtils.js';
 	import { resumePathTodo, workspaceNavActiveSection } from '$lib/workspaceNavResume.js';
 	import { store } from '$stores/store.svelte.js';
 	import { navComposerHandlers } from '$stores/navComposerHandlers.svelte.js';
@@ -18,6 +18,7 @@
 	import AuthModal from './AuthModal.svelte';
 	import HowItWorksModal from './HowItWorksModal.svelte';
 	import OnboardingWizard from './OnboardingWizard.svelte';
+	import NoteHybridMarkdownEditor from './NoteHybridMarkdownEditor.svelte';
 
 	const showFixedMobileNavButton = $derived.by(() => {
 		const path = page?.url?.pathname ?? '/';
@@ -479,12 +480,12 @@ const clearAll = () => {
 					class="composer-title-input"
 				/>
 
-				<textarea
+				<NoteHybridMarkdownEditor
 					bind:value={composerMarkdown}
 					placeholder="Add a note…"
-					class="composer-body-textarea"
-					onkeydown={handleMarkdownEditorKeydown}
-				></textarea>
+					minHeight="8rem"
+					class="composer-hybrid-editor"
+				/>
 
 				<div class="mb-4 flex items-center gap-2">
 					<span class="composer-meta-label shrink-0">Goal:</span>
@@ -517,13 +518,13 @@ const clearAll = () => {
 					</button>
 				</div>
 			{:else}
-				<textarea
+				<NoteHybridMarkdownEditor
 					bind:value={composerNoteContent}
+					treatFirstLineAsTitle={true}
 					placeholder="Write your note…"
-					class="composer-body-textarea min-h-[12rem]"
-					onkeydown={handleMarkdownEditorKeydown}
-					autofocus
-				></textarea>
+					minHeight="12rem"
+					class="composer-hybrid-editor"
+				/>
 				<div class="flex justify-end">
 					<button
 						type="button"

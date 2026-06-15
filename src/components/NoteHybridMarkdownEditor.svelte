@@ -8,6 +8,8 @@
 		value = $bindable(''),
 		placeholder = '',
 		minHeight = '140px',
+		treatFirstLineAsTitle = false,
+		onchange = undefined,
 		class: className = ''
 	} = $props();
 
@@ -28,20 +30,32 @@
 		});
 	}
 
+	export function focusEnd() {
+		if (!view) return;
+		const len = view.state.doc.length;
+		view.dispatch({ selection: { anchor: len } });
+		view.focus();
+	}
+
 	onMount(() => {
 		if (!container) return;
 
 		const updateListener = EditorView.updateListener.of((update) => {
 			if (!update.docChanged) return;
 			syncingFromEditor = true;
-			value = update.state.doc.toString();
+			const next = update.state.doc.toString();
+			value = next;
+			onchange?.(next);
 			syncingFromEditor = false;
 		});
 
 		view = new EditorView({
 			state: EditorState.create({
 				doc: value,
-				extensions: [...createMarkdownEditorExtensions(placeholder), updateListener]
+				extensions: [
+					...createMarkdownEditorExtensions(placeholder, { treatFirstLineAsTitle }),
+					updateListener
+				]
 			}),
 			parent: container
 		});

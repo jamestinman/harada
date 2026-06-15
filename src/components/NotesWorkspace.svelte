@@ -11,7 +11,12 @@
 		getNoteTitle,
 		renderNoteBodyMarkdown
 	} from '$lib/todoUtils.js';
-	import { fetchNoteSpeechBlob, speechTextFromNoteContent } from '$lib/noteSpeech.js';
+	import {
+		cancelNoteSpeech,
+		isNoteSpeechSupported,
+		speakNoteText,
+		speechTextFromNoteContent
+	} from '$lib/noteSpeech.js';
 	import GoalSelect from './GoalSelect.svelte';
 	import WorkspaceToolbar from './WorkspaceToolbar.svelte';
 	import ClearableTextInput from './ClearableTextInput.svelte';
@@ -35,11 +40,7 @@
 	let searchText = $state('');
 
 	onMount(() => {
-		speechSupported =
-			typeof window !== 'undefined' &&
-			typeof Audio !== 'undefined' &&
-			typeof URL !== 'undefined' &&
-			typeof URL.createObjectURL === 'function';
+		speechSupported = isNoteSpeechSupported();
 		console.log('[Notes TTS][Workspace] speechSupported:', speechSupported);
 		if (isWorkspaceNarrowLayout() && readNotesMobileSidebarOpen()) {
 			mobileMenuOpen = true;
@@ -413,30 +414,16 @@ $effect(() => {
 	let presentationOpen = $state(false);
 	let speechSupported = $state(false);
 	let isSpeaking = $state(false);
-	let activeAudio = null;
-	let activeAudioUrl = null;
 	let activeSpeechController = null;
 	let speechRunId = 0;
 	let lastSpokenWatchNoteId = null;
-
-	function clearActiveAudio() {
-		if (activeAudio) {
-			activeAudio.pause();
-			activeAudio.src = '';
-			activeAudio = null;
-		}
-		if (activeAudioUrl) {
-			URL.revokeObjectURL(activeAudioUrl);
-			activeAudioUrl = null;
-		}
-	}
 
 	function stopSpeaking() {
 		console.log('[Notes TTS][Workspace] stopSpeaking called');
 		speechRunId += 1;
 		activeSpeechController?.abort();
 		activeSpeechController = null;
-		clearActiveAudio();
+		cancelNoteSpeech();
 		isSpeaking = false;
 	}
 
@@ -478,37 +465,26 @@ $effect(() => {
 		isSpeaking = true;
 
 		try {
-			const blob = await fetchNoteSpeechBlob(text, { signal: controller.signal });
+			const provider = await speakNoteText(text, {
+				signal: controller.signal,
+				onended: () => {
+					console.log('[Notes TTS][Workspace] speech ended');
+					if (runId !== speechRunId) return;
+					isSpeaking = false;
+					const advancedToNoteId = selectNextNoteInCurrentList(noteIdAtStart);
+					if (advancedToNoteId) {
+						console.log('[Notes TTS][Workspace] auto-advancing to next note:', advancedToNoteId);
+						void tick().then(() => speakSelectedNote());
+					}
+				}
+			});
 			if (runId !== speechRunId || controller.signal.aborted) return;
 			if (activeSpeechController === controller) activeSpeechController = null;
-
-			activeAudioUrl = URL.createObjectURL(blob);
-			activeAudio = new Audio(activeAudioUrl);
-			activeAudio.onended = () => {
-				console.log('[Notes TTS][Workspace] audio ended');
-				if (runId !== speechRunId) return;
-				clearActiveAudio();
-				isSpeaking = false;
-				const advancedToNoteId = selectNextNoteInCurrentList(noteIdAtStart);
-				if (advancedToNoteId) {
-					console.log('[Notes TTS][Workspace] auto-advancing to next note:', advancedToNoteId);
-					void tick().then(() => speakSelectedNote());
-				}
-			};
-			activeAudio.onerror = (event) => {
-				console.error('[Notes TTS][Workspace] audio error:', event);
-				if (runId === speechRunId) {
-					clearActiveAudio();
-					isSpeaking = false;
-				}
-			};
-
-			await activeAudio.play();
+			console.log('[Notes TTS][Workspace] spoke with provider:', provider);
 		} catch (error) {
 			if (controller.signal.aborted) return;
-			console.error('[Notes TTS][Workspace] Gemini TTS error:', error);
+			console.error('[Notes TTS][Workspace] speech error:', error);
 			if (runId === speechRunId) {
-				clearActiveAudio();
 				activeSpeechController = null;
 				isSpeaking = false;
 			}
@@ -584,21 +560,23 @@ $effect(() => {
 
 <div class="p-4 pb-24 md:p-8 md:pb-8">
 	<div class="mx-auto max-w-7xl">
-		<div class="mb-3 md:hidden">
-			<WorkspaceToolbar
-				mode="mobile"
-				bind:searchText
-				showSidebarToggle={!mobileMenuOpen}
-				onSidebarToggle={() => (mobileMenuOpen = true)}
-				showHamburger={false}
-				composeTabDefault="note"
-				onNew={createNewNote}
-			>
-				{#snippet trailing()}
-					{@render notesDeleteToolbarTrailing()}
-				{/snippet}
-			</WorkspaceToolbar>
-		</div>
+		{#if !mobileMenuOpen}
+			<div class="mb-3 md:hidden">
+				<WorkspaceToolbar
+					mode="mobile"
+					inputMode="none"
+					showSidebarToggle={true}
+					onSidebarToggle={() => (mobileMenuOpen = true)}
+					showHamburger={false}
+					composeTabDefault="note"
+					onNew={createNewNote}
+				>
+					{#snippet trailing()}
+						{@render notesDeleteToolbarTrailing()}
+					{/snippet}
+				</WorkspaceToolbar>
+			</div>
+		{/if}
 
 		<div class="hidden gap-8 md:grid md:grid-cols-[18rem_minmax(0,1fr)]">
 		<aside class="h-[calc(100vh-5.5rem)] overflow-y-auto px-2 pt-2 pb-3">
@@ -660,7 +638,12 @@ $effect(() => {
 
 			<div class="min-w-0">
 				<div class="mb-6 hidden md:block">
-					<WorkspaceToolbar mode="desktop" bind:searchText composeTabDefault="note" onNew={createNewNote}>
+					<WorkspaceToolbar
+						mode="desktop"
+						inputMode="none"
+						composeTabDefault="note"
+						onNew={createNewNote}
+					>
 						{#snippet trailing()}
 							{@render notesDeleteToolbarTrailing()}
 						{/snippet}
@@ -682,6 +665,7 @@ $effect(() => {
 							<NoteHybridMarkdownEditor
 								bind:this={editEditorDesktop}
 								bind:value={editContent}
+								treatFirstLineAsTitle={true}
 								minHeight="22rem"
 								placeholder="Write in markdown. First line becomes the title."
 							/>
@@ -829,6 +813,7 @@ $effect(() => {
 						<NoteHybridMarkdownEditor
 							bind:this={editEditorMobile}
 							bind:value={editContent}
+							treatFirstLineAsTitle={true}
 							minHeight="18rem"
 							placeholder="Write in markdown. First line becomes the title."
 						/>

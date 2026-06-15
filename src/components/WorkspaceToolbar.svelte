@@ -13,6 +13,7 @@
 		showSidebarToggle = false,
 		onSidebarToggle = null,
 		showHamburger = false,
+		showPrimaryAction = true,
 		composeTabDefault = 'task',
 		onQuickAdd = null,
 		onNew = null,
@@ -65,27 +66,33 @@
 				class={inputClass}
 				clearLabel="Clear search"
 			/>
-		{:else}
+		{:else if inputMode === 'search'}
 			<ClearableTextInput
 				bind:value={searchText}
 				placeholder={searchPlaceholder}
 				class={inputClass}
 				clearLabel="Clear search"
 			/>
+		{:else}
+			<div class="flex-1"></div>
 		{/if}
-		<button
-			type="button"
-			onclick={handlePrimaryAction}
-			class={inputMode === 'quickAdd' && hasQuickAddText ? submitBtnClass : iconBtnClass}
-			aria-label={inputMode === 'quickAdd' && hasQuickAddText ? 'Add task' : onNew ? 'New note' : 'New task or note'}
-		>
-			{#if inputMode === 'quickAdd' && hasQuickAddText}
-				<Plus class="h-5 w-5" strokeWidth={2} />
-			{:else}
-				<SquarePen class="h-5 w-5" strokeWidth={2} />
+		<div class="flex shrink-0 items-center gap-3">
+			{#if showPrimaryAction}
+				<button
+					type="button"
+					onclick={handlePrimaryAction}
+					class={inputMode === 'quickAdd' && hasQuickAddText ? submitBtnClass : iconBtnClass}
+					aria-label={inputMode === 'quickAdd' && hasQuickAddText ? 'Add task' : onNew ? 'New note' : 'New task or note'}
+				>
+					{#if inputMode === 'quickAdd' && hasQuickAddText}
+						<Plus class="h-5 w-5" strokeWidth={2} />
+					{:else}
+						<SquarePen class="h-5 w-5" strokeWidth={2} />
+					{/if}
+				</button>
 			{/if}
-		</button>
-		{@render trailing?.()}
+			{@render trailing?.()}
+		</div>
 	</div>
 {:else}
 	<div class="flex w-full min-w-0 items-center gap-2">
@@ -100,38 +107,48 @@
 			</button>
 		{/if}
 		{#if inputMode === 'quickAdd'}
-			<ClearableTextInput
-				bind:value={quickAddText}
-				placeholder={quickAddPlaceholder}
-				onkeydown={handleQuickAddKeydown}
-				class={inputClass}
-				clearLabel="Clear search"
-			/>
+			<div class="min-w-0 flex-1">
+				<ClearableTextInput
+					bind:value={quickAddText}
+					placeholder={quickAddPlaceholder}
+					onkeydown={handleQuickAddKeydown}
+					class="{inputClass} w-full"
+					clearLabel="Clear search"
+				/>
+			</div>
+		{:else if inputMode === 'search'}
+			<div class="min-w-0 flex-1">
+				<ClearableTextInput
+					bind:value={searchText}
+					placeholder={searchPlaceholder}
+					class="{inputClass} w-full"
+					clearLabel="Clear search"
+				/>
+			</div>
 		{:else}
-			<ClearableTextInput
-				bind:value={searchText}
-				placeholder={searchPlaceholder}
-				class={inputClass}
-				clearLabel="Clear search"
-			/>
+			<div class="flex-1"></div>
 		{/if}
-		<button
-			type="button"
-			onclick={handlePrimaryAction}
-			class={inputMode === 'quickAdd' && hasQuickAddText ? submitBtnClass : iconBtnClass}
-			aria-label={inputMode === 'quickAdd' && hasQuickAddText ? 'Add task' : onNew ? 'New note' : 'New task or note'}
-		>
-			{#if inputMode === 'quickAdd' && hasQuickAddText}
-				<Plus class="h-5 w-5" strokeWidth={2} />
-			{:else}
-				<SquarePen class="h-5 w-5" strokeWidth={2} />
+		<div class="flex shrink-0 items-center gap-2">
+			{#if showPrimaryAction}
+				<button
+					type="button"
+					onclick={handlePrimaryAction}
+					class={inputMode === 'quickAdd' && hasQuickAddText ? submitBtnClass : iconBtnClass}
+					aria-label={inputMode === 'quickAdd' && hasQuickAddText ? 'Add task' : onNew ? 'New note' : 'New task or note'}
+				>
+					{#if inputMode === 'quickAdd' && hasQuickAddText}
+						<Plus class="h-5 w-5" strokeWidth={2} />
+					{:else}
+						<SquarePen class="h-5 w-5" strokeWidth={2} />
+					{/if}
+				</button>
 			{/if}
-		</button>
-		{@render trailing?.()}
-		{#if showHamburger}
-			<button type="button" onclick={toggleNavMenu} class={iconBtnClass} aria-label="Open menu">
-				<Menu class="h-5 w-5" strokeWidth={2} />
-			</button>
-		{/if}
+			{@render trailing?.()}
+			{#if showHamburger}
+				<button type="button" onclick={toggleNavMenu} class={iconBtnClass} aria-label="Open menu">
+					<Menu class="h-5 w-5" strokeWidth={2} />
+				</button>
+			{/if}
+		</div>
 	</div>
 {/if}

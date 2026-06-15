@@ -2,7 +2,12 @@
 	import { onMount } from 'svelte';
 	import { store } from '$stores/store.svelte.js';
 	import { getNoteTitle, renderNoteBodyMarkdown } from '$lib/todoUtils.js';
-	import { fetchNoteSpeechBlob, speechTextFromNoteContent } from '$lib/noteSpeech.js';
+	import {
+		cancelNoteSpeech,
+		isNoteSpeechSupported,
+		speakNoteText,
+		speechTextFromNoteContent
+	} from '$lib/noteSpeech.js';
 	import { X, Sun, Moon, ChevronLeft, ChevronRight, Volume2, Square } from 'lucide-svelte';
 
 	let { note, notes = [], onclose } = $props();
@@ -11,8 +16,6 @@
 	let speechSupported = $state(false);
 	let isSpeaking = $state(false);
 
-	let activeAudio = null;
-	let activeAudioUrl = null;
 	let activeSpeechController = null;
 	let speechRunId = 0;
 	let lastSpokenWatchNoteId = null;
@@ -38,23 +41,11 @@
 		if (e.key === 'ArrowRight') next();
 	}
 
-	function clearActiveAudio() {
-		if (activeAudio) {
-			activeAudio.pause();
-			activeAudio.src = '';
-			activeAudio = null;
-		}
-		if (activeAudioUrl) {
-			URL.revokeObjectURL(activeAudioUrl);
-			activeAudioUrl = null;
-		}
-	}
-
 	function stopSpeaking() {
 		speechRunId += 1;
 		activeSpeechController?.abort();
 		activeSpeechController = null;
-		clearActiveAudio();
+		cancelNoteSpeech();
 		isSpeaking = false;
 	}
 
@@ -78,33 +69,20 @@
 		isSpeaking = true;
 
 		try {
-			const blob = await fetchNoteSpeechBlob(text, { signal: controller.signal });
+			const provider = await speakNoteText(text, {
+				signal: controller.signal,
+				onended: () => {
+					console.log('[Notes TTS][Presentation] speech ended');
+					if (runId === speechRunId) isSpeaking = false;
+				}
+			});
 			if (runId !== speechRunId || controller.signal.aborted) return;
 			if (activeSpeechController === controller) activeSpeechController = null;
-
-			activeAudioUrl = URL.createObjectURL(blob);
-			activeAudio = new Audio(activeAudioUrl);
-			activeAudio.onended = () => {
-				console.log('[Notes TTS][Presentation] audio ended');
-				if (runId === speechRunId) {
-					clearActiveAudio();
-					isSpeaking = false;
-				}
-			};
-			activeAudio.onerror = (event) => {
-				console.error('[Notes TTS][Presentation] audio error:', event);
-				if (runId === speechRunId) {
-					clearActiveAudio();
-					isSpeaking = false;
-				}
-			};
-
-			await activeAudio.play();
+			console.log('[Notes TTS][Presentation] spoke with provider:', provider);
 		} catch (error) {
 			if (controller.signal.aborted) return;
-			console.error('[Notes TTS][Presentation] Gemini TTS error:', error);
+			console.error('[Notes TTS][Presentation] speech error:', error);
 			if (runId === speechRunId) {
-				clearActiveAudio();
 				activeSpeechController = null;
 				isSpeaking = false;
 			}
@@ -121,11 +99,7 @@
 	}
 
 	onMount(() => {
-		speechSupported =
-			typeof window !== 'undefined' &&
-			typeof Audio !== 'undefined' &&
-			typeof URL !== 'undefined' &&
-			typeof URL.createObjectURL === 'function';
+		speechSupported = isNoteSpeechSupported();
 		console.log('[Notes TTS][Presentation] speechSupported:', speechSupported);
 		document.addEventListener('keydown', handleKeydown);
 		return () => {

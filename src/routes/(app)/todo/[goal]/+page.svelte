@@ -1132,7 +1132,8 @@
 				showSidebarToggle={!mobileMenuOpen && !mobileTodoSearchActive}
 				onSidebarToggle={() => (mobileMenuOpen = true)}
 				showHamburger={false}
-				composeTabDefault="task"
+				composeTabDefault={activeGoalTab === 'notes' ? 'note' : 'task'}
+				onNew={activeGoalTab === 'notes' ? createNoteFromComposer : null}
 			/>
 		</div>
 
@@ -1226,7 +1227,8 @@
 							inputMode="quickAdd"
 							bind:quickAddText={goalSearchQuery}
 							onQuickAdd={submitQuickAddGoalTask}
-							composeTabDefault="task"
+							composeTabDefault={activeGoalTab === 'notes' ? 'note' : 'task'}
+							onNew={activeGoalTab === 'notes' ? createNoteFromComposer : null}
 						/>
 					</div>
 					<!-- Header -->

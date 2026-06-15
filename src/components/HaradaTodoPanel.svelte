@@ -1,7 +1,7 @@
 <script>
 	import { goto } from '$app/navigation';
 	import { store } from '$stores/store.svelte.js';
-	import { renderMarkdown, handleMarkdownEditorKeydown } from '$lib/todoUtils.js';
+	import NoteHybridMarkdownEditor from './NoteHybridMarkdownEditor.svelte';
 
 	let {
 		todos,
@@ -139,29 +139,15 @@
 						</div>
 					</div>
 
-					<div class="mt-3 grid gap-3 md:grid-cols-2">
-						<div class="flex flex-col gap-1">
-							<span class="todo-panel-label">
-								Markdown notes
-							</span>
-							<textarea
-								class="todo-panel-textarea"
-								placeholder="Write detailed notes, checklists or context for this to-do using Markdown…"
-								value={todo.markdown}
-								onkeydown={handleMarkdownEditorKeydown}
-								onblur={(e) => updateTodo(todo.id, { markdown: e.target.value })}
-							></textarea>
-						</div>
-						<div class="flex flex-col gap-1">
-							<span class="todo-panel-label">
-								Preview
-							</span>
-							<div
-								class="todo-panel-preview"
-							>
-								{@html renderMarkdown(todo.markdown)}
-							</div>
-						</div>
+					<div class="mt-3">
+						<span class="todo-panel-label">Markdown notes</span>
+						<NoteHybridMarkdownEditor
+							value={todo.markdown ?? ''}
+							placeholder="Write detailed notes, checklists or context for this to-do using Markdown…"
+							minHeight="5rem"
+							class="todo-panel-hybrid-editor mt-1"
+							onchange={(md) => updateTodo(todo.id, { markdown: md })}
+						/>
 					</div>
 				</div>
 			{/each}
