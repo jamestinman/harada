@@ -22,7 +22,7 @@
 	import ClearableTextInput from './ClearableTextInput.svelte';
 	import NotesPresentationOverlay from './NotesPresentationOverlay.svelte';
 	import NoteHybridMarkdownEditor from './NoteHybridMarkdownEditor.svelte';
-	import { ChevronLeft, Trash2, Maximize2, Volume2, Square } from 'lucide-svelte';
+	import { ChevronLeft, Trash2, Maximize2, Volume2, Square, SquarePen } from 'lucide-svelte';
 	import {
 		persistNotesMobileSidebar,
 		readNotesMobileSidebarOpen,
@@ -410,6 +410,8 @@ $effect(() => {
 
 	const notesDeleteToolbarButtonClass =
 		'shrink-0 inline-flex h-9 w-9 items-center justify-center rounded-md border border-rose-600/80 bg-rose-600 text-white transition hover:bg-rose-500';
+	const notesNewToolbarButtonClass =
+		'shrink-0 inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-600 bg-slate-900/45 text-slate-100 transition hover:border-violet-500/60 hover:bg-violet-500/10';
 
 	let presentationOpen = $state(false);
 	let speechSupported = $state(false);
@@ -502,6 +504,27 @@ $effect(() => {
 </script>
 
 {#snippet notesDeleteToolbarTrailing()}
+	{#if selectedNote}
+		<button
+			type="button"
+			onclick={deleteNote}
+			class={notesDeleteToolbarButtonClass}
+			aria-label="Delete note"
+		>
+			<Trash2 class="h-5 w-5" strokeWidth={2} />
+		</button>
+	{/if}
+{/snippet}
+
+{#snippet notesDesktopHeaderActions()}
+	<button
+		type="button"
+		onclick={createNewNote}
+		class={notesNewToolbarButtonClass}
+		aria-label="New note"
+	>
+		<SquarePen class="h-5 w-5" strokeWidth={2} />
+	</button>
 	{#if selectedNote}
 		<button
 			type="button"
@@ -637,31 +660,24 @@ $effect(() => {
 		</aside>
 
 			<div class="min-w-0">
-				<div class="mb-6 hidden md:block">
-					<WorkspaceToolbar
-						mode="desktop"
-						inputMode="none"
-						composeTabDefault="note"
-						onNew={createNewNote}
-					>
-						{#snippet trailing()}
-							{@render notesDeleteToolbarTrailing()}
-						{/snippet}
-					</WorkspaceToolbar>
-				</div>
-
 				{#if !dataLoaded}
 					<div class="goal-loading-message py-10">Loading notes...</div>
 				{:else if hasInvalidGoal}
 					<div class="goal-loading-message py-10">Invalid goal filter.</div>
 				{:else}
 					{#if !selectedNote}
+						<div class="mb-3 hidden justify-end md:flex">
+							{@render notesDesktopHeaderActions()}
+						</div>
 						<div class="todo-empty-section-card">
 							<p class="todo-empty-section-text">No notes yet for this view.</p>
 						</div>
 					{:else}
 					<div class={`p-4 ${isEditing ? 'rounded-lg bg-white dark:bg-slate-900/70 dark:ring-1 dark:ring-slate-700/70' : 'todo-panel'}`}>
 							{#if isEditing || isNoteEmpty(selectedNote)}
+							<div class="mb-3 hidden justify-end md:flex">
+								{@render notesDesktopHeaderActions()}
+							</div>
 							<NoteHybridMarkdownEditor
 								bind:this={editEditorDesktop}
 								bind:value={editContent}
@@ -670,7 +686,7 @@ $effect(() => {
 								placeholder="Write in markdown. First line becomes the title."
 							/>
 					{:else}
-					<div class="mb-3 flex items-start gap-2">
+					<div class="mb-3 flex items-center gap-2">
 						<h1 class="min-w-0 flex-1 text-lg font-semibold leading-tight text-slate-900 dark:text-slate-100">
 							<button
 								type="button"
@@ -683,7 +699,7 @@ $effect(() => {
 						<button
 							type="button"
 							onclick={toggleSpeech}
-							class="mt-0.5 shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-violet-500/10 hover:text-violet-400 dark:hover:text-violet-300"
+							class="shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-violet-500/10 hover:text-violet-400 dark:hover:text-violet-300"
 							aria-label={isSpeaking ? 'Stop reading note aloud' : 'Read note aloud'}
 							title={isSpeaking ? 'Stop reading' : 'Read aloud'}
 						>
@@ -696,12 +712,15 @@ $effect(() => {
 						<button
 							type="button"
 							onclick={() => (presentationOpen = true)}
-							class="mt-0.5 shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-violet-500/10 hover:text-violet-400 dark:hover:text-violet-300"
+							class="shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-violet-500/10 hover:text-violet-400 dark:hover:text-violet-300"
 							aria-label="Present note"
 							title="Present fullscreen"
 						>
 							<Maximize2 class="h-4 w-4" />
 						</button>
+						<div class="hidden shrink-0 items-center gap-2 md:flex">
+							{@render notesDesktopHeaderActions()}
+						</div>
 					</div>
 					<div
 						role="button"

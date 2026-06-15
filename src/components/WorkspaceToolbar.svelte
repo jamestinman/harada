@@ -57,7 +57,7 @@
 </script>
 
 {#if mode === 'desktop'}
-	<div class="flex w-full min-w-0 items-center gap-3">
+	<div class="flex w-full min-w-0 items-center gap-3 pt-2">
 		{#if inputMode === 'quickAdd'}
 			<ClearableTextInput
 				bind:value={quickAddText}

@@ -217,7 +217,7 @@
 
 <div
   id="root-container"
-	class="{store.theme} min-h-dvh overflow-x-hidden {needsSignIn ? 'pt-[calc(env(safe-area-inset-top,0px)+2.75rem)] lg:pt-[8.5rem]' : 'pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] lg:pt-[6.5rem]'}"
+	class="{store.theme} min-h-dvh overflow-x-hidden {needsSignIn ? 'pt-[calc(env(safe-area-inset-top,0px)+2.75rem)] lg:pt-[8.5rem]' : 'pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] lg:pt-[3rem]'}"
 	style="padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem);"
 >
 	{#if needsSignIn}
