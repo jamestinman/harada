@@ -9,14 +9,14 @@
 		indexToNomenclature,
 		nomenclatureToIndex,
 		getNoteTitle,
-		renderNoteBodyMarkdown,
-		handleMarkdownEditorKeydown
+		renderNoteBodyMarkdown
 	} from '$lib/todoUtils.js';
 	import { fetchNoteSpeechBlob, speechTextFromNoteContent } from '$lib/noteSpeech.js';
 	import GoalSelect from './GoalSelect.svelte';
 	import WorkspaceToolbar from './WorkspaceToolbar.svelte';
 	import ClearableTextInput from './ClearableTextInput.svelte';
 	import NotesPresentationOverlay from './NotesPresentationOverlay.svelte';
+	import NoteHybridMarkdownEditor from './NoteHybridMarkdownEditor.svelte';
 	import { ChevronLeft, Trash2, Maximize2, Volume2, Square } from 'lucide-svelte';
 	import {
 		persistNotesMobileSidebar,
@@ -45,10 +45,7 @@
 			mobileMenuOpen = true;
 		}
 		mobileSidebarHydrated = true;
-		const onResize = () => resizeTextarea({ force: true });
-		window.addEventListener('resize', onResize);
 		return () => {
-			window.removeEventListener('resize', onResize);
 			stopSpeaking();
 		};
 	});
@@ -129,10 +126,8 @@
 	let linkPanelOpen = $state(false);
 	let linkGoalValue = $state('');
 	let hasPendingNoteLinkSave = $state(false);
-	let editTextareaDesktop = $state(null);
-	let editTextareaMobile = $state(null);
-	/** Used so we refit height when the note changes, but not on every keystroke (preserves drag-resize). */
-	let prevNoteIdForTextareaResize = null;
+	let editEditorDesktop = $state(null);
+	let editEditorMobile = $state(null);
 	let shouldAutoEdit = $state(false);
 	let lastSavedContent = $state('');
   let previousSelectedNoteId = $state(null);
@@ -375,41 +370,14 @@ $effect(() => {
 		mobileMenuOpen = false;
 		setTimeout(() => {
 			void tick().then(() => {
-				resizeTextarea({ force: true });
-				activeNoteTextareaEl()?.focus();
+				activeNoteEditorEl()?.focus();
 			});
 		}, 0);
 	}
 
-	function activeNoteTextareaEl() {
+	function activeNoteEditorEl() {
 		if (!browser) return null;
-		return window.matchMedia('(min-width: 768px)').matches ? editTextareaDesktop : editTextareaMobile;
-	}
-
-	function resizeTextarea(opts = {}) {
-		const force = opts.force === true;
-		const el = activeNoteTextareaEl();
-		if (!el) return;
-		const maxHeight = window.innerHeight - 64;
-		const minHeight = 140;
-
-		if (force) {
-			el.style.height = 'auto';
-			const h = Math.min(Math.max(el.scrollHeight, minHeight), maxHeight);
-			el.style.height = `${h}px`;
-			el.style.overflowY = el.scrollHeight > maxHeight ? 'auto' : 'hidden';
-			return;
-		}
-
-		const prev = el.offsetHeight;
-		el.style.height = 'auto';
-		const needed = Math.min(Math.max(el.scrollHeight, minHeight), maxHeight);
-		if (needed > prev) {
-			el.style.height = `${needed}px`;
-		} else {
-			el.style.height = `${prev}px`;
-		}
-		el.style.overflowY = el.scrollHeight > maxHeight ? 'auto' : 'hidden';
+		return window.matchMedia('(min-width: 768px)').matches ? editEditorDesktop : editEditorMobile;
 	}
 
 	$effect(() => {
@@ -426,31 +394,15 @@ $effect(() => {
 		lastSpokenWatchNoteId = currentNoteId;
 	});
 
-	$effect(() => {
-		if (!browser || !isEditing) return;
-		const id = selectedNote?.id;
-		editContent;
-		void tick().then(() => {
-			const force = prevNoteIdForTextareaResize !== id;
-			prevNoteIdForTextareaResize = id;
-			resizeTextarea({ force });
-		});
-	});
-
-	$effect(() => {
-		if (!isEditing) prevNoteIdForTextareaResize = null;
-	});
-
 	function enterEditMode() {
 		if (!selectedNote) return;
 		if (isEditing) return;
 		isEditing = true;
 		setTimeout(() => {
 			void tick().then(() => {
-				resizeTextarea({ force: true });
-				const el = activeNoteTextareaEl();
+				const el = activeNoteEditorEl();
 				el?.focus();
-				el?.select();
+				el?.selectAll();
 			});
 		}, 0);
 	}
@@ -727,14 +679,12 @@ $effect(() => {
 					{:else}
 					<div class={`p-4 ${isEditing ? 'rounded-lg bg-white dark:bg-slate-900/70 dark:ring-1 dark:ring-slate-700/70' : 'todo-panel'}`}>
 							{#if isEditing || isNoteEmpty(selectedNote)}
-							<textarea
-								bind:this={editTextareaDesktop}
+							<NoteHybridMarkdownEditor
+								bind:this={editEditorDesktop}
 								bind:value={editContent}
-								class="composer-textarea notes-markdown-editor !min-h-0 resize-y"
+								minHeight="22rem"
 								placeholder="Write in markdown. First line becomes the title."
-								oninput={() => resizeTextarea({ force: false })}
-								onkeydown={handleMarkdownEditorKeydown}
-							></textarea>
+							/>
 					{:else}
 					<div class="mb-3 flex items-start gap-2">
 						<h1 class="min-w-0 flex-1 text-lg font-semibold leading-tight text-slate-900 dark:text-slate-100">
@@ -876,14 +826,12 @@ $effect(() => {
 						</div>
 					{:else}
 						{#if isEditing || isNoteEmpty(selectedNote)}
-						<textarea
-							bind:this={editTextareaMobile}
+						<NoteHybridMarkdownEditor
+							bind:this={editEditorMobile}
 							bind:value={editContent}
-							class="composer-textarea notes-markdown-editor !min-h-0 resize-y"
+							minHeight="18rem"
 							placeholder="Write in markdown. First line becomes the title."
-							oninput={() => resizeTextarea({ force: false })}
-							onkeydown={handleMarkdownEditorKeydown}
-						></textarea>
+						/>
 					{:else}
 					<div class="mb-3 flex items-start gap-2">
 						<h1 class="min-w-0 flex-1 text-lg font-semibold leading-tight text-slate-900 dark:text-slate-100">

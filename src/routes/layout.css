@@ -648,6 +648,59 @@ h4 {
   }
 }
 
+.notes-hybrid-markdown-editor {
+  @apply w-full resize-y overflow-hidden p-0;
+  max-height: calc(100vh - 4rem);
+}
+
+.notes-hybrid-markdown-editor .cm-editor {
+  @apply h-full min-h-[inherit] bg-transparent;
+}
+
+.notes-hybrid-markdown-editor .cm-scroller {
+  min-height: inherit;
+  max-height: calc(100vh - 4rem);
+}
+
+.notes-hybrid-markdown-editor.cm-focused,
+.notes-hybrid-markdown-editor:has(.cm-focused) {
+  @apply ring-2 ring-violet-500/50 ring-offset-1;
+  .dark & {
+    @apply ring-offset-slate-900;
+  }
+  .light & {
+    @apply ring-offset-white;
+  }
+}
+
+.dark .notes-hybrid-markdown-editor {
+  --cm-caret-color: #a78bfa;
+  --cm-code-bg: rgba(15, 23, 42, 0.55);
+  --cm-link-color: #c4b5fd;
+  --cm-quote-color: #94a3b8;
+}
+
+.light .notes-hybrid-markdown-editor {
+  --cm-caret-color: #7c3aed;
+  --cm-code-bg: rgba(15, 23, 42, 0.08);
+  --cm-link-color: #6d28d9;
+  --cm-quote-color: #64748b;
+}
+
+.notes-hybrid-markdown-editor .cm-placeholder {
+  color: var(--cm-placeholder-color, #94a3b8);
+  pointer-events: none;
+  user-select: none;
+}
+
+.dark .notes-hybrid-markdown-editor .cm-placeholder {
+  --cm-placeholder-color: #64748b;
+}
+
+.light .notes-hybrid-markdown-editor .cm-placeholder {
+  --cm-placeholder-color: #94a3b8;
+}
+
 .composer-input {
   @apply w-full;
 }
