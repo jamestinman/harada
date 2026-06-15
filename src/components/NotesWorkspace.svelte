@@ -363,6 +363,24 @@ $effect(() => {
 		mobileMenuOpen = false;
 	}
 
+	function createNewNote() {
+		flushNoteEditsIfNeeded();
+		const note = store.createNote({ content: '' });
+		if (typeof scopedGoalIndex === 'number') {
+			store.linkNoteToGoal(note.id, scopedGoalIndex);
+		}
+		selectedNoteId = note.id;
+		store.recordLastOpenedNote(note.id);
+		shouldAutoEdit = true;
+		mobileMenuOpen = false;
+		setTimeout(() => {
+			void tick().then(() => {
+				resizeTextarea({ force: true });
+				activeNoteTextareaEl()?.focus();
+			});
+		}, 0);
+	}
+
 	function activeNoteTextareaEl() {
 		if (!browser) return null;
 		return window.matchMedia('(min-width: 768px)').matches ? editTextareaDesktop : editTextareaMobile;
@@ -574,7 +592,7 @@ $effect(() => {
 			{#each getLinkedGoalIndices(selectedNote.id) as linkedGoal}
 				<span class="inline-flex items-center gap-1 rounded-md border border-slate-400 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm dark:border-slate-600 dark:bg-slate-900/60 dark:text-slate-200">
 					<a
-						href={`/todo/${indexToNomenclature(linkedGoal)}`}
+						href={`/todo/${indexToNomenclature(linkedGoal)}?tab=notes`}
 						class="underline-offset-2 hover:text-violet-600 hover:underline dark:hover:text-violet-300"
 					>
 						{getGoalLabelFromIndex(linkedGoal)}
@@ -622,6 +640,7 @@ $effect(() => {
 				onSidebarToggle={() => (mobileMenuOpen = true)}
 				showHamburger={false}
 				composeTabDefault="note"
+				onNew={createNewNote}
 			>
 				{#snippet trailing()}
 					{@render notesDeleteToolbarTrailing()}
@@ -689,7 +708,7 @@ $effect(() => {
 
 			<div class="min-w-0">
 				<div class="mb-6 hidden md:block">
-					<WorkspaceToolbar mode="desktop" bind:searchText composeTabDefault="note">
+					<WorkspaceToolbar mode="desktop" bind:searchText composeTabDefault="note" onNew={createNewNote}>
 						{#snippet trailing()}
 							{@render notesDeleteToolbarTrailing()}
 						{/snippet}

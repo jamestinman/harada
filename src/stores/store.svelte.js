@@ -13,7 +13,11 @@ import {
 	mergeTodoLists,
 	defaultNote,
 	normalizeNote,
-	mergeNoteLists
+	mergeNoteLists,
+	getTopOrderingForGoalView,
+	getGoalViewSiblings,
+	isTaskPrimaryOnGoal,
+	TODO_ORDER_STEP
 } from '$lib/todoUtils.js';
 import { authStore } from './auth.svelte.js';
 
@@ -131,10 +135,13 @@ function normalizeTaskGoalLink(link) {
 		typeof link.updatedAt === 'number' && Number.isFinite(link.updatedAt)
 			? link.updatedAt
 			: createdAt;
+	const ordering =
+		typeof link.ordering === 'number' && Number.isFinite(link.ordering) ? link.ordering : null;
 	return {
 		id: typeof link.id === 'string' && link.id ? link.id : createLinkId('tgl'),
 		taskId: link.taskId,
 		goalIndex: canonical,
+		ordering,
 		createdAt,
 		updatedAt
 	};
@@ -1775,6 +1782,7 @@ class Store {
 			id: row.id,
 			taskId: row.task_id,
 			goalIndex: row.goal_index,
+			ordering: row.ordering,
 			createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
 			updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now()
 		});
@@ -1788,10 +1796,60 @@ class Store {
 			user_id: userId,
 			task_id: normalized.taskId,
 			goal_index: normalized.goalIndex,
+			ordering: normalized.ordering,
 			created_at: new Date(normalized.createdAt).toISOString(),
 			updated_at: new Date(normalized.updatedAt).toISOString(),
 			deleted_at: null
 		};
+	}
+
+	_buildTaskGoalKeySet() {
+		const keys = new Set();
+		for (const link of this.taskGoalLinks ?? []) {
+			keys.add(`${link.taskId}:${link.goalIndex}`);
+		}
+		for (const todo of this.harada_chart.todos ?? []) {
+			if (typeof todo?.goalIndex === 'number' && todo.id) {
+				keys.add(`${todo.id}:${canonicalGoalIndex(todo.goalIndex)}`);
+			}
+		}
+		return keys;
+	}
+
+	applyTodoOrderingInGoalView(taskId, goalIndex, ordering) {
+		if (!taskId || typeof goalIndex !== 'number' || typeof ordering !== 'number') return;
+		const canonical = canonicalGoalIndex(goalIndex);
+		const todo = this.harada_chart.todos.find((t) => t.id === taskId);
+		if (!todo) return;
+		if (isTaskPrimaryOnGoal(todo, canonical)) {
+			this.updateTodo(taskId, { ordering });
+			return;
+		}
+		const linkIndex = this.taskGoalLinks.findIndex(
+			(link) => link.taskId === taskId && link.goalIndex === canonical
+		);
+		if (linkIndex === -1) return;
+		const link = this.taskGoalLinks[linkIndex];
+		const updated = { ...link, ordering, updatedAt: Date.now() };
+		this.taskGoalLinks = this.taskGoalLinks.map((entry, index) =>
+			index === linkIndex ? updated : entry
+		);
+		this._markTaskGoalLinkDirty(updated);
+		this.queueSave();
+	}
+
+	normalizeGoalViewOrderings(goalIndex, parentId = null) {
+		if (typeof goalIndex !== 'number') return;
+		const canonical = canonicalGoalIndex(goalIndex);
+		const taskGoalKeySet = this._buildTaskGoalKeySet();
+		const siblings = getGoalViewSiblings(this.harada_chart.todos, canonical, {
+			parentId,
+			taskGoalKeySet,
+			taskGoalLinks: this.taskGoalLinks
+		});
+		siblings.forEach((todo, index) => {
+			this.applyTodoOrderingInGoalView(todo.id, canonical, (index + 1) * TODO_ORDER_STEP);
+		});
 	}
 
 	// --- Domain mutations ---
@@ -2050,6 +2108,7 @@ class Store {
 				const newLink = normalizeTaskGoalLink({
 					taskId: id,
 					goalIndex: updatedGoal,
+					ordering: updatedTodo.ordering,
 					createdAt: now,
 					updatedAt: now
 				});
@@ -2385,16 +2444,24 @@ class Store {
 			}
 		}
 		const now = Date.now();
+		const taskGoalKeySet = new Set(
+			(this.taskGoalLinks ?? []).map((link) => `${link.taskId}:${link.goalIndex}`)
+		);
 		const newLinks = [];
 		for (const id of tasksToLink) {
 			const alreadyLinked = this.taskGoalLinks.some(
 				(link) => link.taskId === id && link.goalIndex === canonical
 			);
 			if (alreadyLinked) continue;
+			const ordering = getTopOrderingForGoalView(this.harada_chart.todos, canonical, {
+				taskGoalKeySet,
+				taskGoalLinks: this.taskGoalLinks
+			});
 			newLinks.push(
 				normalizeTaskGoalLink({
 					taskId: id,
 					goalIndex: canonical,
+					ordering,
 					createdAt: now,
 					updatedAt: now
 				})

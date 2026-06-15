@@ -693,10 +693,214 @@ export function updateGoalTimestamp(grid, goalIndex) {
 	return grid;
 }
 
+export const TODO_ORDER_STEP = 1024;
+
 export function getTodoOrderingValue(todo) {
 	if (typeof todo?.ordering === 'number' && Number.isFinite(todo.ordering)) return todo.ordering;
 	if (typeof todo?.createdAt === 'number' && Number.isFinite(todo.createdAt)) return todo.createdAt;
 	return 0;
+}
+
+export function todoBelongsToGoalView(todo, goalIndex, taskGoalKeySet = new Set()) {
+	if (goalIndex === null) {
+		return (todo.listType === 'goal' || !todo.listType) && todo.goalIndex == null;
+	}
+	const canonical =
+		typeof goalIndex === 'number' && !Number.isNaN(goalIndex) ? canonicalGoalIndex(goalIndex) : goalIndex;
+	return (
+		(todo.listType === 'goal' || !todo.listType) &&
+		(todo.goalIndex === canonical || taskGoalKeySet.has(`${todo.id}:${canonical}`))
+	);
+}
+
+export function isTaskPrimaryOnGoal(todo, goalIndex) {
+	if (goalIndex === null) return todo?.goalIndex == null;
+	if (typeof todo?.goalIndex !== 'number') return false;
+	return canonicalGoalIndex(todo.goalIndex) === canonicalGoalIndex(goalIndex);
+}
+
+export function getTaskGoalLink(taskGoalLinks, taskId, goalIndex) {
+	if (goalIndex === null || !taskId) return null;
+	const canonical = canonicalGoalIndex(goalIndex);
+	return (taskGoalLinks ?? []).find(
+		(link) => link.taskId === taskId && link.goalIndex === canonical
+	);
+}
+
+/** Sort position of a task within a specific goal's list view. */
+export function getEffectiveTodoOrdering(todo, goalIndex, taskGoalLinks = []) {
+	if (goalIndex !== null && isTaskPrimaryOnGoal(todo, goalIndex)) {
+		return getTodoOrderingValue(todo);
+	}
+	const link = getTaskGoalLink(taskGoalLinks, todo?.id, goalIndex);
+	if (link && typeof link.ordering === 'number' && Number.isFinite(link.ordering)) {
+		return link.ordering;
+	}
+	return getTodoOrderingValue(todo);
+}
+
+export function makeGoalViewOrderingFn(goalIndex, taskGoalLinks = []) {
+	return (todo) => getEffectiveTodoOrdering(todo, goalIndex, taskGoalLinks);
+}
+
+function orderingBeforeMin(siblings, getOrder, orderStep = TODO_ORDER_STEP) {
+	if (siblings.length === 0) return orderStep;
+	const minOrdering = getOrder(siblings[0]);
+	let next = minOrdering - orderStep;
+	if (next >= minOrdering) next = minOrdering - 1;
+	return next;
+}
+
+function getSortedSiblingTodos(todos, predicate, getOrder, excludeId = null) {
+	return (todos ?? [])
+		.filter((todo) => {
+			if (excludeId && todo.id === excludeId) return false;
+			return predicate(todo);
+		})
+		.sort((a, b) => getOrder(a) - getOrder(b));
+}
+
+/** Top ordering among todos sharing a listId (custom lists). */
+export function getTopOrderingForList(
+	todos,
+	listId,
+	{ parentId = null, excludeId = null, orderStep = TODO_ORDER_STEP } = {}
+) {
+	const getOrder = getTodoOrderingValue;
+	const siblings = getSortedSiblingTodos(
+		todos,
+		(todo) =>
+			todo.listId === listId && (todo.parentId ?? null) === (parentId ?? null),
+		getOrder,
+		excludeId
+	);
+	return orderingBeforeMin(siblings, getOrder, orderStep);
+}
+
+export function getGoalViewSiblings(
+	todos,
+	goalIndex,
+	{
+		parentId = null,
+		excludeId = null,
+		taskGoalKeySet = new Set(),
+		linkedTaskIdSet = null,
+		taskGoalLinks = []
+	} = {}
+) {
+	const getOrder = makeGoalViewOrderingFn(goalIndex, taskGoalLinks);
+	return getSortedSiblingTodos(
+		todos,
+		(todo) => {
+			if ((todo.parentId ?? null) !== (parentId ?? null)) return false;
+			if (goalIndex === null && linkedTaskIdSet?.has(todo.id)) return false;
+			return todoBelongsToGoalView(todo, goalIndex, taskGoalKeySet);
+		},
+		getOrder,
+		excludeId
+	);
+}
+
+export function getTopOrderingForGoalView(
+	todos,
+	goalIndex,
+	{
+		parentId = null,
+		excludeId = null,
+		taskGoalKeySet = new Set(),
+		linkedTaskIdSet = null,
+		taskGoalLinks = [],
+		orderStep = TODO_ORDER_STEP
+	} = {}
+) {
+	const getOrder = makeGoalViewOrderingFn(goalIndex, taskGoalLinks);
+	const siblings = getGoalViewSiblings(todos, goalIndex, {
+		parentId,
+		excludeId,
+		taskGoalKeySet,
+		linkedTaskIdSet,
+		taskGoalLinks
+	});
+	return orderingBeforeMin(siblings, getOrder, orderStep);
+}
+
+export function getOrderingAfterInGoalView(
+	todos,
+	goalIndex,
+	parentId,
+	afterTodoId,
+	{
+		taskGoalKeySet = new Set(),
+		linkedTaskIdSet = null,
+		taskGoalLinks = [],
+		orderStep = TODO_ORDER_STEP,
+		normalize = null
+	} = {}
+) {
+	const getOrder = makeGoalViewOrderingFn(goalIndex, taskGoalLinks);
+	let siblings = getGoalViewSiblings(todos, goalIndex, {
+		parentId,
+		taskGoalKeySet,
+		linkedTaskIdSet,
+		taskGoalLinks
+	});
+	let currentIndex = siblings.findIndex((todo) => todo.id === afterTodoId);
+	if (currentIndex === -1) {
+		return getTopOrderingForGoalView(todos, goalIndex, {
+			parentId,
+			taskGoalKeySet,
+			linkedTaskIdSet,
+			taskGoalLinks,
+			orderStep
+		});
+	}
+
+	let currentOrdering = getOrder(siblings[currentIndex]);
+	let nextSibling = siblings[currentIndex + 1];
+	if (!nextSibling) return currentOrdering + orderStep;
+
+	let nextOrdering = getOrder(nextSibling);
+	if (nextOrdering - currentOrdering <= 1) {
+		normalize?.(goalIndex, parentId);
+		siblings = getGoalViewSiblings(todos, goalIndex, {
+			parentId,
+			taskGoalKeySet,
+			linkedTaskIdSet,
+			taskGoalLinks
+		});
+		currentIndex = siblings.findIndex((todo) => todo.id === afterTodoId);
+		if (currentIndex === -1) {
+			return getTopOrderingForGoalView(todos, goalIndex, {
+				parentId,
+				taskGoalKeySet,
+				linkedTaskIdSet,
+				taskGoalLinks,
+				orderStep
+			});
+		}
+		currentOrdering = getOrder(siblings[currentIndex]);
+		nextSibling = siblings[currentIndex + 1];
+		if (!nextSibling) return currentOrdering + orderStep;
+		nextOrdering = getOrder(nextSibling);
+	}
+
+	return currentOrdering + (nextOrdering - currentOrdering) / 2;
+}
+
+export function resolveTopOrderingForNewTodo(
+	todos,
+	listMeta,
+	{ taskGoalKeySet = new Set(), linkedTaskIdSet = null, taskGoalLinks = [], parentId = null } = {}
+) {
+	if (listMeta?.listType === 'custom') {
+		return getTopOrderingForList(todos, listMeta.listId, { parentId });
+	}
+	return getTopOrderingForGoalView(todos, listMeta?.goalIndex ?? null, {
+		parentId,
+		taskGoalKeySet,
+		linkedTaskIdSet,
+		taskGoalLinks
+	});
 }
 
 /**
@@ -795,7 +999,11 @@ export function filterFeedPinnedRowsBySearch(rows, matchesSearch) {
 	return rows.filter((row) => includeIds.has(row.todo.id));
 }
 
-export function organizeTodosWithHierarchy(todosList, getTodoOrdering = getTodoOrderingValue) {
+export function organizeTodosWithHierarchy(
+	todosList,
+	getTodoOrdering = getTodoOrderingValue,
+	goalView = null
+) {
 	const byParent = new Map();
 	const ids = new Set(todosList.map((todo) => todo.id));
 	for (const todo of todosList) {
@@ -804,8 +1012,15 @@ export function organizeTodosWithHierarchy(todosList, getTodoOrdering = getTodoO
 		byParent.get(parentKey).push(todo);
 	}
 
-	for (const siblingList of byParent.values()) {
-		siblingList.sort((a, b) => getTodoOrdering(a) - getTodoOrdering(b));
+	const rootGoalOrder =
+		goalView && typeof goalView.goalIndex !== 'undefined'
+			? makeGoalViewOrderingFn(goalView.goalIndex, goalView.taskGoalLinks ?? [])
+			: null;
+
+	for (const [parentKey, siblingList] of byParent.entries()) {
+		const orderFn =
+			parentKey === '__root__' && rootGoalOrder ? rootGoalOrder : getTodoOrdering;
+		siblingList.sort((a, b) => orderFn(a) - orderFn(b));
 	}
 
 	const ordered = [];
@@ -878,6 +1093,7 @@ export function buildAllTasksFeed({
 	grid = [],
 	taskGoalKeySet = new Set(),
 	linkedTaskIdSet = new Set(),
+	taskGoalLinks = [],
 	getTodoOrdering = getTodoOrderingValue,
 	goalGroupOrderStep = GOAL_GROUP_ORDER_STEP
 } = {}) {
@@ -931,7 +1147,10 @@ export function buildAllTasksFeed({
 	const goalGroups = [];
 	for (const [goalIndex, bucketMap] of goalBuckets) {
 		const bucketTodos = [...bucketMap.values()];
-		const organized = organizeTodosWithHierarchy(bucketTodos, getTodoOrdering);
+		const organized = organizeTodosWithHierarchy(bucketTodos, getTodoOrdering, {
+			goalIndex,
+			taskGoalLinks
+		});
 		if (organized.length === 0) continue;
 		const cell = grid[goalIndex];
 		const text = (cell?.text ?? '').trim();

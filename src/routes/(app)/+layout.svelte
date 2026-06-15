@@ -8,7 +8,8 @@
 		indexToNomenclature,
 		canonicalGoalIndex,
 		defaultTodo,
-		buildGoalListMeta
+		buildGoalListMeta,
+		resolveTopOrderingForNewTodo
 	} from '$lib/todoUtils.js';
 	import Nav from '$components/Nav.svelte';
 	import SignInBanner from '$components/SignInBanner.svelte';
@@ -140,21 +141,15 @@
 		const normalizedGoalIndex =
 			typeof goalIndex === 'number' ? canonicalGoalIndex(goalIndex) : null;
 		const listMeta = buildGoalListMeta(normalizedGoalIndex);
-		const siblings = store.harada_chart.todos.filter(
-			(t) => t.listId === listMeta.listId && (t?.parentId ?? null) === null
+		const taskGoalKeySet = new Set(
+			(store.taskGoalLinks ?? []).map((link) => `${link.taskId}:${link.goalIndex}`)
 		);
-		const ordering =
-			siblings.length > 0
-				? Math.min(
-						...siblings.map((t) =>
-							typeof t?.ordering === 'number' && Number.isFinite(t.ordering)
-								? t.ordering
-								: typeof t?.createdAt === 'number' && Number.isFinite(t.createdAt)
-									? t.createdAt
-									: Date.now()
-						)
-					) - 1024
-				: 1024;
+		const linkedTaskIdSet = new Set((store.taskGoalLinks ?? []).map((link) => link.taskId));
+		const ordering = resolveTopOrderingForNewTodo(store.harada_chart.todos, listMeta, {
+			taskGoalKeySet,
+			linkedTaskIdSet,
+			taskGoalLinks: store.taskGoalLinks ?? []
+		});
 		const todo = {
 			...defaultTodo(),
 			title: title || '',

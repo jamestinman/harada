@@ -15,6 +15,7 @@
 		showHamburger = false,
 		composeTabDefault = 'task',
 		onQuickAdd = null,
+		onNew = null,
 		trailing = undefined
 	} = $props();
 
@@ -31,6 +32,10 @@
 	function handlePrimaryAction() {
 		if (inputMode === 'quickAdd' && hasQuickAddText) {
 			onQuickAdd?.();
+			return;
+		}
+		if (onNew) {
+			onNew();
 			return;
 		}
 		openCompose();
@@ -72,7 +77,7 @@
 			type="button"
 			onclick={handlePrimaryAction}
 			class={inputMode === 'quickAdd' && hasQuickAddText ? submitBtnClass : iconBtnClass}
-			aria-label={inputMode === 'quickAdd' && hasQuickAddText ? 'Add task' : 'New task or note'}
+			aria-label={inputMode === 'quickAdd' && hasQuickAddText ? 'Add task' : onNew ? 'New note' : 'New task or note'}
 		>
 			{#if inputMode === 'quickAdd' && hasQuickAddText}
 				<Plus class="h-5 w-5" strokeWidth={2} />
@@ -114,7 +119,7 @@
 			type="button"
 			onclick={handlePrimaryAction}
 			class={inputMode === 'quickAdd' && hasQuickAddText ? submitBtnClass : iconBtnClass}
-			aria-label={inputMode === 'quickAdd' && hasQuickAddText ? 'Add task' : 'New task or note'}
+			aria-label={inputMode === 'quickAdd' && hasQuickAddText ? 'Add task' : onNew ? 'New note' : 'New task or note'}
 		>
 			{#if inputMode === 'quickAdd' && hasQuickAddText}
 				<Plus class="h-5 w-5" strokeWidth={2} />

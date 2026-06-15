@@ -52,6 +52,7 @@ const appMenuBarMenuTemplate: (MenuItemConstructorOptions | MenuItem)[] = [
       { role: 'quit' },
     ],
   },
+  { role: 'editMenu' },
   {
     label: 'View',
     submenu: [

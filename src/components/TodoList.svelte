@@ -3,7 +3,7 @@
 	import { onDestroy, onMount, tick } from 'svelte';
 	import { ChevronDown } from 'lucide-svelte';
 	import TodoItem from '$components/TodoItem.svelte';
-	import { filterFeedPinnedRowsBySearch } from '$lib/todoUtils.js';
+	import { filterFeedPinnedRowsBySearch, getGoalViewSiblings } from '$lib/todoUtils.js';
 	import { store } from '$stores/store.svelte.js';
 
 	let {
@@ -24,6 +24,9 @@
 		disableAutoFocus = false,
 		onCreateTodo = null,
 		onMoveTodo = null,
+		useGoalViewOrdering = false,
+		taskGoalLinks = [],
+		taskGoalKeySet = new Set(),
 		allowCrossListMove = false,
 		enableGroupDrag = false,
 		onMoveGroup = null,
@@ -355,6 +358,41 @@
 					todo.id !== excludeId
 			)
 			.sort((a, b) => getTodoOrdering(a) - getTodoOrdering(b));
+	}
+
+	function findGoalGroupForTodo(todoId) {
+		if (!todoId) return null;
+		for (const group of groups) {
+			if (group.groupType !== 'goal' || typeof group.goalIndex !== 'number') continue;
+			if (group.subGroups?.length) {
+				for (const subGroup of group.subGroups) {
+					if ((subGroup.todos || []).some((todo) => todo.id === todoId)) return group;
+				}
+			} else if ((group.todos || []).some((todo) => todo.id === todoId)) {
+				return group;
+			}
+		}
+		return null;
+	}
+
+	function getGoalViewContextForTodos(...todoIds) {
+		if (!useGoalViewOrdering) return null;
+		const matchedGroups = todoIds
+			.map((todoId) => findGoalGroupForTodo(todoId))
+			.filter(Boolean);
+		if (matchedGroups.length === 0) return null;
+		const goalIndex = matchedGroups[0].goalIndex;
+		if (!matchedGroups.every((group) => group.goalIndex === goalIndex)) return null;
+		return goalIndex;
+	}
+
+	function getGoalViewSiblingTodos(goalIndex, parentId, excludeId = null) {
+		return getGoalViewSiblings(flatTodos, goalIndex, {
+			parentId,
+			excludeId,
+			taskGoalKeySet,
+			taskGoalLinks
+		});
 	}
 
 	function isDescendant(candidateId, ancestorId) {
@@ -713,20 +751,27 @@
 				listName = group.label || 'New list';
 			}
 
-			if (!allowCrossListMove && dragged.listId !== listId) return null;
+			const viewGoalIndex =
+				useGoalViewOrdering && group.groupType === 'goal' && typeof goalIndex === 'number'
+					? goalIndex
+					: null;
+			if (!allowCrossListMove && viewGoalIndex === null && dragged.listId !== listId) return null;
 			return {
 				listId,
 				listType,
 				goalIndex,
 				listName,
 				parentId: null,
-				afterTodoId: null
+				afterTodoId: null,
+				viewGoalIndex
 			};
 		}
 
 		const target = getTodoById(taskDrag.targetTodoId);
 		if (!target || dragged.id === target.id) return null;
-		if (!allowCrossListMove && dragged.listId !== target.listId) return null;
+
+		const viewGoalIndex = getGoalViewContextForTodos(dragged.id, target.id);
+		if (!allowCrossListMove && viewGoalIndex === null && dragged.listId !== target.listId) return null;
 
 		const targetListId = target.listId;
 		const targetListType = target.listType || 'goal';
@@ -740,12 +785,16 @@
 				goalIndex: targetGoalIndex,
 				listName: targetListName,
 				parentId: target.id,
-				afterTodoId: null
+				afterTodoId: null,
+				viewGoalIndex
 			};
 		}
 
 		const siblingParentId = target.parentId ?? null;
-		const siblings = getSiblingTodos(targetListId, siblingParentId, dragged.id);
+		const siblings =
+			viewGoalIndex !== null
+				? getGoalViewSiblingTodos(viewGoalIndex, siblingParentId, dragged.id)
+				: getSiblingTodos(targetListId, siblingParentId, dragged.id);
 		const targetIndex = siblings.findIndex((todo) => todo.id === target.id);
 		if (targetIndex === -1) return null;
 		if (taskDrag.dropMode === 'before') {
@@ -756,7 +805,8 @@
 				goalIndex: targetGoalIndex,
 				listName: targetListName,
 				parentId: siblingParentId,
-				afterTodoId: previousSibling ? previousSibling.id : null
+				afterTodoId: previousSibling ? previousSibling.id : null,
+				viewGoalIndex
 			};
 		}
 		return {
@@ -765,7 +815,8 @@
 			goalIndex: targetGoalIndex,
 			listName: targetListName,
 			parentId: siblingParentId,
-			afterTodoId: target.id
+			afterTodoId: target.id,
+			viewGoalIndex
 		};
 	}
 

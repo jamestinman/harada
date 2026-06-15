@@ -21,7 +21,12 @@
 		updateGoalTimestamp,
 		buildTaskNoteIndexMaps,
 		buildAllTasksFeed,
-		buildFeedPinnedRows
+		buildFeedPinnedRows,
+		resolveTopOrderingForNewTodo,
+		organizeTodosWithHierarchy,
+		getTopOrderingForGoalView,
+		getOrderingAfterInGoalView,
+		isTaskPrimaryOnGoal
 	} from '$lib/todoUtils.js';
 	import TodoList from '$components/TodoList.svelte';
 	import WorkspaceToolbar from '$components/WorkspaceToolbar.svelte';
@@ -55,6 +60,7 @@
 	});
 	const dataLoaded = $derived(!store.isBootstrapping);
 	const targetTodoId = $derived(page.url.searchParams.get('task') || null);
+	const targetGoalTab = $derived(page.url.searchParams.get('tab') || null);
 	let activeGoalTab = $state('tasks');
 	let activeTodoId = $state(null);
 	let focusTodoId = $state(null);
@@ -216,6 +222,31 @@
 		const todo = store.harada_chart.todos.find((t) => t.id === todoId);
 		if (!todo || !destination) return;
 
+		const viewGoalIndex =
+			typeof destination.viewGoalIndex === 'number' ? destination.viewGoalIndex : null;
+		if (viewGoalIndex !== null) {
+			const targetParentId = destination.parentId ?? null;
+			const afterTodoId = destination.afterTodoId ?? null;
+			const goalViewOpts = { taskGoalKeySet, taskGoalLinks };
+			const ordering = afterTodoId
+				? getOrderingAfterInGoalView(todos, viewGoalIndex, targetParentId, afterTodoId, {
+						...goalViewOpts,
+						normalize: (goalIdx, parentId) =>
+							store.normalizeGoalViewOrderings(goalIdx, parentId)
+					})
+				: getTopOrderingForGoalView(todos, viewGoalIndex, {
+						...goalViewOpts,
+						parentId: targetParentId
+					});
+
+			if (isTaskPrimaryOnGoal(todo, viewGoalIndex)) {
+				updateTodo(todoId, { parentId: targetParentId, ordering });
+			} else {
+				store.applyTodoOrderingInGoalView(todoId, viewGoalIndex, ordering);
+			}
+			return;
+		}
+
 		const targetListId = destination.listId ?? todo.listId;
 		const targetParentId = destination.parentId ?? null;
 		const afterTodoId = destination.afterTodoId ?? null;
@@ -344,34 +375,6 @@
 		return level;
 	}
 
-	// Helper function to organize todos with hierarchy
-	function organizeTodosWithHierarchy(todosList) {
-		const byParent = new Map();
-		const ids = new Set(todosList.map((todo) => todo.id));
-		for (const todo of todosList) {
-			const parentKey = todo.parentId && ids.has(todo.parentId) ? todo.parentId : '__root__';
-			if (!byParent.has(parentKey)) byParent.set(parentKey, []);
-			byParent.get(parentKey).push(todo);
-		}
-
-		for (const siblingList of byParent.values()) {
-			siblingList.sort((a, b) => getTodoOrdering(a) - getTodoOrdering(b));
-		}
-
-		const ordered = [];
-		function walk(parentId = null) {
-			const key = parentId ?? '__root__';
-			const siblings = byParent.get(key) || [];
-			for (const todo of siblings) {
-				ordered.push(todo);
-				walk(todo.id);
-			}
-		}
-
-		walk(null);
-		return ordered;
-	}
-
 	function getVisibleGoalTodos(targetGoalIndex) {
 		const filtered = todos.filter((t) => {
 			const matchesGoal =
@@ -381,7 +384,10 @@
 			const isCompleted = t.status === 'done';
 			return matchesGoal && (showCompleted || !isCompleted);
 		});
-		return organizeTodosWithHierarchy(filtered);
+		return organizeTodosWithHierarchy(filtered, getTodoOrdering, {
+			goalIndex: targetGoalIndex,
+			taskGoalLinks
+		});
 	}
 
 	function getGoalScopeIndices() {
@@ -467,6 +473,7 @@
 			grid,
 			taskGoalKeySet,
 			linkedTaskIdSet,
+			taskGoalLinks,
 			getTodoOrdering
 		})
 	);
@@ -589,6 +596,20 @@
 		}
 	});
 
+	$effect(() => {
+		if (!browser || !dataLoaded || targetGoalTab !== 'notes' || targetTodoId) return;
+		activeGoalTab = 'notes';
+		mobileMenuOpen = false;
+		const params = new URLSearchParams(page.url.search);
+		params.delete('tab');
+		const qs = params.toString();
+		const nextUrl = `${page.url.pathname}${qs ? `?${qs}` : ''}`;
+		const currentUrl = `${page.url.pathname}${page.url.search}`;
+		if (nextUrl !== currentUrl) {
+			goto(nextUrl, { replaceState: true, keepFocus: true, noScroll: true });
+		}
+	});
+
 	afterNavigate(() => {
 		if (!browser) return;
 		if (!todoDesktopLayout && store.todoWorkspaceQuery.trim()) {
@@ -636,7 +657,7 @@
 			...listMeta,
 			isDraft: draft,
 			parentId: null,
-			ordering: getTopOrdering(listMeta.listId, null)
+			ordering: resolveTopOrderingForNewTodo(todos, listMeta, { taskGoalKeySet, taskGoalLinks })
 		};
 		store.harada_chart.todos = [...store.harada_chart.todos, todo];
 
@@ -689,7 +710,7 @@
 					...defaultTodo(),
 					...listMeta,
 					parentId: null,
-					ordering: getTopOrdering(listMeta.listId, null)
+					ordering: resolveTopOrderingForNewTodo(todos, listMeta, { taskGoalKeySet, taskGoalLinks })
 				};
 				store.harada_chart.todos = [...store.harada_chart.todos, todo];
 				store.bumpGoalAfterTodoActivity(goalIndex);
@@ -708,7 +729,7 @@
 				markdown: '',
 				...customMeta,
 				parentId: null,
-				ordering: getTopOrdering(customMeta.listId, null)
+				ordering: resolveTopOrderingForNewTodo(todos, customMeta, { taskGoalKeySet, taskGoalLinks })
 			};
 			store.harada_chart.todos = [...store.harada_chart.todos, todo];
 			if (markdown?.trim()) {
@@ -721,13 +742,14 @@
 		const targetGoalIndex =
 			typeof selectedGoalIndex === 'number' ? canonicalGoalIndex(selectedGoalIndex) : goalIndex;
 		if (targetGoalIndex === null) return;
+		const listMeta = buildGoalListMeta(targetGoalIndex);
 		const todo = {
 			...defaultTodo(),
 			title: title || '',
 			markdown: '',
-			...buildGoalListMeta(targetGoalIndex),
+			...listMeta,
 			parentId: null,
-			ordering: getTopOrdering(`goal:${targetGoalIndex}`, null)
+			ordering: resolveTopOrderingForNewTodo(todos, listMeta, { taskGoalKeySet, taskGoalLinks })
 		};
 		store.harada_chart.todos = [...store.harada_chart.todos, todo];
 		if (markdown?.trim()) {
@@ -1181,6 +1203,9 @@
 							canOutdent={(todoId) => canOutdentTodo(todoId)}
 							onCreateTodo={createTodoFromComposer}
 							onMoveTodo={moveTodo}
+							useGoalViewOrdering={true}
+							{taskGoalLinks}
+							{taskGoalKeySet}
 							allowCrossListMove={true}
 							enableGroupDrag={false}
 							searchText={store.todoWorkspaceQuery}
@@ -1358,6 +1383,9 @@
 							disableAutoFocus={hasNoCustomTitle || isEditingGoal}
 							onCreateTodo={createTodoFromComposer}
 							onMoveTodo={moveTodo}
+							useGoalViewOrdering={true}
+							{taskGoalLinks}
+							{taskGoalKeySet}
 							allowCrossListMove={false}
 							enableGroupDrag={false}
 							searchText={goalSearchQuery}
@@ -1428,6 +1456,9 @@
 						canOutdent={(todoId) => canOutdentTodo(todoId)}
 						onCreateTodo={createTodoFromComposer}
 						onMoveTodo={moveTodo}
+						useGoalViewOrdering={true}
+						{taskGoalLinks}
+						{taskGoalKeySet}
 						allowCrossListMove={true}
 						enableGroupDrag={false}
 						searchText={store.todoWorkspaceQuery}
@@ -1460,6 +1491,9 @@
 						disableAutoFocus={hasNoCustomTitle || isEditingGoal}
 						onCreateTodo={createTodoFromComposer}
 						onMoveTodo={moveTodo}
+						useGoalViewOrdering={true}
+						{taskGoalLinks}
+						{taskGoalKeySet}
 						allowCrossListMove={false}
 						enableGroupDrag={false}
 						searchText={store.todoWorkspaceQuery}
@@ -1675,6 +1709,9 @@
 								disableAutoFocus={hasNoCustomTitle || isEditingGoal}
 								onCreateTodo={createTodoFromComposer}
 								onMoveTodo={moveTodo}
+								useGoalViewOrdering={true}
+								{taskGoalLinks}
+								{taskGoalKeySet}
 								allowCrossListMove={false}
 								enableGroupDrag={false}
 								searchText={store.todoWorkspaceQuery}

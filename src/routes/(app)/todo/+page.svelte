@@ -15,7 +15,11 @@
 		getNoteTitle,
 		buildFeedPinnedRows,
 		buildAllTasksFeed,
-		buildTaskNoteIndexMaps
+		buildTaskNoteIndexMaps,
+		resolveTopOrderingForNewTodo,
+		getTopOrderingForGoalView,
+		getOrderingAfterInGoalView,
+		isTaskPrimaryOnGoal
 	} from '$lib/todoUtils.js';
 	import TodoList from '$components/TodoList.svelte';
 	import WorkspaceToolbar from '$components/WorkspaceToolbar.svelte';
@@ -236,6 +240,44 @@
 		const todo = store.harada_chart.todos.find((t) => t.id === todoId);
 		if (!todo || !destination) return;
 
+		const viewGoalIndex =
+			typeof destination.viewGoalIndex === 'number' ? destination.viewGoalIndex : null;
+		if (viewGoalIndex !== null) {
+			const targetParentId = destination.parentId ?? null;
+			const afterTodoId = destination.afterTodoId ?? null;
+			const goalViewOpts = { taskGoalKeySet, taskGoalLinks };
+			const ordering = afterTodoId
+				? getOrderingAfterInGoalView(todos, viewGoalIndex, targetParentId, afterTodoId, {
+						...goalViewOpts,
+						normalize: (goalIdx, parentId) =>
+							store.normalizeGoalViewOrderings(goalIdx, parentId)
+					})
+				: getTopOrderingForGoalView(todos, viewGoalIndex, {
+						...goalViewOpts,
+						parentId: targetParentId
+					});
+
+			if (isTaskPrimaryOnGoal(todo, viewGoalIndex)) {
+				updateTodo(todoId, {
+					listType: destination.listType ?? todo.listType,
+					listId: destination.listId ?? todo.listId,
+					listName:
+						destination.listType === 'custom'
+							? destination.listName || todo.listName || 'New list'
+							: null,
+					goalIndex:
+						destination.listType === 'goal'
+							? (destination.goalIndex ?? todo.goalIndex ?? null)
+							: null,
+					parentId: targetParentId,
+					ordering
+				});
+			} else {
+				store.applyTodoOrderingInGoalView(todoId, viewGoalIndex, ordering);
+			}
+			return;
+		}
+
 		const targetListId = destination.listId ?? todo.listId;
 		const targetParentId = destination.parentId ?? null;
 		const afterTodoId = destination.afterTodoId ?? null;
@@ -339,6 +381,7 @@
 			grid,
 			taskGoalKeySet,
 			linkedTaskIdSet,
+			taskGoalLinks,
 			getTodoOrdering
 		})
 	);
@@ -526,7 +569,11 @@
 			...defaultTodo(),
 			...listMeta,
 			parentId: null,
-			ordering: getTopOrdering(listMeta.listId, null),
+			ordering: resolveTopOrderingForNewTodo(todos, listMeta, {
+				taskGoalKeySet,
+				linkedTaskIdSet,
+				taskGoalLinks
+			}),
 			title
 		};
 		store.harada_chart.todos = [...store.harada_chart.todos, todo];
@@ -550,7 +597,10 @@
 			...customListMeta,
 			listId,
 			parentId: null,
-			ordering: getTopOrdering(listId, null)
+			ordering: resolveTopOrderingForNewTodo(todos, customListMeta, {
+				taskGoalKeySet,
+				taskGoalLinks
+			})
 		};
 		store.harada_chart.todos = [...store.harada_chart.todos, todo];
 		activeTodoId = todo.id;
@@ -860,6 +910,9 @@
 							canOutdent={(todoId) => canOutdentTodo(todoId)}
 							onCreateTodo={createTodoFromComposer}
 							onMoveTodo={moveTodo}
+							useGoalViewOrdering={true}
+							{taskGoalLinks}
+							{taskGoalKeySet}
 							allowCrossListMove={true}
 							enableGroupDrag={true}
 							onMoveGroup={moveGoalGroup}
@@ -931,6 +984,9 @@
 						canOutdent={(todoId) => canOutdentTodo(todoId)}
 						onCreateTodo={createTodoFromComposer}
 						onMoveTodo={moveTodo}
+						useGoalViewOrdering={true}
+						{taskGoalLinks}
+						{taskGoalKeySet}
 						allowCrossListMove={true}
 						enableGroupDrag={true}
 						onMoveGroup={moveGoalGroup}
@@ -1041,6 +1097,9 @@
 								canOutdent={(todoId) => canOutdentTodo(todoId)}
 								onCreateTodo={createTodoFromComposer}
 								onMoveTodo={moveTodo}
+								useGoalViewOrdering={true}
+								{taskGoalLinks}
+								{taskGoalKeySet}
 								allowCrossListMove={true}
 								enableGroupDrag={true}
 								onMoveGroup={moveGoalGroup}
