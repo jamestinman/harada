@@ -2,7 +2,8 @@
 	import { tick } from 'svelte';
 	import { cubicOut } from 'svelte/easing';
 	import {
-		indexToNomenclature
+		indexToNomenclature,
+		filterDisplayGoalIndices
 	} from '$lib/todoUtils.js';
 	import { store } from '$stores/store.svelte.js';
 	import { todoEditorStore } from '$stores/todoEditor.svelte.js';
@@ -122,7 +123,8 @@
 
 	function togglePinned(e) {
 		e?.stopPropagation?.();
-		onUpdate({ pinned: !isPinned });
+		if (isPinned) store.unpinTask(todo.id);
+		else store.pinTask(todo.id);
 	}
 
 	async function startEditingTitle({ syncHighlight = true } = {}) {
@@ -295,9 +297,7 @@
 		restoreExpandedEditorIfNeeded();
 	});
 
-	const linkedGoalsForDisplay = $derived(
-		[...new Set(linkedGoalIndices)].filter((idx) => typeof idx === 'number')
-	);
+	const linkedGoalsForDisplay = $derived(filterDisplayGoalIndices([...new Set(linkedGoalIndices)]));
 
 	function cancelEdit() {
 		todoEditorStore.close(todo.id);
@@ -458,7 +458,11 @@
 				}`}
 			>
 				<div class="flex flex-col">
-					<span class={!todo.title || todo.title.trim() === '' ? 'opacity-0' : ''}>
+					<span
+						class={`${!todo.title || todo.title.trim() === '' ? 'opacity-0' : ''} ${
+							mainFeedPinStyle === 'top' ? 'text-pink-400 dark:text-pink-300' : ''
+						}`}
+					>
 						{todo.title || '\u00A0'}
 					</span>
 					{#if hasNotes}
@@ -555,12 +559,31 @@
 {:else}
 	<!-- Desktop expanded editor -->
 	<div class="desktop-expanded-editor" style="margin-left: {indentLevel * 1.5}rem;">
-		<input
-			type="text"
-			bind:value={editTitle}
-			placeholder="Task title"
-			class="task-edit-title"
-		/>
+		<div class="mb-2 flex items-start gap-2">
+			<input
+				type="text"
+				bind:value={editTitle}
+				placeholder="Task title"
+				class="task-edit-title flex-1"
+			/>
+			<button
+				type="button"
+				onclick={togglePinned}
+				class={`mt-1 flex-shrink-0 rounded p-1.5 transition ${
+					isPinned
+						? 'text-pink-400 hover:bg-pink-500/20 hover:text-pink-300'
+						: 'text-slate-500 hover:bg-slate-700/50 hover:text-slate-300'
+				}`}
+				title={isPinned ? 'Unpin' : 'Pin to top of Todo feed'}
+				aria-pressed={isPinned}
+			>
+				<Pin
+					class={`h-4 w-4 ${isPinned ? '' : 'opacity-60'}`}
+					strokeWidth={2}
+					fill={isPinned ? 'currentColor' : 'none'}
+				/>
+			</button>
+		</div>
 
 		{@render taskLinkControls()}
 
@@ -614,12 +637,31 @@
 			transition:sheet3d
 			class="composer-panel !rounded-2xl"
 		>
-			<input
-				type="text"
-				bind:value={editTitle}
-				placeholder="Task title"
-				class="composer-title-input"
-			/>
+			<div class="mb-2 flex items-start gap-2">
+				<input
+					type="text"
+					bind:value={editTitle}
+					placeholder="Task title"
+					class="composer-title-input flex-1"
+				/>
+				<button
+					type="button"
+					onclick={togglePinned}
+					class={`mt-1 flex-shrink-0 rounded p-1.5 transition ${
+						isPinned
+							? 'text-pink-400 hover:bg-pink-500/20 hover:text-pink-300'
+							: 'text-slate-500 hover:bg-slate-700/50 hover:text-slate-300'
+					}`}
+					title={isPinned ? 'Unpin' : 'Pin to top of Todo feed'}
+					aria-pressed={isPinned}
+				>
+					<Pin
+						class={`h-4 w-4 ${isPinned ? '' : 'opacity-60'}`}
+						strokeWidth={2}
+						fill={isPinned ? 'currentColor' : 'none'}
+					/>
+				</button>
+			</div>
 
 			{@render taskLinkControls()}
 

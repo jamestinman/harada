@@ -1,4 +1,4 @@
-import { canonicalGoalIndex, nomenclatureToIndex } from '$lib/todoUtils.js';
+import { canonicalGoalIndex, nomenclatureToIndex, isPinnedGoalNomenclature, PINNED_GOAL_INDEX, isPinnedGoalIndex } from '$lib/todoUtils.js';
 import { getSupabaseAdmin } from './supabaseAdmin.js';
 
 export function normalizeHumanEmail(email) {
@@ -14,6 +14,7 @@ export function normalizeHumanEmail(email) {
 export function parseGoalIndexParam(raw) {
 	if (raw == null || raw === '') return null;
 	const s = String(raw);
+	if (isPinnedGoalNomenclature(s)) return PINNED_GOAL_INDEX;
 	if (/^\d+$/.test(s)) {
 		const n = parseInt(s, 10);
 		if (n < 0 || n > 80) return null;
@@ -21,6 +22,7 @@ export function parseGoalIndexParam(raw) {
 	}
 	const idx = nomenclatureToIndex(s, []);
 	if (idx === null) return null;
+	if (isPinnedGoalIndex(idx)) return PINNED_GOAL_INDEX;
 	return canonicalGoalIndex(idx);
 }
 

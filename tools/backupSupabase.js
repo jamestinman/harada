@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Examples:
-// node tools/backupSupabase.js tasks notes
-// node tools/backupSupabase.js --full
+// node tools/backupSupabase.js              # all tables (REST data dictionary, with fallback list)
+// node tools/backupSupabase.js tasks notes  # specific tables only
 
 import 'dotenv/config';
 import { createClient } from '@supabase/supabase-js';
@@ -35,6 +35,19 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const BACKUP_ROOT = path.resolve(process.env.HOME || '~', 'bk', 'haradato');
+
+// Used when REST OpenAPI discovery is unavailable or returns no relations.
+const FALLBACK_TABLES = [
+	'agent_access_requests',
+	'harada_charts',
+	'note_goal_links',
+	'note_task_links',
+	'notes',
+	'task_goal_links',
+	'task_task_links',
+	'tasks',
+	'user_agent_api_settings'
+];
 
 function ensureDir(dir) {
 	if (!fs.existsSync(dir)) {
@@ -106,21 +119,18 @@ async function backupTable(tableName, outDir) {
 
 function parseArgs(rawArgs) {
 	const args = [...rawArgs];
-	const flags = {
-		full: false
-	};
 	const tables = [];
 
 	while (args.length > 0) {
 		const arg = args.shift();
 		if (arg === '--full') {
-			flags.full = true;
+			// Kept for backwards compatibility; full backup is now the default.
 			continue;
 		}
 		tables.push(arg);
 	}
 
-	return { flags, tables };
+	return tables;
 }
 
 async function discoverTablesFromOpenApi() {
@@ -161,22 +171,31 @@ async function discoverTablesFromOpenApi() {
 	return [...discovered].sort((a, b) => a.localeCompare(b));
 }
 
-async function main() {
-	const { flags, tables: cliTables } = parseArgs(process.argv.slice(2));
+async function resolveTables(cliTables) {
+	if (cliTables.length > 0) {
+		return cliTables;
+	}
 
-	// If tables/views are passed as CLI args, use those.
-	// If --full is passed, discover exposed relations dynamically.
-	// Otherwise, default to the core tables used by the app.
-	const defaultTables = ['harada_charts', 'tasks'];
-	const tables =
-		cliTables.length > 0
-			? cliTables
-			: flags.full
-				? await discoverTablesFromOpenApi()
-				: defaultTables;
+	try {
+		const discovered = await discoverTablesFromOpenApi();
+		if (discovered.length > 0) {
+			console.log(`Discovered ${discovered.length} table(s) from REST data dictionary`);
+			return discovered;
+		}
+		console.warn('REST data dictionary returned no tables; using fallback list.');
+	} catch (err) {
+		console.warn(`REST data dictionary unavailable (${err.message}); using fallback list.`);
+	}
+
+	return [...FALLBACK_TABLES];
+}
+
+async function main() {
+	const cliTables = parseArgs(process.argv.slice(2));
+	const tables = await resolveTables(cliTables);
 
 	if (tables.length === 0) {
-		console.error('No tables discovered for backup. Check REST exposure and API key permissions.');
+		console.error('No tables to back up. Check REST exposure and API key permissions.');
 		process.exit(1);
 	}
 

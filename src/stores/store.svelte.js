@@ -17,6 +17,14 @@ import {
 	getTopOrderingForGoalView,
 	getGoalViewSiblings,
 	isTaskPrimaryOnGoal,
+	getTaskGoalIndicesForTodo,
+	PINNED_GOAL_INDEX,
+	NO_GOAL_PSEUDO_INDEX,
+	isPinnedGoalIndex,
+	isNoGoalPseudoIndex,
+	isPseudoGoalIndex,
+	filterDisplayGoalIndices,
+	normalizeViewGoalIndex,
 	TODO_ORDER_STEP
 } from '$lib/todoUtils.js';
 import { authStore } from './auth.svelte.js';
@@ -137,11 +145,14 @@ function normalizeTaskGoalLink(link) {
 			: createdAt;
 	const ordering =
 		typeof link.ordering === 'number' && Number.isFinite(link.ordering) ? link.ordering : null;
+	const parentId =
+		typeof link.parentId === 'string' ? link.parentId : link.parentId === null ? null : null;
 	return {
 		id: typeof link.id === 'string' && link.id ? link.id : createLinkId('tgl'),
 		taskId: link.taskId,
 		goalIndex: canonical,
 		ordering,
+		parentId,
 		createdAt,
 		updatedAt
 	};
@@ -1783,6 +1794,7 @@ class Store {
 			taskId: row.task_id,
 			goalIndex: row.goal_index,
 			ordering: row.ordering,
+			parentId: typeof row.parent_id === 'string' ? row.parent_id : null,
 			createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
 			updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now()
 		});
@@ -1797,6 +1809,7 @@ class Store {
 			task_id: normalized.taskId,
 			goal_index: normalized.goalIndex,
 			ordering: normalized.ordering,
+			parent_id: typeof normalized.parentId === 'string' ? normalized.parentId : null,
 			created_at: new Date(normalized.createdAt).toISOString(),
 			updated_at: new Date(normalized.updatedAt).toISOString(),
 			deleted_at: null
@@ -1816,31 +1829,155 @@ class Store {
 		return keys;
 	}
 
+	_applyCanonicalGoalIndex(goalIndex) {
+		if (isPseudoGoalIndex(goalIndex)) return goalIndex;
+		return canonicalGoalIndex(goalIndex);
+	}
+
 	applyTodoOrderingInGoalView(taskId, goalIndex, ordering) {
 		if (!taskId || typeof goalIndex !== 'number' || typeof ordering !== 'number') return;
-		const canonical = canonicalGoalIndex(goalIndex);
+		const canonical = this._applyCanonicalGoalIndex(goalIndex);
 		const todo = this.harada_chart.todos.find((t) => t.id === taskId);
 		if (!todo) return;
 		if (isTaskPrimaryOnGoal(todo, canonical)) {
 			this.updateTodo(taskId, { ordering });
 			return;
 		}
-		const linkIndex = this.taskGoalLinks.findIndex(
+		this.ensureTaskGoalLink(taskId, canonical, { ordering });
+	}
+
+	ensureTaskGoalLink(taskId, goalIndex, { ordering = null, parentId = undefined } = {}) {
+		if (!taskId || typeof goalIndex !== 'number') return null;
+		const canonical = this._applyCanonicalGoalIndex(goalIndex);
+		const taskGoalKeySet = this._buildTaskGoalKeySet();
+		const existingIndex = this.taskGoalLinks.findIndex(
 			(link) => link.taskId === taskId && link.goalIndex === canonical
 		);
-		if (linkIndex === -1) return;
-		const link = this.taskGoalLinks[linkIndex];
-		const updated = { ...link, ordering, updatedAt: Date.now() };
+		const now = Date.now();
+
+		if (existingIndex === -1) {
+			const resolvedOrdering =
+				typeof ordering === 'number'
+					? ordering
+					: getTopOrderingForGoalView(this.harada_chart.todos, canonical, {
+							taskGoalKeySet,
+							taskGoalLinks: this.taskGoalLinks,
+							parentId: parentId ?? null
+						});
+			const link = normalizeTaskGoalLink({
+				taskId,
+				goalIndex: canonical,
+				ordering: resolvedOrdering,
+				parentId: parentId ?? null,
+				createdAt: now,
+				updatedAt: now
+			});
+			this.taskGoalLinks = [link, ...this.taskGoalLinks].filter(Boolean);
+			this._markTaskGoalLinkDirty(link);
+			this.queueSave();
+			return link;
+		}
+
+		const existing = this.taskGoalLinks[existingIndex];
+		const updated = normalizeTaskGoalLink({
+			...existing,
+			...(typeof ordering === 'number' ? { ordering } : {}),
+			...(parentId !== undefined ? { parentId } : {}),
+			updatedAt: now
+		});
 		this.taskGoalLinks = this.taskGoalLinks.map((entry, index) =>
-			index === linkIndex ? updated : entry
+			index === existingIndex ? updated : entry
 		);
 		this._markTaskGoalLinkDirty(updated);
 		this.queueSave();
+		return updated;
+	}
+
+	adoptTaskGoalsFrom(taskId, sourceTodo, { viewGoalIndex = null } = {}) {
+		if (!taskId || !sourceTodo) return;
+		const goals = new Set(
+			filterDisplayGoalIndices(getTaskGoalIndicesForTodo(sourceTodo, this.taskGoalLinks))
+		);
+		if (typeof viewGoalIndex === 'number' && !isPseudoGoalIndex(viewGoalIndex)) {
+			goals.add(this._applyCanonicalGoalIndex(viewGoalIndex));
+		}
+		for (const goalIndex of goals) {
+			this.ensureTaskGoalLink(taskId, goalIndex);
+		}
+		if (typeof viewGoalIndex === 'number') {
+			this.ensureTaskGoalLink(taskId, viewGoalIndex);
+		}
+		if (isPinnedGoalIndex(viewGoalIndex) || goals.has(PINNED_GOAL_INDEX)) {
+			const todo = this.harada_chart.todos.find((t) => t.id === taskId);
+			if (todo && todo.pinned !== true) {
+				this._setTaskPinnedFlag(taskId, true);
+			}
+		}
+	}
+
+	pinTask(taskId) {
+		if (!taskId) return;
+		const todo = this.harada_chart.todos.find((t) => t.id === taskId);
+		if (!todo) return;
+		this.ensureTaskGoalLink(taskId, PINNED_GOAL_INDEX);
+		if (todo.pinned !== true) this._setTaskPinnedFlag(taskId, true);
+	}
+
+	unpinTask(taskId) {
+		if (!taskId) return;
+		this.unlinkTaskFromGoal(taskId, PINNED_GOAL_INDEX);
+		const todo = this.harada_chart.todos.find((t) => t.id === taskId);
+		if (todo?.pinned === true) this._setTaskPinnedFlag(taskId, false);
+	}
+
+	ensureNoGoalTaskLink(taskId, { ordering = null, parentId = undefined } = {}) {
+		if (!taskId) return null;
+		const todo = this.harada_chart.todos.find((t) => t.id === taskId);
+		if (!todo || todo.goalIndex != null) return null;
+		return this.ensureTaskGoalLink(taskId, NO_GOAL_PSEUDO_INDEX, { ordering, parentId });
+	}
+
+	_setTaskPinnedFlag(taskId, pinned) {
+		const ts = Date.now();
+		this.harada_chart = {
+			...this.harada_chart,
+			todos: this.harada_chart.todos.map((t) =>
+				t.id === taskId ? { ...t, pinned: pinned === true, updatedAt: ts } : t
+			)
+		};
+		this._markTaskDirty(taskId);
+		this.queueSave();
+	}
+
+	pinNote(noteId) {
+		this.linkNoteToGoal(noteId, PINNED_GOAL_INDEX);
+	}
+
+	unpinNote(noteId) {
+		this.unlinkNoteFromGoal(noteId, PINNED_GOAL_INDEX);
+	}
+
+	isNotePinned(noteId) {
+		return this.noteGoalLinks.some(
+			(link) => link.noteId === noteId && link.goalIndex === PINNED_GOAL_INDEX
+		);
+	}
+
+	getPinnedTaskCount() {
+		const linked = new Set(
+			(this.taskGoalLinks ?? [])
+				.filter((link) => link.goalIndex === PINNED_GOAL_INDEX)
+				.map((link) => link.taskId)
+		);
+		for (const todo of this.harada_chart.todos ?? []) {
+			if (todo.pinned === true && todo.id) linked.add(todo.id);
+		}
+		return linked.size;
 	}
 
 	normalizeGoalViewOrderings(goalIndex, parentId = null) {
 		if (typeof goalIndex !== 'number') return;
-		const canonical = canonicalGoalIndex(goalIndex);
+		const canonical = this._applyCanonicalGoalIndex(goalIndex);
 		const taskGoalKeySet = this._buildTaskGoalKeySet();
 		const siblings = getGoalViewSiblings(this.harada_chart.todos, canonical, {
 			parentId,
@@ -1966,7 +2103,7 @@ class Store {
 	 * move that goal's section to the top of the All Tasks list (via todo_group_ordering).
 	 */
 	bumpGoalAfterTodoActivity(goalIndex) {
-		if (typeof goalIndex !== 'number') return;
+		if (typeof goalIndex !== 'number' || isPinnedGoalIndex(goalIndex)) return;
 
 		const canonical = canonicalGoalIndex(goalIndex);
 
@@ -2114,6 +2251,14 @@ class Store {
 				});
 				this.taskGoalLinks = [newLink, ...this.taskGoalLinks].filter(Boolean);
 				this._markTaskGoalLinkDirty(newLink);
+			}
+
+			const isNoGoalList =
+				(updatedTodo.listType === 'goal' || !updatedTodo.listType) && updatedTodo.goalIndex == null;
+			if (isNoGoalList) {
+				this.ensureNoGoalTaskLink(id);
+			} else {
+				this.unlinkTaskFromGoal(id, NO_GOAL_PSEUDO_INDEX);
 			}
 		}
 
@@ -2308,7 +2453,9 @@ class Store {
 
 	getLinkedGoalIndicesForNote(noteId) {
 		if (!noteId) return [];
-		return this.noteGoalLinks.filter((link) => link.noteId === noteId).map((link) => link.goalIndex);
+		return filterDisplayGoalIndices(
+			this.noteGoalLinks.filter((link) => link.noteId === noteId).map((link) => link.goalIndex)
+		);
 	}
 
 	getLinkedGoalIndicesForTask(taskId) {
@@ -2319,7 +2466,7 @@ class Store {
 		}
 		const todo = this.harada_chart.todos.find((t) => t.id === taskId);
 		if (typeof todo?.goalIndex === 'number') linked.push(canonicalGoalIndex(todo.goalIndex));
-		return [...new Set(linked)].sort((a, b) => a - b);
+		return filterDisplayGoalIndices([...new Set(linked)]).sort((a, b) => a - b);
 	}
 
 	linkNoteToTask(noteId, taskId, { isPrimary = false } = {}) {
@@ -2380,7 +2527,7 @@ class Store {
 	linkNoteToGoal(noteId, goalIndex, options = {}) {
 		if (!noteId || typeof goalIndex !== 'number') return;
 		const persist = options.persist !== false;
-		const canonical = canonicalGoalIndex(goalIndex);
+		const canonical = normalizeViewGoalIndex(goalIndex);
 		if (this.noteGoalLinks.some((link) => link.noteId === noteId && link.goalIndex === canonical))
 			return;
 		const newLink = normalizeNoteGoalLink({
@@ -2396,7 +2543,7 @@ class Store {
 
 	unlinkNoteFromGoal(noteId, goalIndex) {
 		if (!noteId || typeof goalIndex !== 'number') return;
-		const canonical = canonicalGoalIndex(goalIndex);
+		const canonical = normalizeViewGoalIndex(goalIndex);
 		const existing = this.noteGoalLinks.find(
 			(link) => link.noteId === noteId && link.goalIndex === canonical
 		);
@@ -2420,7 +2567,7 @@ class Store {
 	}
 
 	linkTaskToGoal(taskId, goalIndex) {
-		if (!taskId || typeof goalIndex !== 'number') return;
+		if (!taskId || typeof goalIndex !== 'number' || isPseudoGoalIndex(goalIndex)) return;
 		const canonical = canonicalGoalIndex(goalIndex);
 		const todo = this.harada_chart.todos.find((t) => t.id === taskId);
 		if (!todo) return;
@@ -2481,7 +2628,7 @@ class Store {
 
 	unlinkTaskFromGoal(taskId, goalIndex) {
 		if (!taskId || typeof goalIndex !== 'number') return;
-		const canonical = canonicalGoalIndex(goalIndex);
+		const canonical = this._applyCanonicalGoalIndex(goalIndex);
 		const existing = this.taskGoalLinks.find(
 			(link) => link.taskId === taskId && link.goalIndex === canonical
 		);

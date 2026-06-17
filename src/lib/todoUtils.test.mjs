@@ -64,8 +64,17 @@ test('buildFeedPinnedRows lists descendants under a pinned parent', () => {
 		parentId: 'p',
 		ordering: 3
 	};
+	const taskGoalLinks = [
+		{ taskId: 'p', goalIndex: -1, parentId: null, ordering: 1 },
+		{ taskId: 'c', goalIndex: -1, parentId: 'p', ordering: 2 },
+		{ taskId: 'pc', goalIndex: -1, parentId: 'p', ordering: 3 }
+	];
+	const taskGoalKeySet = new Set(['p:-1', 'c:-1', 'pc:-1']);
 
-	const rows = buildFeedPinnedRows([parent, child, pinnedChild]);
+	const rows = buildFeedPinnedRows([parent, child, pinnedChild], undefined, {
+		taskGoalKeySet,
+		taskGoalLinks
+	});
 	assert.deepEqual(
 		rows.map((r) => [r.todo.id, r.indentLevel]),
 		[
@@ -79,8 +88,13 @@ test('buildFeedPinnedRows lists descendants under a pinned parent', () => {
 test('buildFeedPinnedRows omits pinned child as separate root when parent is pinned', () => {
 	const parent = { id: 'p', pinned: true, status: 'todo', parentId: null, ordering: 1 };
 	const child = { id: 'c', pinned: true, status: 'todo', parentId: 'p', ordering: 2 };
+	const taskGoalLinks = [
+		{ taskId: 'p', goalIndex: -1, parentId: null, ordering: 1 },
+		{ taskId: 'c', goalIndex: -1, parentId: 'p', ordering: 2 }
+	];
+	const taskGoalKeySet = new Set(['p:-1', 'c:-1']);
 
-	const rows = buildFeedPinnedRows([parent, child]);
+	const rows = buildFeedPinnedRows([parent, child], undefined, { taskGoalKeySet, taskGoalLinks });
 	assert.deepEqual(
 		rows.map((r) => r.todo.id),
 		['p', 'c']
@@ -132,6 +146,7 @@ test('buildAllTasksFeed buckets todos in a single pass', () => {
 
 	assert.equal(feed.allTodos.length, 3);
 	assert.ok(feed.todoGroups.some((g) => g.id === 'no-goal'));
+	assert.equal(feed.todoGroups.find((g) => g.id === 'no-goal')?.goalIndex, -2);
 	assert.ok(feed.todoGroups.some((g) => g.id === 'goal-10'));
 	assert.ok(feed.todoGroups.some((g) => g.id === 'custom:work'));
 	assert.equal(feed.groupsByTodoId.get('t1')?.id, 'goal-10');

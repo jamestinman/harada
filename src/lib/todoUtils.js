@@ -471,7 +471,68 @@ export function renderNoteBodyMarkdown(markdown) {
 }
 
 // Convert grid index to chess-like nomenclature (e.g., 40 -> "E5")
+export const PINNED_GOAL_INDEX = -1;
+export const PINNED_GOAL_NOMENCLATURE = 'Z1';
+export const NO_GOAL_PSEUDO_INDEX = -2;
+export const NO_GOAL_PSEUDO_NOMENCLATURE = 'Z2';
+
+export function isPinnedGoalIndex(index) {
+	return index === PINNED_GOAL_INDEX;
+}
+
+export function isNoGoalPseudoIndex(index) {
+	return index === NO_GOAL_PSEUDO_INDEX;
+}
+
+export function isPseudoGoalIndex(index) {
+	return isPinnedGoalIndex(index) || isNoGoalPseudoIndex(index);
+}
+
+export function isPinnedGoalNomenclature(nomenclature) {
+	return String(nomenclature || '').toUpperCase() === PINNED_GOAL_NOMENCLATURE;
+}
+
+export function isNoGoalPseudoNomenclature(nomenclature) {
+	return String(nomenclature || '').toUpperCase() === NO_GOAL_PSEUDO_NOMENCLATURE;
+}
+
+export function isPinnedGoalParam(param) {
+	return isPinnedGoalNomenclature(param);
+}
+
+/** Goal indices shown in link chips / pickers (excludes Z1, Z2). */
+export function filterDisplayGoalIndices(indices) {
+	return (indices ?? []).filter(
+		(idx) => typeof idx === 'number' && !Number.isNaN(idx) && !isPseudoGoalIndex(idx)
+	);
+}
+
+export function taskHasRealGoalMembership(todo, taskGoalLinks = []) {
+	if (!todo) return false;
+	if (typeof todo.goalIndex === 'number') return true;
+	return (taskGoalLinks ?? []).some(
+		(link) => link.taskId === todo.id && !isPseudoGoalIndex(link.goalIndex)
+	);
+}
+
+export function normalizeViewGoalIndex(goalIndex) {
+	if (isPseudoGoalIndex(goalIndex)) return goalIndex;
+	if (goalIndex === null) return NO_GOAL_PSEUDO_INDEX;
+	return canonicalGoalIndex(goalIndex);
+}
+
+export function getGoalLabelFromIndex(index, grid = []) {
+	if (isPinnedGoalIndex(index)) return 'Pinned';
+	if (isNoGoalPseudoIndex(index)) return '';
+	if (index === null || index < 0 || index > 80) return 'Unknown';
+	const cell = grid[index];
+	const text = (cell?.text ?? '').trim();
+	return text || indexToNomenclature(index);
+}
+
 export function indexToNomenclature(index) {
+	if (isPinnedGoalIndex(index)) return PINNED_GOAL_NOMENCLATURE;
+	if (isNoGoalPseudoIndex(index)) return NO_GOAL_PSEUDO_NOMENCLATURE;
 	const row = Math.floor(index / 9) + 1; // 1-9
 	const col = (index % 9) + 1; // 1-9
 	const colLetter = String.fromCharCode(64 + col); // A-I
@@ -482,6 +543,14 @@ export function indexToNomenclature(index) {
 // Primary format: "E5". Legacy fallback: "5E".
 export function nomenclatureToIndex(nomenclature, goalIndices = []) {
 	if (!nomenclature) return null;
+
+	if (isPinnedGoalNomenclature(nomenclature)) {
+		return PINNED_GOAL_INDEX;
+	}
+
+	if (isNoGoalPseudoNomenclature(nomenclature)) {
+		return NO_GOAL_PSEUDO_INDEX;
+	}
 
 	// Primary: column-letter + row-number (e.g. "E5")
 	if (nomenclature.length >= 2) {
@@ -702,8 +771,24 @@ export function getTodoOrderingValue(todo) {
 }
 
 export function todoBelongsToGoalView(todo, goalIndex, taskGoalKeySet = new Set()) {
+	if (isNoGoalPseudoIndex(goalIndex)) {
+		if ((todo.listType !== 'goal' && todo.listType) || todo.goalIndex != null) return false;
+		if (taskGoalKeySet.has(`${todo.id}:${NO_GOAL_PSEUDO_INDEX}`)) return true;
+		for (const key of taskGoalKeySet) {
+			if (!key.startsWith(`${todo.id}:`)) continue;
+			const idx = Number(key.slice(key.lastIndexOf(':') + 1));
+			if (!Number.isNaN(idx) && !isPseudoGoalIndex(idx)) return false;
+		}
+		return true;
+	}
 	if (goalIndex === null) {
 		return (todo.listType === 'goal' || !todo.listType) && todo.goalIndex == null;
+	}
+	if (isPinnedGoalIndex(goalIndex)) {
+		return (
+			(todo.listType === 'goal' || !todo.listType) &&
+			(taskGoalKeySet.has(`${todo.id}:${PINNED_GOAL_INDEX}`) || todo.pinned === true)
+		);
 	}
 	const canonical =
 		typeof goalIndex === 'number' && !Number.isNaN(goalIndex) ? canonicalGoalIndex(goalIndex) : goalIndex;
@@ -714,6 +799,10 @@ export function todoBelongsToGoalView(todo, goalIndex, taskGoalKeySet = new Set(
 }
 
 export function isTaskPrimaryOnGoal(todo, goalIndex) {
+	if (isPinnedGoalIndex(goalIndex)) return false;
+	if (isNoGoalPseudoIndex(goalIndex)) {
+		return (todo?.listType === 'goal' || !todo?.listType) && todo?.goalIndex == null;
+	}
 	if (goalIndex === null) return todo?.goalIndex == null;
 	if (typeof todo?.goalIndex !== 'number') return false;
 	return canonicalGoalIndex(todo.goalIndex) === canonicalGoalIndex(goalIndex);
@@ -721,10 +810,57 @@ export function isTaskPrimaryOnGoal(todo, goalIndex) {
 
 export function getTaskGoalLink(taskGoalLinks, taskId, goalIndex) {
 	if (goalIndex === null || !taskId) return null;
-	const canonical = canonicalGoalIndex(goalIndex);
+	const canonical = normalizeViewGoalIndex(goalIndex);
 	return (taskGoalLinks ?? []).find(
 		(link) => link.taskId === taskId && link.goalIndex === canonical
 	);
+}
+
+/** All goal indices a task appears in (primary + secondary links). */
+export function getTaskGoalIndicesForTodo(todo, taskGoalLinks = []) {
+	const goals = new Set();
+	if (todo && typeof todo.goalIndex === 'number') {
+		const canonical = canonicalGoalIndex(todo.goalIndex);
+		if (!isPseudoGoalIndex(canonical)) goals.add(canonical);
+	}
+	for (const link of taskGoalLinks ?? []) {
+		if (link.taskId === todo?.id && typeof link.goalIndex === 'number') {
+			goals.add(normalizeViewGoalIndex(link.goalIndex));
+		}
+	}
+	return filterDisplayGoalIndices([...goals]).sort((a, b) => a - b);
+}
+
+/**
+ * Parent for hierarchy within a specific goal view.
+ * Primary-on-goal tasks use tasks.parentId; linked appearances use task_goal_links.parentId.
+ */
+export function getEffectiveTodoParentId(todo, goalIndex, taskGoalLinks = []) {
+	if (!todo) return null;
+	if (goalIndex === null) return todo.parentId ?? null;
+	const canonical = normalizeViewGoalIndex(goalIndex);
+	if (isTaskPrimaryOnGoal(todo, canonical)) return todo.parentId ?? null;
+	const link = getTaskGoalLink(taskGoalLinks, todo.id, canonical);
+	if (link) return link.parentId ?? null;
+	return null;
+}
+
+export function getGoalViewIndentLevel(todoId, goalIndex, todosList, taskGoalLinks = []) {
+	let level = 0;
+	let currentId = todoId;
+	const byId = new Map((todosList ?? []).map((todo) => [todo.id, todo]));
+	const visited = new Set();
+	while (currentId) {
+		if (visited.has(currentId)) break;
+		visited.add(currentId);
+		const current = byId.get(currentId);
+		if (!current) break;
+		const parentId = getEffectiveTodoParentId(current, goalIndex, taskGoalLinks);
+		if (!parentId) break;
+		level++;
+		currentId = parentId;
+	}
+	return level;
 }
 
 /** Sort position of a task within a specific goal's list view. */
@@ -792,7 +928,8 @@ export function getGoalViewSiblings(
 	return getSortedSiblingTodos(
 		todos,
 		(todo) => {
-			if ((todo.parentId ?? null) !== (parentId ?? null)) return false;
+			const effectiveParent = getEffectiveTodoParentId(todo, goalIndex, taskGoalLinks);
+			if ((effectiveParent ?? null) !== (parentId ?? null)) return false;
 			if (goalIndex === null && linkedTaskIdSet?.has(todo.id)) return false;
 			return todoBelongsToGoalView(todo, goalIndex, taskGoalKeySet);
 		},
@@ -895,7 +1032,7 @@ export function resolveTopOrderingForNewTodo(
 	if (listMeta?.listType === 'custom') {
 		return getTopOrderingForList(todos, listMeta.listId, { parentId });
 	}
-	return getTopOrderingForGoalView(todos, listMeta?.goalIndex ?? null, {
+	return getTopOrderingForGoalView(todos, listMeta?.goalIndex ?? NO_GOAL_PSEUDO_INDEX, {
 		parentId,
 		taskGoalKeySet,
 		linkedTaskIdSet,
@@ -904,59 +1041,128 @@ export function resolveTopOrderingForNewTodo(
 }
 
 /**
- * Rows for the /todo pinned strip: pinned roots (no pinned ancestor), each followed by
- * all active descendants in tree order. indentLevel is relative to that pinned root.
+ * Apply a drag-drop destination to a task, including multi-goal linking and per-goal parentId.
  */
-export function buildFeedPinnedRows(todos, getTodoOrdering = getTodoOrderingValue) {
-	const active = (todos ?? []).filter((t) => t.status !== 'done');
-	if (active.length === 0) return [];
+export function executeTodoMove({
+	store,
+	todoId,
+	destination,
+	todos,
+	taskGoalKeySet,
+	taskGoalLinks,
+	getListOrderingAfter,
+	getListTopOrdering
+}) {
+	const todo = todos.find((t) => t.id === todoId);
+	if (!todo || !destination) return;
 
-	const byId = new Map(active.map((t) => [t.id, t]));
-	const pinnedIds = new Set(active.filter((t) => t.pinned === true).map((t) => t.id));
-	if (pinnedIds.size === 0) return [];
+	const viewGoalIndex =
+		typeof destination.viewGoalIndex === 'number' ? destination.viewGoalIndex : null;
+	const sourceTodo = destination.adoptGoalsFromTaskId
+		? todos.find((t) => t.id === destination.adoptGoalsFromTaskId)
+		: null;
 
-	function hasPinnedAncestor(todo) {
-		let currentId = todo.parentId;
-		const visited = new Set();
-		while (currentId) {
-			if (visited.has(currentId)) break;
-			visited.add(currentId);
-			if (pinnedIds.has(currentId)) return true;
-			const parent = byId.get(currentId);
-			if (!parent) break;
-			currentId = parent.parentId;
+	if (sourceTodo) {
+		store.adoptTaskGoalsFrom(todoId, sourceTodo, { viewGoalIndex });
+	} else if (viewGoalIndex !== null) {
+		store.ensureTaskGoalLink(todoId, viewGoalIndex);
+	}
+
+	const targetParentId = destination.parentId ?? null;
+	const afterTodoId = destination.afterTodoId ?? null;
+	const shouldPin = destination.pinned === true;
+
+	let ordering;
+	if (viewGoalIndex !== null) {
+		ordering = afterTodoId
+			? getOrderingAfterInGoalView(todos, viewGoalIndex, targetParentId, afterTodoId, {
+					taskGoalKeySet,
+					taskGoalLinks,
+					normalize: (goalIdx, parentId) => store.normalizeGoalViewOrderings(goalIdx, parentId)
+				})
+			: getTopOrderingForGoalView(todos, viewGoalIndex, {
+					taskGoalKeySet,
+					taskGoalLinks,
+					parentId: targetParentId
+				});
+	} else {
+		const targetListId = destination.listId ?? todo.listId;
+		ordering = afterTodoId
+			? getListOrderingAfter(targetListId, targetParentId, afterTodoId)
+			: getListTopOrdering(targetListId, targetParentId);
+	}
+
+	if (viewGoalIndex !== null) {
+		if (isTaskPrimaryOnGoal(todo, viewGoalIndex)) {
+			store.updateTodo(todoId, {
+				listType: destination.listType ?? todo.listType,
+				listId: destination.listId ?? todo.listId,
+				listName:
+					destination.listType === 'custom'
+						? destination.listName || todo.listName || 'New list'
+						: null,
+				goalIndex:
+					destination.listType === 'goal'
+						? (destination.goalIndex ?? todo.goalIndex ?? null)
+						: null,
+				parentId: targetParentId,
+				pinned: shouldPin ? true : todo.pinned,
+				ordering
+			});
+		} else {
+			store.ensureTaskGoalLink(todoId, viewGoalIndex, {
+				parentId: targetParentId,
+				ordering
+			});
+			if (shouldPin && todo.pinned !== true) {
+				store.pinTask(todoId);
+			}
 		}
-		return false;
+		return;
 	}
 
-	const childrenByParent = new Map();
-	for (const todo of active) {
-		const parentKey = todo.parentId ?? '__root__';
-		if (!childrenByParent.has(parentKey)) childrenByParent.set(parentKey, []);
-		childrenByParent.get(parentKey).push(todo);
-	}
-	for (const siblings of childrenByParent.values()) {
-		siblings.sort((a, b) => getTodoOrdering(a) - getTodoOrdering(b));
+	if (shouldPin && todo.pinned !== true) {
+		store.pinTask(todoId);
 	}
 
-	const rows = [];
-	function walkDescendants(parentId, depth) {
-		for (const child of childrenByParent.get(parentId) ?? []) {
-			rows.push({ todo: child, indentLevel: depth });
-			walkDescendants(child.id, depth + 1);
-		}
-	}
+	store.updateTodo(todoId, {
+		listType: destination.listType ?? todo.listType,
+		listId: destination.listId ?? todo.listId,
+		listName:
+			destination.listType === 'custom'
+				? destination.listName || todo.listName || 'New list'
+				: null,
+		goalIndex:
+			destination.listType === 'goal' ? (destination.goalIndex ?? null) : null,
+		pinned: shouldPin ? true : todo.pinned,
+		parentId: targetParentId,
+		ordering
+	});
+}
 
-	const roots = active
-		.filter((t) => t.pinned === true && !hasPinnedAncestor(t))
-		.sort((a, b) => getTodoOrdering(a) - getTodoOrdering(b));
+/**
+ * Rows for the All Tasks pinned strip: Z1 goal-view hierarchy (task_goal_links goal_index=-1).
+ */
+export function buildFeedPinnedRows(
+	todos,
+	getTodoOrdering = getTodoOrderingValue,
+	{ taskGoalKeySet = new Set(), taskGoalLinks = [] } = {}
+) {
+	const active = (todos ?? []).filter((t) => !t?.isDraft && t.status !== 'done');
+	const pinnedTodos = active.filter((t) =>
+		todoBelongsToGoalView(t, PINNED_GOAL_INDEX, taskGoalKeySet)
+	);
+	if (pinnedTodos.length === 0) return [];
 
-	for (const root of roots) {
-		rows.push({ todo: root, indentLevel: 0 });
-		walkDescendants(root.id, 1);
-	}
+	const organized = organizeTodosWithHierarchy(pinnedTodos, getTodoOrdering, {
+		goalIndex: PINNED_GOAL_INDEX,
+		taskGoalLinks
+	});
 
-	return rows;
+	return organized.map((todo) => ({
+		todo,
+		indentLevel: getGoalViewIndentLevel(todo.id, PINNED_GOAL_INDEX, organized, taskGoalLinks)
+	}));
 }
 
 /** Keep ancestor context when search matches a pinned subtree member. */
@@ -1006,8 +1212,15 @@ export function organizeTodosWithHierarchy(
 ) {
 	const byParent = new Map();
 	const ids = new Set(todosList.map((todo) => todo.id));
+	const goalViewLinks = goalView?.taskGoalLinks ?? [];
+	const goalViewIndex =
+		goalView && typeof goalView.goalIndex !== 'undefined' ? goalView.goalIndex : null;
 	for (const todo of todosList) {
-		const parentKey = todo.parentId && ids.has(todo.parentId) ? todo.parentId : '__root__';
+		const parentId =
+			goalViewIndex !== null
+				? getEffectiveTodoParentId(todo, goalViewIndex, goalViewLinks)
+				: todo.parentId;
+		const parentKey = parentId && ids.has(parentId) ? parentId : '__root__';
 		if (!byParent.has(parentKey)) byParent.set(parentKey, []);
 		byParent.get(parentKey).push(todo);
 	}
@@ -1103,7 +1316,7 @@ export function buildAllTasksFeed({
 		return (
 			(t.listType === 'goal' || !t.listType) &&
 			t.goalIndex == null &&
-			!linkedTaskIdSet.has(t.id)
+			!taskHasRealGoalMembership(t, taskGoalLinks)
 		);
 	}
 
@@ -1123,7 +1336,7 @@ export function buildAllTasksFeed({
 		if (t.listType !== 'goal' && t.listType) continue;
 
 		if (isUnassignedNoGoalTodo(t)) {
-			if (!t.pinned) noGoalTodos.push(t);
+			noGoalTodos.push(t);
 			continue;
 		}
 
@@ -1139,6 +1352,7 @@ export function buildAllTasksFeed({
 			const taskId = key.slice(0, sep);
 			const goalIdx = Number(key.slice(sep + 1));
 			if (taskId !== t.id || Number.isNaN(goalIdx)) continue;
+			if (isPseudoGoalIndex(goalIdx)) continue;
 			if (!goalBuckets.has(goalIdx)) goalBuckets.set(goalIdx, new Map());
 			goalBuckets.get(goalIdx).set(t.id, t);
 		}
@@ -1176,12 +1390,15 @@ export function buildAllTasksFeed({
 	});
 
 	const groups = [...goalGroups];
-	const organizedNoGoal = organizeTodosWithHierarchy(noGoalTodos, getTodoOrdering);
+	const organizedNoGoal = organizeTodosWithHierarchy(noGoalTodos, getTodoOrdering, {
+		goalIndex: NO_GOAL_PSEUDO_INDEX,
+		taskGoalLinks
+	});
 	if (organizedNoGoal.length > 0) {
 		groups.unshift({
 			id: 'no-goal',
 			groupType: 'no-goal',
-			goalIndex: null,
+			goalIndex: NO_GOAL_PSEUDO_INDEX,
 			label: '',
 			href: null,
 			addTitle: 'Add todo without goal',

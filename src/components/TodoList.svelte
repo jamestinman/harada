@@ -3,7 +3,7 @@
 	import { onDestroy, onMount, tick } from 'svelte';
 	import { ChevronDown } from 'lucide-svelte';
 	import TodoItem from '$components/TodoItem.svelte';
-	import { filterFeedPinnedRowsBySearch, getGoalViewSiblings } from '$lib/todoUtils.js';
+	import { getGoalViewSiblings, getEffectiveTodoParentId, filterFeedPinnedRowsBySearch, isNoGoalPseudoIndex, NO_GOAL_PSEUDO_INDEX } from '$lib/todoUtils.js';
 	import { store } from '$stores/store.svelte.js';
 
 	let {
@@ -37,10 +37,12 @@
 		/** One-shot: open title editor on this row without scrolling or URL side effects */
 		focusTodoId = null,
 		onFocusTitleHandled = null,
-		/** When true, pinned tasks show pink chrome; top duplicate strip uses feedPinnedRows + resolveGroupForTodo */
+		/** When true, pinned tasks show pink inline chrome on the All Tasks feed */
 		isMainTodoFeed = false,
+		/** When true (e.g. /todo/Z1), all task rows use pinned pink chrome */
+		pinnedGoalView = false,
 		feedPinnedRows = null,
-		resolveGroupForTodo = null,
+		feedPinnedGroup = null,
 		getPrimaryNoteForTodo = null,
 		getLinkedNotesForTodo = null,
 	onUpsertPrimaryNote = null,
@@ -360,10 +362,18 @@
 			.sort((a, b) => getTodoOrdering(a) - getTodoOrdering(b));
 	}
 
+	function isDragGoalViewGroup(group) {
+		if (!group || typeof group.goalIndex !== 'number') return false;
+		return group.groupType === 'goal' || group.groupType === 'no-goal';
+	}
+
 	function findGoalGroupForTodo(todoId) {
 		if (!todoId) return null;
+		if (feedPinnedGroup?.todos?.some((todo) => todo.id === todoId)) {
+			return feedPinnedGroup;
+		}
 		for (const group of groups) {
-			if (group.groupType !== 'goal' || typeof group.goalIndex !== 'number') continue;
+			if (!isDragGoalViewGroup(group)) continue;
 			if (group.subGroups?.length) {
 				for (const subGroup of group.subGroups) {
 					if ((subGroup.todos || []).some((todo) => todo.id === todoId)) return group;
@@ -425,6 +435,12 @@
 		const title = (todo?.title ?? '').toLowerCase();
 		const md = (todo?.markdown ?? '').toLowerCase();
 		return title.includes(query) || md.includes(query);
+	}
+
+	function getMainFeedPinStyle(todo) {
+		if (pinnedGoalView) return 'top';
+		if (isMainTodoFeed && todo.pinned === true) return 'inline';
+		return null;
 	}
 
 	function groupMatchesSearch(group) {
@@ -741,7 +757,7 @@
 
 			let listType = 'goal';
 			let goalIndex = group.goalIndex ?? null;
-			let listId = goalIndex === null ? 'goal:none' : `goal:${goalIndex}`;
+			let listId = isNoGoalPseudoIndex(goalIndex) ? 'goal:none' : goalIndex === null ? 'goal:none' : `goal:${goalIndex}`;
 			let listName = null;
 
 			if (group.groupType === 'custom') {
@@ -749,12 +765,13 @@
 				goalIndex = null;
 				listId = group.listId;
 				listName = group.label || 'New list';
+			} else if (isNoGoalPseudoIndex(group.goalIndex)) {
+				goalIndex = null;
+				listId = 'goal:none';
 			}
 
 			const viewGoalIndex =
-				useGoalViewOrdering && group.groupType === 'goal' && typeof goalIndex === 'number'
-					? goalIndex
-					: null;
+				useGoalViewOrdering && isDragGoalViewGroup(group) ? group.goalIndex : null;
 			if (!allowCrossListMove && viewGoalIndex === null && dragged.listId !== listId) return null;
 			return {
 				listId,
@@ -784,13 +801,18 @@
 				listType: targetListType,
 				goalIndex: targetGoalIndex,
 				listName: targetListName,
+				pinned: target.pinned === true ? true : undefined,
 				parentId: target.id,
 				afterTodoId: null,
+				adoptGoalsFromTaskId: target.id,
 				viewGoalIndex
 			};
 		}
 
-		const siblingParentId = target.parentId ?? null;
+		const siblingParentId =
+			viewGoalIndex !== null
+				? getEffectiveTodoParentId(target, viewGoalIndex, taskGoalLinks)
+				: (target.parentId ?? null);
 		const siblings =
 			viewGoalIndex !== null
 				? getGoalViewSiblingTodos(viewGoalIndex, siblingParentId, dragged.id)
@@ -806,6 +828,7 @@
 				listName: targetListName,
 				parentId: siblingParentId,
 				afterTodoId: previousSibling ? previousSibling.id : null,
+				adoptGoalsFromTaskId: target.id,
 				viewGoalIndex
 			};
 		}
@@ -816,6 +839,7 @@
 			listName: targetListName,
 			parentId: siblingParentId,
 			afterTodoId: target.id,
+			adoptGoalsFromTaskId: target.id,
 			viewGoalIndex
 		};
 	}
@@ -982,63 +1006,65 @@
 	}}
 >
 
-	{#if isMainTodoFeed && visibleFeedPinned.length > 0 && resolveGroupForTodo}
+	{#if isMainTodoFeed && visibleFeedPinned.length > 0 && feedPinnedGroup}
 		<div class="mb-6 space-y-2">
-			<h2 class="text-sm font-semibold uppercase tracking-wide text-pink-300/90">Pinned</h2>
+			<h2 class="text-sm font-semibold uppercase tracking-wide text-pink-300/90">
+				<a href="/todo/Z1" class="hover:text-pink-200 transition-colors">Pinned</a>
+			</h2>
 			<div class="space-y-2">
 				{#each visibleFeedPinned as row (row.todo.id)}
 					{@const todo = row.todo}
-					{@const pinGroup = resolveGroupForTodo(todo)}
-					{#if pinGroup}
-						<div
-							data-dnd-item-id={todo.id}
-							onpointerdown={(event) => handleTaskPointerDown(event, todo)}
-							class={`relative rounded-lg transition ${itemDragClass(todo.id)}`}
-						>
-							{#if showChildIndicator(todo.id)}
-								<div class="pointer-events-none absolute right-2 top-1/2 z-10 -translate-y-1/2">
-									<span class="rounded bg-violet-800/90 px-1.5 py-0.5 text-xs text-violet-200">nest inside</span>
-								</div>
-							{/if}
-							<TodoItem
-								{todo}
-								onUpdate={(patch) => onUpdate && onUpdate(todo.id, patch)}
-								onDelete={() => onDelete && onDelete(todo.id)}
-								onToggleStatus={() => onToggleStatus && onToggleStatus(todo.id)}
-								onCreateNext={() => onCreateNext && onCreateNext(todo.id, pinGroup)}
-								onDeletePrevious={() => onDeletePrevious && onDeletePrevious(todo.id, pinGroup)}
-								onMakeSubtask={() => onMakeSubtask && onMakeSubtask(todo.id, pinGroup)}
-								onOutdent={() => onOutdent && onOutdent(todo.id, pinGroup)}
-								onTitleFocus={(id) => onTitleFocus && onTitleFocus(id)}
-								indentLevel={row.indentLevel}
-								treeContinues={null}
-								canIndent={canIndent ? canIndent(todo.id, pinGroup) : false}
-								canOutdent={canOutdent ? canOutdent(todo.id, pinGroup) : false}
-								{allGoals}
-								allTodos={pinGroup.todos}
-								pageTaskId={highlightTaskId}
-								focusTitle={focusTodoId === todo.id}
-								onFocusTitleHandled={focusTodoId === todo.id ? onFocusTitleHandled : null}
-								{disableAutoFocus}
-								hasChildren={parentTodoIds.has(todo.id)}
-								isCollapsed={collapsedTodos.has(todo.id)}
-								onToggleCollapse={() => toggleCollapse(todo.id)}
-								isFeedPinnedDuplicate={true}
-								mainFeedPinStyle="top"
-								isHighlighted={highlightTaskId === todo.id}
-								primaryNote={getPrimaryNoteForTodo ? getPrimaryNoteForTodo(todo.id) : null}
-								linkedNotes={getLinkedNotesForTodo ? getLinkedNotesForTodo(todo.id) : []}
-								linkedGoalIndices={getLinkedGoalIndicesForTodo ? getLinkedGoalIndicesForTodo(todo.id) : []}
-								onUpsertPrimaryNote={(content) =>
-									onUpsertPrimaryNote && onUpsertPrimaryNote(todo.id, content, pinGroup)}
-							/>
-						</div>
-					{/if}
+					{@const pinGroup = feedPinnedGroup}
+					<div
+						data-dnd-item-id={todo.id}
+						onpointerdown={(event) => handleTaskPointerDown(event, todo)}
+						class={`relative rounded-lg transition ${itemDragClass(todo.id)}`}
+					>
+						{#if showChildIndicator(todo.id)}
+							<div class="pointer-events-none absolute right-2 top-1/2 z-10 -translate-y-1/2">
+								<span class="rounded bg-violet-800/90 px-1.5 py-0.5 text-xs text-violet-200">nest inside</span>
+							</div>
+						{/if}
+						<TodoItem
+							{todo}
+							onUpdate={(patch) => onUpdate && onUpdate(todo.id, patch)}
+							onDelete={() => onDelete && onDelete(todo.id)}
+							onToggleStatus={() => onToggleStatus && onToggleStatus(todo.id)}
+							onCreateNext={() =>
+								onCreateNext &&
+								onCreateNext(todo.id, pinGroup, { renderedInstance: 'pinned-duplicate' })}
+							onDeletePrevious={() => onDeletePrevious && onDeletePrevious(todo.id, pinGroup)}
+							onMakeSubtask={() => onMakeSubtask && onMakeSubtask(todo.id, pinGroup)}
+							onOutdent={() => onOutdent && onOutdent(todo.id, pinGroup)}
+							onTitleFocus={(id) => onTitleFocus && onTitleFocus(id)}
+							indentLevel={row.indentLevel}
+							treeContinues={null}
+							canIndent={canIndent ? canIndent(todo.id, pinGroup) : false}
+							canOutdent={canOutdent ? canOutdent(todo.id, pinGroup) : false}
+							{allGoals}
+							allTodos={pinGroup.todos}
+							pageTaskId={highlightTaskId}
+							focusTitle={focusTodoId === todo.id}
+							onFocusTitleHandled={focusTodoId === todo.id ? onFocusTitleHandled : null}
+							{disableAutoFocus}
+							hasChildren={parentTodoIds.has(todo.id)}
+							isCollapsed={collapsedTodos.has(todo.id)}
+							onToggleCollapse={() => toggleCollapse(todo.id)}
+							isFeedPinnedDuplicate={true}
+							mainFeedPinStyle="top"
+							isHighlighted={highlightTaskId === todo.id}
+							primaryNote={getPrimaryNoteForTodo ? getPrimaryNoteForTodo(todo.id) : null}
+							linkedNotes={getLinkedNotesForTodo ? getLinkedNotesForTodo(todo.id) : []}
+							linkedGoalIndices={getLinkedGoalIndicesForTodo ? getLinkedGoalIndicesForTodo(todo.id) : []}
+							onUpsertPrimaryNote={(content) =>
+								onUpsertPrimaryNote && onUpsertPrimaryNote(todo.id, content, pinGroup)}
+						/>
+					</div>
 				{/each}
 			</div>
 		</div>
 	{/if}
-	
+
 	{#each groups as group}
 		{#if hasRenderedTodosInGroup(group) || showHeaderTopPlaceholder(group.id) || isGroupCollapsed(group.id)}
 			<div
@@ -1131,7 +1157,9 @@
 												onUpdate={(patch) => onUpdate && onUpdate(todo.id, patch)}
 												onDelete={() => onDelete && onDelete(todo.id)}
 												onToggleStatus={() => onToggleStatus && onToggleStatus(todo.id)}
-												onCreateNext={() => onCreateNext && onCreateNext(todo.id, subGroup)}
+												onCreateNext={() =>
+													onCreateNext &&
+													onCreateNext(todo.id, subGroup, { renderedInstance: 'group' })}
 												onDeletePrevious={() => onDeletePrevious && onDeletePrevious(todo.id, subGroup)}
 												onMakeSubtask={() => onMakeSubtask && onMakeSubtask(todo.id, subGroup)}
 												onOutdent={() => onOutdent && onOutdent(todo.id, subGroup)}
@@ -1149,7 +1177,7 @@
 												hasChildren={parentTodoIds.has(todo.id)}
 												isCollapsed={collapsedTodos.has(todo.id)}
 												onToggleCollapse={() => toggleCollapse(todo.id)}
-												mainFeedPinStyle={isMainTodoFeed && todo.pinned ? 'inline' : null}
+												mainFeedPinStyle={getMainFeedPinStyle(todo)}
 												isHighlighted={highlightTaskId === todo.id}
 												primaryNote={getPrimaryNoteForTodo ? getPrimaryNoteForTodo(todo.id) : null}
 												linkedNotes={getLinkedNotesForTodo ? getLinkedNotesForTodo(todo.id) : []}
@@ -1195,7 +1223,8 @@
 								onUpdate={(patch) => onUpdate && onUpdate(todo.id, patch)}
 								onDelete={() => onDelete && onDelete(todo.id)}
 								onToggleStatus={() => onToggleStatus && onToggleStatus(todo.id)}
-								onCreateNext={() => onCreateNext && onCreateNext(todo.id, group)}
+								onCreateNext={() =>
+									onCreateNext && onCreateNext(todo.id, group, { renderedInstance: 'group' })}
 								onDeletePrevious={() => onDeletePrevious && onDeletePrevious(todo.id, group)}
 								onMakeSubtask={() => onMakeSubtask && onMakeSubtask(todo.id, group)}
 								onOutdent={() => onOutdent && onOutdent(todo.id, group)}
@@ -1213,7 +1242,7 @@
 								hasChildren={parentTodoIds.has(todo.id)}
 								isCollapsed={collapsedTodos.has(todo.id)}
 								onToggleCollapse={() => toggleCollapse(todo.id)}
-								mainFeedPinStyle={isMainTodoFeed && todo.pinned ? 'inline' : null}
+								mainFeedPinStyle={getMainFeedPinStyle(todo)}
 								isHighlighted={highlightTaskId === todo.id}
 								primaryNote={getPrimaryNoteForTodo ? getPrimaryNoteForTodo(todo.id) : null}
 								linkedNotes={getLinkedNotesForTodo ? getLinkedNotesForTodo(todo.id) : []}

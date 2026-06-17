@@ -15,7 +15,7 @@ This skill covers **(1) human onboarding** in the app and **(2) optional program
 
 | Mode | In the app | Agent API (after approval) |
 |------|------------|----------------------------|
-| **Life goals** | Edit cells on the Harada chart (title, description, status, color). Center cell is commonly **E5** (grid index `40`); other cells use chess-like addresses (**A1**–**I9**) or indices `0`–`80`. | `GET/POST /api/agent/goals`, `GET/PATCH/DELETE /api/agent/goals/[goalIndex]` |
+| **Life goals** | Edit cells on the Harada chart (title, description, status, color). Center cell is commonly **E5** (grid index `40`); other cells use chess-like addresses (**A1**–**I9**) or indices `0`–`80`. **Z1** (index `-1`) is the reserved pseudo-goal for pinned tasks/notes; **Z2** (index `-2`) is an internal pseudo-goal for no-goal task hierarchy—neither appears on the chart. | `GET/POST /api/agent/goals`, `GET/PATCH/DELETE /api/agent/goals/[goalIndex]` |
 | **Todo list** | Tasks on a goal or a **custom list** (named list, not tied to the chart). | `GET/POST /api/agent/tasks`, `GET/PATCH/DELETE /api/agent/tasks/[taskId]` |
 | **Markdown notes** | Standalone notes; content is markdown. Optional link to a goal index when creating. | `GET/POST /api/agent/notes`, `GET/PATCH/DELETE /api/agent/notes/[noteId]` |
 

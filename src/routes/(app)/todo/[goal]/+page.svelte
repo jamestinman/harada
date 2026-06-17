@@ -21,14 +21,23 @@
 		updateGoalTimestamp,
 		buildTaskNoteIndexMaps,
 		buildAllTasksFeed,
-		buildFeedPinnedRows,
 		resolveTopOrderingForNewTodo,
-		organizeTodosWithHierarchy,
 		getTopOrderingForGoalView,
 		getOrderingAfterInGoalView,
-		isTaskPrimaryOnGoal
+		getEffectiveTodoParentId,
+		organizeTodosWithHierarchy,
+		executeTodoMove,
+		getGoalViewIndentLevel,
+		getGoalLabelFromIndex,
+		PINNED_GOAL_INDEX,
+		NO_GOAL_PSEUDO_INDEX,
+		isPinnedGoalIndex,
+		isNoGoalPseudoIndex,
+		taskHasRealGoalMembership,
+		todoBelongsToGoalView
 	} from '$lib/todoUtils.js';
 	import TodoList from '$components/TodoList.svelte';
+	import TodoSidebarNav from '$components/TodoSidebarNav.svelte';
 	import WorkspaceToolbar from '$components/WorkspaceToolbar.svelte';
 	import { navComposerHandlers } from '$stores/navComposerHandlers.svelte.js';
 	import {
@@ -102,20 +111,25 @@
 		return Array.from({ length: 81 }, (_, i) => i);
 	});
 
-	// Compute parent goal index
-	const parentGoalIndex = $derived.by(() => {
-		if (!goalParam) return null;
-		const parsed = nomenclatureToIndex(goalParam, goalIndices);
-		if (parsed === null) return null;
-		const canonical = canonicalGoalIndex(parsed);
-		return getParentGoalIndex(canonical);
-	});
-
 	// Compute goal index from param
 	const goalIndex = $derived.by(() => {
 		if (!goalParam) return null;
 		const parsed = nomenclatureToIndex(goalParam, goalIndices);
-		return parsed === null ? null : canonicalGoalIndex(parsed);
+		if (parsed === null) return null;
+		if (isPinnedGoalIndex(parsed)) return PINNED_GOAL_INDEX;
+		return canonicalGoalIndex(parsed);
+	});
+
+	const isPinnedGoalView = $derived(goalIndex === PINNED_GOAL_INDEX);
+	const pinnedTaskCount = $derived(store.getPinnedTaskCount());
+
+	// Compute parent goal index
+	const parentGoalIndex = $derived.by(() => {
+		if (!goalParam || isPinnedGoalView) return null;
+		const parsed = nomenclatureToIndex(goalParam, goalIndices);
+		if (parsed === null) return null;
+		const canonical = canonicalGoalIndex(parsed);
+		return getParentGoalIndex(canonical);
 	});
 
 	// Handle invalid goal param and update store's currentGoalIndex
@@ -127,33 +141,25 @@
 		}
 		// Update store's currentGoalIndex for SquareMap highlighting
 		if (goalIndex !== null) {
-			store.currentGoalIndex = goalIndex;
+			store.currentGoalIndex = isPinnedGoalIndex(goalIndex) ? null : goalIndex;
 		}
 	});
 
 	// Compute goal label - use edited title while editing to prevent reactivity issues
 	const goalLabel = $derived.by(() => {
 		if (goalIndex === null) return '';
-		// If editing, use the edited title to prevent reactivity from resetting the display
+		if (isPinnedGoalView) return 'Pinned';
 		if (isEditingGoal) {
 			return editedGoalTitle.trim() || indexToNomenclature(goalIndex);
 		}
-		return getGoalLabelFromIndex(goalIndex);
+		return getGoalLabelFromIndex(goalIndex, grid);
 	});
 
 	// Compute parent goal label
 	const parentGoalLabel = $derived.by(() => {
 		if (parentGoalIndex === null) return null;
-		return getGoalLabelFromIndex(parentGoalIndex);
+		return getGoalLabelFromIndex(parentGoalIndex, grid);
 	});
-
-	// Helper function - just return the text or code, no prefix
-	function getGoalLabelFromIndex(index) {
-		if (index === null || index < 0 || index > 80) return 'Unknown';
-		const cell = grid[index];
-		const text = (cell?.text ?? '').trim();
-		return text || indexToNomenclature(index);
-	}
 
 	const ORDER_STEP = 1024;
 	const GOAL_GROUP_ORDER_STEP = 1024;
@@ -219,54 +225,15 @@
 	}
 
 	function moveTodo(todoId, destination) {
-		const todo = store.harada_chart.todos.find((t) => t.id === todoId);
-		if (!todo || !destination) return;
-
-		const viewGoalIndex =
-			typeof destination.viewGoalIndex === 'number' ? destination.viewGoalIndex : null;
-		if (viewGoalIndex !== null) {
-			const targetParentId = destination.parentId ?? null;
-			const afterTodoId = destination.afterTodoId ?? null;
-			const goalViewOpts = { taskGoalKeySet, taskGoalLinks };
-			const ordering = afterTodoId
-				? getOrderingAfterInGoalView(todos, viewGoalIndex, targetParentId, afterTodoId, {
-						...goalViewOpts,
-						normalize: (goalIdx, parentId) =>
-							store.normalizeGoalViewOrderings(goalIdx, parentId)
-					})
-				: getTopOrderingForGoalView(todos, viewGoalIndex, {
-						...goalViewOpts,
-						parentId: targetParentId
-					});
-
-			if (isTaskPrimaryOnGoal(todo, viewGoalIndex)) {
-				updateTodo(todoId, { parentId: targetParentId, ordering });
-			} else {
-				store.applyTodoOrderingInGoalView(todoId, viewGoalIndex, ordering);
-			}
-			return;
-		}
-
-		const targetListId = destination.listId ?? todo.listId;
-		const targetParentId = destination.parentId ?? null;
-		const afterTodoId = destination.afterTodoId ?? null;
-		const ordering = afterTodoId
-			? getOrderingAfter(targetListId, targetParentId, afterTodoId)
-			: getTopOrdering(targetListId, targetParentId);
-
-		updateTodo(todoId, {
-			listType: destination.listType ?? todo.listType,
-			listId: targetListId,
-			listName:
-				destination.listType === 'custom'
-					? destination.listName || todo.listName || 'New list'
-					: null,
-			goalIndex:
-				destination.listType === 'goal'
-					? (destination.goalIndex ?? null)
-					: null,
-			parentId: targetParentId,
-			ordering
+		executeTodoMove({
+			store,
+			todoId,
+			destination,
+			todos,
+			taskGoalKeySet,
+			taskGoalLinks,
+			getListOrderingAfter: getOrderingAfter,
+			getListTopOrdering: getTopOrdering
 		});
 	}
 
@@ -379,10 +346,9 @@
 		const filtered = todos.filter((t) => {
 			const matchesGoal =
 				(t.listType === 'goal' || !t.listType) &&
-				(t.goalIndex === targetGoalIndex ||
-					taskGoalKeySet.has(`${t.id}:${targetGoalIndex}`));
+				todoBelongsToGoalView(t, targetGoalIndex, taskGoalKeySet);
 			const isCompleted = t.status === 'done';
-			return matchesGoal && (showCompleted || !isCompleted);
+			return matchesGoal && ((isPinnedGoalIndex(targetGoalIndex) ? false : showCompleted) || !isCompleted);
 		});
 		return organizeTodosWithHierarchy(filtered, getTodoOrdering, {
 			goalIndex: targetGoalIndex,
@@ -392,6 +358,7 @@
 
 	function getGoalScopeIndices() {
 		if (goalIndex === null) return [];
+		if (isPinnedGoalIndex(goalIndex)) return [PINNED_GOAL_INDEX];
 
 		// Outer block centers (B2, E2, etc.) should show their full local 3x3 child grid.
 		if (goalIndex !== 40) {
@@ -418,6 +385,20 @@
 	}
 
 	const goalGroups = $derived.by(() => {
+		if (isPinnedGoalView) {
+			return [
+				{
+					id: 'goal-pinned',
+					groupType: 'goal',
+					goalIndex: PINNED_GOAL_INDEX,
+					label: 'Pinned',
+					href: '/todo/Z1',
+					addTitle: 'Add pinned task',
+					todos: getVisibleGoalTodos(PINNED_GOAL_INDEX)
+				}
+			];
+		}
+
 		const indices = getGoalScopeIndices();
 
 		// Default behavior: one group per goal
@@ -425,7 +406,7 @@
 			.map((idx) => ({
 				id: `goal-${idx}`,
 				goalIndex: idx,
-				label: getGoalLabelFromIndex(idx),
+				label: getGoalLabelFromIndex(idx, grid),
 				href: `/todo/${indexToNomenclature(idx)}`,
 				addTitle: idx === goalIndex ? 'Add todo to this goal' : 'Add todo to this sub-goal',
 				todos: getVisibleGoalTodos(idx)
@@ -443,7 +424,7 @@
 			.map((idx) => ({
 				id: `goal-${idx}`,
 				goalIndex: idx,
-				label: getGoalLabelFromIndex(idx),
+				label: getGoalLabelFromIndex(idx, grid),
 				href: `/todo/${indexToNomenclature(idx)}`,
 				todos: getVisibleGoalTodos(idx),
 				goalOrdering: getGoalGroupOrdering(idx)
@@ -479,7 +460,6 @@
 	);
 	const allTasksTodoGroups = $derived(allTasksFeed.todoGroups);
 	const allTasksGroupsByTodoId = $derived(allTasksFeed.groupsByTodoId);
-	const allTasksFeedPinnedRows = $derived(buildFeedPinnedRows(todos, getTodoOrdering));
 
 	const associatedGoalNotes = $derived.by(() => {
 		if (typeof goalIndex !== 'number') return [];
@@ -488,8 +468,7 @@
 				.filter(
 					(todo) =>
 						(todo.listType === 'goal' || !todo.listType) &&
-						(todo.goalIndex === goalIndex ||
-							taskGoalKeySet.has(`${todo.id}:${goalIndex}`))
+						todoBelongsToGoalView(todo, goalIndex, taskGoalKeySet)
 				)
 				.map((todo) => todo.id)
 		);
@@ -643,6 +622,12 @@
 	// When this goal has no todos, ensure one blank todo exists so the user can type immediately
 	$effect(() => {
 		if (goalIndex === null || !dataLoaded) return;
+		if (isPinnedGoalView) {
+			if (getVisibleGoalTodos(PINNED_GOAL_INDEX).length === 0) {
+				addTodo(PINNED_GOAL_INDEX, { draft: true });
+			}
+			return;
+		}
 		if (goalGroups.length === 0) {
 			addTodo(goalIndex, { draft: true });
 		}
@@ -651,6 +636,26 @@
 	// Todo management functions
 	function addTodo(targetGoalIndex = goalIndex, { draft = false } = {}) {
 		if (targetGoalIndex === null) return;
+		if (isPinnedGoalIndex(targetGoalIndex)) {
+			const listMeta = buildGoalListMeta(null);
+			const ordering = getTopOrderingForGoalView(todos, PINNED_GOAL_INDEX, {
+				taskGoalKeySet,
+				taskGoalLinks
+			});
+			const todo = {
+				...defaultTodo(),
+				...listMeta,
+				pinned: true,
+				isDraft: draft,
+				parentId: null,
+				ordering
+			};
+			store.harada_chart.todos = [...store.harada_chart.todos, todo];
+			store.ensureTaskGoalLink(todo.id, PINNED_GOAL_INDEX, { ordering, parentId: null });
+			activeTodoId = todo.id;
+			if (!draft) store.registerTodoMutation(todo.id, { immediate: true });
+			return todo;
+		}
 		const listMeta = buildGoalListMeta(targetGoalIndex);
 		const todo = {
 			...defaultTodo(),
@@ -705,6 +710,10 @@
 		// Add to current goal when on a goal page
 		if (!title && !markdown && selectedGoalIndex === undefined && !listType && !listName) {
 			if (goalIndex !== null) {
+				if (isPinnedGoalIndex(goalIndex)) {
+					addTodo(PINNED_GOAL_INDEX, { draft: true });
+					return;
+				}
 				const listMeta = buildGoalListMeta(goalIndex);
 				const todo = {
 					...defaultTodo(),
@@ -740,8 +749,37 @@
 			return;
 		}
 		const targetGoalIndex =
-			typeof selectedGoalIndex === 'number' ? canonicalGoalIndex(selectedGoalIndex) : goalIndex;
+			typeof selectedGoalIndex === 'number'
+				? isPinnedGoalIndex(selectedGoalIndex)
+					? PINNED_GOAL_INDEX
+					: canonicalGoalIndex(selectedGoalIndex)
+				: goalIndex;
 		if (targetGoalIndex === null) return;
+		if (isPinnedGoalIndex(targetGoalIndex)) {
+			const ordering = getTopOrderingForGoalView(todos, PINNED_GOAL_INDEX, {
+				taskGoalKeySet,
+				taskGoalLinks
+			});
+			const listMeta = buildGoalListMeta(null);
+			const todo = {
+				...defaultTodo(),
+				title: title || '',
+				markdown: '',
+				...listMeta,
+				pinned: true,
+				parentId: null,
+				ordering
+			};
+			store.harada_chart.todos = [...store.harada_chart.todos, todo];
+			store.ensureTaskGoalLink(todo.id, PINNED_GOAL_INDEX, { ordering, parentId: null });
+			if (markdown?.trim()) {
+				store.setPrimaryNoteForTask(todo.id, { content: markdown.trim() });
+			}
+			activeTodoId = todo.id;
+			store.registerTodoMutation(todo.id, { immediate: true });
+			if (shouldNavigate) navigateToNewTask(todo);
+			return;
+		}
 		const listMeta = buildGoalListMeta(targetGoalIndex);
 		const todo = {
 			...defaultTodo(),
@@ -812,7 +850,7 @@
 		return (
 			(t.listType === 'goal' || !t.listType) &&
 			t.goalIndex == null &&
-			!linkedTaskIdSet.has(t.id)
+			!taskHasRealGoalMembership(t, taskGoalLinks)
 		);
 	}
 
@@ -822,21 +860,13 @@
 			noGoal ?? {
 				id: 'no-goal',
 				groupType: 'no-goal',
-				goalIndex: null,
+				goalIndex: NO_GOAL_PSEUDO_INDEX,
 				label: '',
 				href: null,
 				addTitle: 'Add todo without goal',
 				todos: []
 			}
 		);
-	}
-
-	function resolveAllTasksGroupForTodo(todo) {
-		const t = normalizeTodoListMeta(todo);
-		if (isUnassignedNoGoalTodo(t) && t.pinned === true) {
-			return noGoalGroupMeta();
-		}
-		return allTasksGroupsByTodoId.get(t.id) ?? null;
 	}
 
 	function deleteTodo(id) {
@@ -847,21 +877,87 @@
 		store.cycleTodoStatus(id);
 	}
 
-	function createNextTodo(currentTodoId, targetGoalIndex = goalIndex) {
+	function createNextTodo(currentTodoId, targetGoalIndex = goalIndex, instanceContext = null) {
 		if (targetGoalIndex === null) return null;
 		const currentTodo = store.harada_chart.todos.find((t) => t.id === currentTodoId);
 		if (!currentTodo) return null;
+
+		if (isPinnedGoalIndex(targetGoalIndex)) {
+			const parentId = getEffectiveTodoParentId(
+				currentTodoId,
+				PINNED_GOAL_INDEX,
+				taskGoalLinks,
+				currentTodo.parentId ?? null
+			);
+			const ordering = getOrderingAfterInGoalView(
+				todos,
+				PINNED_GOAL_INDEX,
+				parentId,
+				currentTodoId,
+				{ taskGoalKeySet, taskGoalLinks }
+			);
+			const listMeta = buildGoalListMeta(null);
+			const newTodo = {
+				...defaultTodo(),
+				...listMeta,
+				pinned: true,
+				parentId,
+				ordering
+			};
+			store.harada_chart.todos = [...store.harada_chart.todos, newTodo];
+			store.ensureTaskGoalLink(newTodo.id, PINNED_GOAL_INDEX, { ordering, parentId });
+			activeTodoId = newTodo.id;
+			requestTaskFocus(newTodo.id);
+			store.registerTodoMutation(newTodo.id, { immediate: true });
+			return newTodo;
+		}
+
+		if (isNoGoalPseudoIndex(targetGoalIndex)) {
+			const parentId = getEffectiveTodoParentId(
+				currentTodoId,
+				NO_GOAL_PSEUDO_INDEX,
+				taskGoalLinks,
+				currentTodo.parentId ?? null
+			);
+			const ordering = getOrderingAfterInGoalView(
+				todos,
+				NO_GOAL_PSEUDO_INDEX,
+				parentId,
+				currentTodoId,
+				{ taskGoalKeySet, taskGoalLinks }
+			);
+			const listMeta = buildGoalListMeta(null);
+			const newTodo = {
+				...defaultTodo(),
+				...listMeta,
+				parentId,
+				ordering
+			};
+			store.harada_chart.todos = [...store.harada_chart.todos, newTodo];
+			store.ensureNoGoalTaskLink(newTodo.id, { ordering, parentId });
+			activeTodoId = newTodo.id;
+			requestTaskFocus(newTodo.id);
+			store.registerTodoMutation(newTodo.id, { immediate: true });
+			return newTodo;
+		}
+
 		const normalizedCurrentTodo = normalizeTodoListMeta(currentTodo);
-		const targetListId = normalizedCurrentTodo.listId;
+		const targetMeta = {
+			listType: normalizedCurrentTodo.listType,
+			listId: normalizedCurrentTodo.listId,
+			listName: normalizedCurrentTodo.listName || null,
+			goalIndex: normalizedCurrentTodo.goalIndex
+		};
+		const targetListId = targetMeta.listId;
 		const targetParentId = normalizedCurrentTodo.parentId ?? null;
 		const newOrdering = getOrderingAfter(targetListId, targetParentId, currentTodoId);
 
 		const newTodo = {
 			...defaultTodo(),
-			goalIndex: normalizedCurrentTodo.goalIndex,
-			listType: normalizedCurrentTodo.listType,
-			listId: normalizedCurrentTodo.listId,
-			listName: normalizedCurrentTodo.listName || null,
+			goalIndex: targetMeta.goalIndex,
+			listType: targetMeta.listType,
+			listId: targetMeta.listId,
+			listName: targetMeta.listName,
 			parentId: targetParentId,
 			ordering: newOrdering
 		};
@@ -1148,29 +1244,13 @@
 					composeTabDefault="task"
 				/>
 			</div>
-				<div class="relative ml-2 border-l border-slate-200/50 pl-2 dark:border-slate-700/40 space-y-0.5">
-					<a
-						href="/todo"
-						class="flex items-center justify-between rounded-lg px-2.5 py-1.5 text-sm font-semibold transition hover:bg-slate-500/10 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200"
-					>
-						<span>All Tasks</span>
-						<span class="text-xs opacity-50">{todos.filter((t) => !t.isDraft && t.status !== 'done').length}</span>
-					</a>
-					{#each goalMenuItems as item (item.id)}
-						<a
-							href={item.href}
-							class={`flex items-center justify-between rounded-lg px-2.5 py-1.5 text-sm transition ${
-								item.goalIndex === goalIndex
-									? 'bg-violet-500/20 text-violet-800 dark:bg-violet-500/25 dark:text-violet-200'
-									: 'text-slate-700 hover:bg-slate-500/10 dark:text-slate-200 dark:hover:bg-white/5'
-							}`}
-							aria-current={item.goalIndex === goalIndex ? 'page' : undefined}
-						>
-							<span class="truncate pr-3">{item.label}</span>
-							<span class="text-xs opacity-50">{item.count}</span>
-						</a>
-					{/each}
-				</div>
+			<TodoSidebarNav
+				{goalMenuItems}
+				allTasksCount={todos.filter((t) => !t.isDraft && t.status !== 'done').length}
+				pinnedCount={pinnedTaskCount}
+				activeGoalIndex={goalIndex}
+				onGoalClick={() => store.clearLastOpenedNote?.()}
+			/>
 			</aside>
 
 			<div class="min-w-0">
@@ -1188,18 +1268,18 @@
 						<TodoList
 							groups={allTasksTodoGroups}
 							isMainTodoFeed={true}
-							feedPinnedRows={allTasksFeedPinnedRows}
-							resolveGroupForTodo={resolveAllTasksGroupForTodo}
 							{allGoals}
 							onUpdate={updateTodo}
 							onDelete={deleteTodo}
 							onToggleStatus={cycleTodoStatus}
-							onCreateNext={(todoId, group) => createNextTodo(todoId, group?.goalIndex ?? null)}
+							onCreateNext={(todoId, group, instanceContext) =>
+								createNextTodo(todoId, group?.goalIndex ?? null, instanceContext)}
 							onDeletePrevious={(todoId, group) => deleteAndFocusPrevious(todoId, group?.goalIndex ?? null)}
 							onMakeSubtask={(todoId, group) => makeSubtask(todoId, group?.goalIndex ?? null)}
 							onOutdent={(todoId) => outdentTodo(todoId)}
 							onTitleFocus={setHighlightedTaskId}
-							getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
+							getIndentLevel={(todoId, group) =>
+								getGoalViewIndentLevel(todoId, group.goalIndex, group.todos, taskGoalLinks)}
 							canIndent={(todoId, group) => canIndentTodo(todoId, group?.goalIndex ?? null)}
 							canOutdent={(todoId) => canOutdentTodo(todoId)}
 							onCreateTodo={createTodoFromComposer}
@@ -1235,7 +1315,9 @@
 					<div class="mb-6">
 						<div class="mb-4 flex items-start justify-between gap-4">
 							<div class="flex-1">
-								{#if isEditingGoal}
+								{#if isPinnedGoalView}
+									<h1 class="goal-header-title text-pink-400 dark:text-pink-300">Pinned</h1>
+								{:else if isEditingGoal}
 									<div class="space-y-3">
 										<input
 											type="text"
@@ -1295,6 +1377,7 @@
 									</button>
 								{/if}
 							</div>
+							{#if !isPinnedGoalView}
 							<div class="flex shrink-0 flex-col items-end gap-2">
 								<div class="flex gap-1">
 									{#each goalColors as color}
@@ -1317,11 +1400,12 @@
 									<span>Show completed</span>
 								</label>
 							</div>
+							{/if}
 						</div>
 
 					<div class="mb-4 flex flex-wrap items-center gap-2">
 						<div class="ml-auto flex items-center gap-2">
-							{#if isEditingGoal}
+							{#if isEditingGoal && !isPinnedGoalView}
 								<button
 									type="button"
 									onclick={clearGoal}
@@ -1369,17 +1453,20 @@
 					{#if activeGoalTab === 'tasks'}
 						<TodoList
 							groups={goalGroups}
+							pinnedGoalView={isPinnedGoalView}
 							{allGoals}
 							onAddToGroup={(group) => addTodo(group.goalIndex)}
 							onUpdate={updateTodo}
 							onDelete={deleteTodo}
 							onToggleStatus={cycleTodoStatus}
-							onCreateNext={(todoId, group) => createNextTodo(todoId, group.goalIndex)}
+							onCreateNext={(todoId, group, instanceContext) =>
+								createNextTodo(todoId, group.goalIndex, instanceContext)}
 							onDeletePrevious={(todoId, group) => deleteAndFocusPrevious(todoId, group.goalIndex)}
 							onMakeSubtask={(todoId, group) => makeSubtask(todoId, group.goalIndex)}
 							onOutdent={(todoId) => outdentTodo(todoId)}
 							onTitleFocus={setHighlightedTaskId}
-							getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
+							getIndentLevel={(todoId, group) =>
+								getGoalViewIndentLevel(todoId, group.goalIndex, group.todos, taskGoalLinks)}
 							canIndent={(todoId, group) => canIndentTodo(todoId, group.goalIndex)}
 							canOutdent={(todoId) => canOutdentTodo(todoId)}
 							disableAutoFocus={hasNoCustomTitle || isEditingGoal}
@@ -1442,18 +1529,23 @@
 					<TodoList
 						groups={allTasksTodoGroups}
 						isMainTodoFeed={true}
-						feedPinnedRows={allTasksFeedPinnedRows}
-						resolveGroupForTodo={resolveAllTasksGroupForTodo}
 						{allGoals}
 						onUpdate={updateTodo}
 						onDelete={deleteTodo}
 						onToggleStatus={cycleTodoStatus}
-						onCreateNext={(todoId, group) => createNextTodo(todoId, group?.goalIndex ?? null)}
+						onCreateNext={(todoId, group, instanceContext) =>
+							createNextTodo(todoId, group?.goalIndex ?? null, instanceContext)}
 						onDeletePrevious={(todoId, group) => deleteAndFocusPrevious(todoId, group?.goalIndex ?? null)}
 						onMakeSubtask={(todoId, group) => makeSubtask(todoId, group?.goalIndex ?? null)}
 						onOutdent={(todoId) => outdentTodo(todoId)}
 						onTitleFocus={setHighlightedTaskId}
-						getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
+						getIndentLevel={(todoId, group) =>
+							getGoalViewIndentLevel(
+								todoId,
+								group?.goalIndex ?? goalIndex,
+								group.todos,
+								taskGoalLinks
+							)}
 						canIndent={(todoId, group) => canIndentTodo(todoId, group?.goalIndex ?? null)}
 						canOutdent={(todoId) => canOutdentTodo(todoId)}
 						onCreateTodo={createTodoFromComposer}
@@ -1477,17 +1569,25 @@
 				{:else}
 					<TodoList
 						groups={goalGroups}
+						pinnedGoalView={isPinnedGoalView}
 						{allGoals}
 						onAddToGroup={(group) => addTodo(group.goalIndex)}
 						onUpdate={updateTodo}
 						onDelete={deleteTodo}
 						onToggleStatus={cycleTodoStatus}
-						onCreateNext={(todoId, group) => createNextTodo(todoId, group.goalIndex)}
+						onCreateNext={(todoId, group, instanceContext) =>
+							createNextTodo(todoId, group.goalIndex, instanceContext)}
 						onDeletePrevious={(todoId, group) => deleteAndFocusPrevious(todoId, group.goalIndex)}
 						onMakeSubtask={(todoId, group) => makeSubtask(todoId, group.goalIndex)}
 						onOutdent={(todoId) => outdentTodo(todoId)}
 						onTitleFocus={setHighlightedTaskId}
-						getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
+						getIndentLevel={(todoId, group) =>
+							getGoalViewIndentLevel(
+								todoId,
+								group?.goalIndex ?? goalIndex,
+								group.todos,
+								taskGoalLinks
+							)}
 						canIndent={(todoId, group) => canIndentTodo(todoId, group.goalIndex)}
 						canOutdent={(todoId) => canOutdentTodo(todoId)}
 						disableAutoFocus={hasNoCustomTitle || isEditingGoal}
@@ -1520,31 +1620,13 @@
 				<div class="w-1/2 pr-4">
 				<div class="h-[calc(100vh-8rem)] overflow-y-auto px-2 pt-2 pb-3">
 					<h2 class="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">TASKS</h2>
-					<div class="relative ml-2 border-l border-slate-200/50 pl-2 dark:border-slate-700/40 space-y-0.5">
-						<a
-							href="/todo"
-							onclick={() => (mobileMenuOpen = false)}
-							class="flex items-center justify-between rounded-lg px-2.5 py-1.5 text-sm font-semibold transition hover:bg-slate-500/10 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200"
-						>
-							<span>All Tasks</span>
-							<span class="text-xs opacity-50">{todos.filter((t) => !t.isDraft && t.status !== 'done').length}</span>
-						</a>
-						{#each goalMenuItems as item (item.id)}
-							<a
-								href={item.href}
-								onclick={() => (mobileMenuOpen = false)}
-								class={`flex items-center justify-between rounded-lg px-2.5 py-1.5 text-sm transition ${
-									item.goalIndex === goalIndex
-										? 'bg-violet-500/20 text-violet-800 dark:bg-violet-500/25 dark:text-violet-200'
-										: 'text-slate-700 hover:bg-slate-500/10 dark:text-slate-200 dark:hover:bg-white/5'
-								}`}
-								aria-current={item.goalIndex === goalIndex ? 'page' : undefined}
-							>
-								<span class="truncate pr-3">{item.label}</span>
-								<span class="text-xs opacity-50">{item.count}</span>
-							</a>
-						{/each}
-					</div>
+					<TodoSidebarNav
+						{goalMenuItems}
+						allTasksCount={todos.filter((t) => !t.isDraft && t.status !== 'done').length}
+						pinnedCount={pinnedTaskCount}
+						activeGoalIndex={goalIndex}
+						onGoalClick={() => (mobileMenuOpen = false)}
+					/>
 				</div>
 				</div>
 
@@ -1562,7 +1644,9 @@
 						<div class="mb-6">
 							<div class="mb-4 flex items-start justify-between gap-4">
 								<div class="flex-1">
-									{#if isEditingGoal}
+									{#if isPinnedGoalView}
+										<h1 class="goal-header-title text-pink-400 dark:text-pink-300">Pinned</h1>
+									{:else if isEditingGoal}
 										<div class="space-y-3">
 											<input
 												type="text"
@@ -1622,6 +1706,7 @@
 										</button>
 									{/if}
 								</div>
+								{#if !isPinnedGoalView}
 								<div class="flex shrink-0 flex-col items-end gap-2">
 									<div class="flex gap-1">
 										{#each goalColors as color}
@@ -1644,10 +1729,11 @@
 										<span>Show completed</span>
 									</label>
 								</div>
+								{/if}
 							</div>
 						<div class="mb-4 flex flex-wrap items-center gap-2">
 							<div class="ml-auto flex items-center gap-2">
-								{#if isEditingGoal}
+								{#if isEditingGoal && !isPinnedGoalView}
 									<button
 										type="button"
 										onclick={clearGoal}
@@ -1695,17 +1781,20 @@
 						{#if activeGoalTab === 'tasks'}
 							<TodoList
 								groups={goalGroups}
+							pinnedGoalView={isPinnedGoalView}
 								{allGoals}
 								onAddToGroup={(group) => addTodo(group.goalIndex)}
 								onUpdate={updateTodo}
 								onDelete={deleteTodo}
 								onToggleStatus={cycleTodoStatus}
-								onCreateNext={(todoId, group) => createNextTodo(todoId, group.goalIndex)}
+								onCreateNext={(todoId, group, instanceContext) =>
+									createNextTodo(todoId, group.goalIndex, instanceContext)}
 								onDeletePrevious={(todoId, group) => deleteAndFocusPrevious(todoId, group.goalIndex)}
 								onMakeSubtask={(todoId, group) => makeSubtask(todoId, group.goalIndex)}
 								onOutdent={(todoId) => outdentTodo(todoId)}
 								onTitleFocus={setHighlightedTaskId}
-								getIndentLevel={(todoId, group) => getIndentLevel(todoId, group.todos)}
+								getIndentLevel={(todoId, group) =>
+								getGoalViewIndentLevel(todoId, group.goalIndex, group.todos, taskGoalLinks)}
 								canIndent={(todoId, group) => canIndentTodo(todoId, group.goalIndex)}
 								canOutdent={(todoId) => canOutdentTodo(todoId)}
 								disableAutoFocus={hasNoCustomTitle || isEditingGoal}

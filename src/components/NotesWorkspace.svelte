@@ -9,7 +9,12 @@
 		indexToNomenclature,
 		nomenclatureToIndex,
 		getNoteTitle,
-		renderNoteBodyMarkdown
+		renderNoteBodyMarkdown,
+		PINNED_GOAL_INDEX,
+		isPinnedGoalIndex,
+		isPinnedGoalParam,
+		getGoalLabelFromIndex,
+		filterDisplayGoalIndices
 	} from '$lib/todoUtils.js';
 	import {
 		cancelNoteSpeech,
@@ -22,7 +27,7 @@
 	import ClearableTextInput from './ClearableTextInput.svelte';
 	import NotesPresentationOverlay from './NotesPresentationOverlay.svelte';
 	import NoteHybridMarkdownEditor from './NoteHybridMarkdownEditor.svelte';
-	import { ChevronLeft, Trash2, Maximize2, Volume2, Square, SquarePen } from 'lucide-svelte';
+	import { ChevronLeft, Trash2, Maximize2, Volume2, Square, SquarePen, Pin } from 'lucide-svelte';
 	import {
 		persistNotesMobileSidebar,
 		readNotesMobileSidebarOpen,
@@ -66,20 +71,17 @@
 	}
 
 	const goalIndices = Array.from({ length: 81 }, (_, i) => i);
-	function getGoalLabelFromIndex(index) {
-		if (index === null || index < 0 || index > 80) return 'Unknown goal';
-		const cell = grid[index];
-		const text = (cell?.text ?? '').trim();
-		return text || indexToNomenclature(index);
-	}
 
 	function parseGoalIndexFromParam(param) {
 		if (!param) return null;
+		if (isPinnedGoalParam(param)) return PINNED_GOAL_INDEX;
 		const parsed = nomenclatureToIndex(param, goalIndices);
-		return parsed === null ? null : canonicalGoalIndex(parsed);
+		if (parsed === null) return null;
+		return isPinnedGoalIndex(parsed) ? PINNED_GOAL_INDEX : canonicalGoalIndex(parsed);
 	}
 
 	const scopedGoalIndex = $derived.by(() => parseGoalIndexFromParam(goalParam));
+	const isPinnedNotesView = $derived(isPinnedGoalIndex(scopedGoalIndex));
 	const hasInvalidGoal = $derived(!!goalParam && scopedGoalIndex === null);
 
 	const allGoals = $derived.by(() => {
@@ -110,13 +112,29 @@
 		return base.filter((note) => noteMatchesQuery(note, q));
 	});
 
+	const pinnedSidebarNotes = $derived.by(() => {
+		if (typeof scopedGoalIndex === 'number') return [];
+		return filteredNotes.filter((note) => store.isNotePinned(note.id));
+	});
+
+	const otherSidebarNotes = $derived.by(() => {
+		if (typeof scopedGoalIndex === 'number') return filteredNotes;
+		const pinnedIds = new Set(pinnedSidebarNotes.map((note) => note.id));
+		return filteredNotes.filter((note) => !pinnedIds.has(note.id));
+	});
+
 	function noteMatchesScopedGoal(noteId, goalIdx) {
+		if (isPinnedGoalIndex(goalIdx)) {
+			return store.isNotePinned(noteId);
+		}
 		const canonical = canonicalGoalIndex(goalIdx);
 		return noteGoalLinks.some((link) => link.noteId === noteId && link.goalIndex === canonical);
 	}
 
 	function getLinkedGoalIndices(noteId) {
-		return noteGoalLinks.filter((link) => link.noteId === noteId).map((link) => link.goalIndex);
+		return filterDisplayGoalIndices(
+			noteGoalLinks.filter((link) => link.noteId === noteId).map((link) => link.goalIndex)
+		);
 	}
 
 	let selectedNoteId = $state(null);
@@ -145,7 +163,10 @@
 		return filteredNotes[0] || null;
 	});
 	$effect(() => {
-		store.currentGoalIndex = typeof scopedGoalIndex === 'number' ? scopedGoalIndex : null;
+		store.currentGoalIndex =
+			typeof scopedGoalIndex === 'number' && !isPinnedGoalIndex(scopedGoalIndex)
+				? scopedGoalIndex
+				: null;
 	});
 
 	$effect(() => {
@@ -267,7 +288,16 @@
 	function getNoteGoalLabel(noteId) {
 		const link = noteGoalLinks.find((l) => l.noteId === noteId);
 		if (!link) return null;
-		return getGoalLabelFromIndex(link.goalIndex);
+		return getGoalLabelFromIndex(link.goalIndex, grid);
+	}
+
+	function toggleNotePin() {
+		if (!selectedNote) return;
+		if (store.isNotePinned(selectedNote.id)) {
+			store.unpinNote(selectedNote.id);
+		} else {
+			store.pinNote(selectedNote.id);
+		}
 	}
 
 function isNoteEmpty(note) {
@@ -281,7 +311,8 @@ function isNoteEmpty(note) {
 
 	function addSelectedLink() {
 		if (!selectedNote) return;
-		const parsedGoal = linkGoalValue === '' ? null : canonicalGoalIndex(Number(linkGoalValue));
+		const parsedGoal =
+			linkGoalValue === '' ? null : isPinnedGoalIndex(Number(linkGoalValue)) ? PINNED_GOAL_INDEX : canonicalGoalIndex(Number(linkGoalValue));
 		if (typeof parsedGoal === 'number' && !Number.isNaN(parsedGoal)) {
 			store.linkNoteToGoal(selectedNote.id, parsedGoal, { persist: false });
 			hasPendingNoteLinkSave = true;
@@ -292,7 +323,8 @@ function isNoteEmpty(note) {
 
 $effect(() => {
 	if (!linkPanelOpen) return;
-	const parsedGoal = linkGoalValue === '' ? null : canonicalGoalIndex(Number(linkGoalValue));
+	const parsedGoal =
+		linkGoalValue === '' ? null : isPinnedGoalIndex(Number(linkGoalValue)) ? PINNED_GOAL_INDEX : canonicalGoalIndex(Number(linkGoalValue));
 	if (typeof parsedGoal === 'number' && !Number.isNaN(parsedGoal)) {
 		addSelectedLink();
 	}
@@ -528,6 +560,14 @@ $effect(() => {
 	{#if selectedNote}
 		<button
 			type="button"
+			onclick={toggleNotePin}
+			class={`${notesDeleteToolbarButtonClass} ${store.isNotePinned(selectedNote.id) ? 'text-pink-400 dark:text-pink-300' : ''}`}
+			aria-label={store.isNotePinned(selectedNote.id) ? 'Unpin note' : 'Pin note'}
+		>
+			<Pin class="h-5 w-5" strokeWidth={2} />
+		</button>
+		<button
+			type="button"
 			onclick={deleteNote}
 			class={notesDeleteToolbarButtonClass}
 			aria-label="Delete note"
@@ -544,14 +584,14 @@ $effect(() => {
 				<span class="inline-flex items-center gap-1 rounded-md border border-slate-400 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm dark:border-slate-600 dark:bg-slate-900/60 dark:text-slate-200">
 					<a
 						href={`/todo/${indexToNomenclature(linkedGoal)}?tab=notes`}
-						class="underline-offset-2 hover:text-violet-600 hover:underline dark:hover:text-violet-300"
+						class={`underline-offset-2 hover:text-violet-600 hover:underline dark:hover:text-violet-300 ${isPinnedGoalIndex(linkedGoal) ? 'text-pink-400 dark:text-pink-300' : ''}`}
 					>
-						{getGoalLabelFromIndex(linkedGoal)}
+						{getGoalLabelFromIndex(linkedGoal, grid)}
 					</a>
 					<button
 						type="button"
 						class="text-rose-500 hover:text-rose-600 dark:text-rose-300 dark:hover:text-rose-200"
-						aria-label={`Unlink ${getGoalLabelFromIndex(linkedGoal)}`}
+						aria-label={`Unlink ${getGoalLabelFromIndex(linkedGoal, grid)}`}
 						onclick={() => store.unlinkNoteFromGoal(selectedNote.id, linkedGoal)}
 					>
 						x
@@ -579,6 +619,35 @@ $effect(() => {
 			{/if}
 		</div>
 	{/if}
+{/snippet}
+
+{#snippet noteSidebarItem(note, pinned = false)}
+	<button
+		type="button"
+		onclick={() => selectNote(note.id)}
+		class={`w-full rounded-lg px-2.5 py-2 text-left text-sm transition ${
+			selectedNote?.id === note.id
+				? pinned
+					? 'bg-pink-500/15 dark:bg-pink-500/20'
+					: 'bg-violet-500/20 dark:bg-violet-500/25'
+				: pinned
+					? 'border border-pink-500/20 hover:bg-pink-500/10 dark:hover:bg-pink-500/10'
+					: 'hover:bg-slate-500/10 dark:hover:bg-white/5'
+		}`}
+	>
+		<div class={`truncate font-semibold ${pinned ? 'text-pink-400 dark:text-pink-300' : 'text-slate-900 dark:text-slate-100'}`}>
+			{getNoteTitle(note.content)}
+		</div>
+		<div class="flex items-baseline gap-1.5 mt-0.5">
+			<span class="shrink-0 text-xs text-slate-500 dark:text-slate-400">{formatUpdatedAt(note.updatedAt)}</span>
+			{#if getNotePreview(note.content)}
+				<span class="truncate text-xs text-slate-500 dark:text-slate-400">{getNotePreview(note.content)}</span>
+			{/if}
+		</div>
+		{#if getNoteGoalLabel(note.id)}
+			<div class="truncate text-xs text-slate-400 dark:text-slate-500 mt-0.5">{getNoteGoalLabel(note.id)}</div>
+		{/if}
+	</button>
 {/snippet}
 
 <div class="p-4 pb-24 md:p-8 md:pb-8">
@@ -624,37 +693,32 @@ $effect(() => {
 						<ChevronLeft class="h-4 w-4" />
 					</a>
 					<div class="min-w-0">
-						<a
-							href={`/todo/${indexToNomenclature(scopedGoalIndex)}`}
-							class="truncate text-sm font-medium text-slate-800 underline-offset-2 hover:text-violet-600 hover:underline dark:text-slate-100 dark:hover:text-violet-300"
-						>
-							{getGoalLabelFromIndex(scopedGoalIndex)}
-						</a>
+						{#if isPinnedNotesView}
+							<span class="truncate text-sm font-bold text-pink-400 dark:text-pink-300">Pinned</span>
+						{:else}
+							<a
+								href={`/todo/${indexToNomenclature(scopedGoalIndex)}`}
+								class="truncate text-sm font-medium text-slate-800 underline-offset-2 hover:text-violet-600 hover:underline dark:text-slate-100 dark:hover:text-violet-300"
+							>
+								{getGoalLabelFromIndex(scopedGoalIndex, grid)}
+							</a>
+						{/if}
 					</div>
 				</div>
 			{/if}
 			<div class="space-y-0.5">
-				{#each filteredNotes as note (note.id)}
-					<button
-						type="button"
-						onclick={() => selectNote(note.id)}
-						class={`w-full rounded-lg px-2.5 py-2 text-left text-sm transition ${
-							selectedNote?.id === note.id
-								? 'bg-violet-500/20 dark:bg-violet-500/25'
-								: 'hover:bg-slate-500/10 dark:hover:bg-white/5'
-						}`}
-					>
-						<div class="truncate font-semibold text-slate-900 dark:text-slate-100">{getNoteTitle(note.content)}</div>
-						<div class="flex items-baseline gap-1.5 mt-0.5">
-							<span class="shrink-0 text-xs text-slate-500 dark:text-slate-400">{formatUpdatedAt(note.updatedAt)}</span>
-							{#if getNotePreview(note.content)}
-								<span class="truncate text-xs text-slate-500 dark:text-slate-400">{getNotePreview(note.content)}</span>
-							{/if}
+				{#if pinnedSidebarNotes.length > 0}
+					<div class="mb-2 space-y-0.5">
+						<div class="px-2.5 text-xs font-bold uppercase tracking-wide text-pink-400/90 dark:text-pink-300/90">
+							Pinned
 						</div>
-						{#if getNoteGoalLabel(note.id)}
-							<div class="truncate text-xs text-slate-400 dark:text-slate-500 mt-0.5">{getNoteGoalLabel(note.id)}</div>
-						{/if}
-					</button>
+						{#each pinnedSidebarNotes as note (note.id)}
+							{@render noteSidebarItem(note, true)}
+						{/each}
+					</div>
+				{/if}
+				{#each otherSidebarNotes as note (note.id)}
+					{@render noteSidebarItem(note, false)}
 				{/each}
 			</div>
 		</aside>
@@ -779,44 +843,42 @@ $effect(() => {
 						<div class="mb-2 flex items-center gap-2 px-1">
 							<a
 								href="/notes"
-								onclick={() => store.clearLastOpenedNote()}
+								onclick={() => {
+									store.clearLastOpenedNote();
+									mobileMenuOpen = false;
+								}}
 								class="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-500/10 dark:text-slate-400 dark:hover:bg-white/5"
 								aria-label="Back to all notes"
 							>
 								<ChevronLeft class="h-4 w-4" />
 							</a>
 							<div class="min-w-0">
-								<a
-									href={`/todo/${indexToNomenclature(scopedGoalIndex)}`}
-									class="truncate text-sm font-medium text-slate-800 underline-offset-2 hover:text-violet-600 hover:underline dark:text-slate-100 dark:hover:text-violet-300"
-								>
-									{getGoalLabelFromIndex(scopedGoalIndex)}
-								</a>
+								{#if isPinnedNotesView}
+									<span class="truncate text-sm font-bold text-pink-400 dark:text-pink-300">Pinned</span>
+								{:else}
+									<a
+										href={`/todo/${indexToNomenclature(scopedGoalIndex)}`}
+										class="truncate text-sm font-medium text-slate-800 underline-offset-2 hover:text-violet-600 hover:underline dark:text-slate-100 dark:hover:text-violet-300"
+									>
+										{getGoalLabelFromIndex(scopedGoalIndex, grid)}
+									</a>
+								{/if}
 							</div>
 						</div>
 					{/if}
 					<div class="space-y-0.5">
-						{#each filteredNotes as note (note.id)}
-							<button
-								type="button"
-								onclick={() => selectNote(note.id)}
-								class={`w-full rounded-lg px-2.5 py-2 text-left text-sm transition ${
-									selectedNote?.id === note.id
-										? 'bg-violet-500/20 dark:bg-violet-500/25'
-										: 'hover:bg-slate-500/10 dark:hover:bg-white/5'
-								}`}
-							>
-								<div class="truncate font-semibold text-slate-900 dark:text-slate-100">{getNoteTitle(note.content)}</div>
-								<div class="flex items-baseline gap-1.5 mt-0.5">
-									<span class="shrink-0 text-xs text-slate-500 dark:text-slate-400">{formatUpdatedAt(note.updatedAt)}</span>
-									{#if getNotePreview(note.content)}
-										<span class="truncate text-xs text-slate-500 dark:text-slate-400">{getNotePreview(note.content)}</span>
-									{/if}
+						{#if pinnedSidebarNotes.length > 0}
+							<div class="mb-2 space-y-0.5">
+								<div class="px-2.5 text-xs font-bold uppercase tracking-wide text-pink-400/90 dark:text-pink-300/90">
+									Pinned
 								</div>
-								{#if getNoteGoalLabel(note.id)}
-									<div class="truncate text-xs text-slate-400 dark:text-slate-500 mt-0.5">{getNoteGoalLabel(note.id)}</div>
-								{/if}
-							</button>
+								{#each pinnedSidebarNotes as note (note.id)}
+									{@render noteSidebarItem(note, true)}
+								{/each}
+							</div>
+						{/if}
+						{#each otherSidebarNotes as note (note.id)}
+							{@render noteSidebarItem(note, false)}
 						{/each}
 					</div>
 				</div>

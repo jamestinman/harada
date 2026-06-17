@@ -1,11 +1,12 @@
 <script>
-	import { NEW_LIST_OPTION_VALUE } from '$lib/todoUtils.js';
+	import { NEW_LIST_OPTION_VALUE, PINNED_GOAL_INDEX } from '$lib/todoUtils.js';
 
 	let {
 		allGoals = [],
 		value = $bindable(''),
 		includeUnassigned = false,
 		includeNewList = false,
+		includePinned = false,
 		hideWhenNoGoals = false,
 		stringValues = false,
 		unassignedLabel = 'No goal assigned',
@@ -32,6 +33,9 @@
 		{/if}
 		{#if includeNewList}
 			<option value={NEW_LIST_OPTION_VALUE}>{newListLabel}</option>
+		{/if}
+		{#if includePinned}
+			<option value={stringValues ? String(PINNED_GOAL_INDEX) : PINNED_GOAL_INDEX}>Pinned</option>
 		{/if}
 		{#each goalsWithTitles as goal}
 			<option value={getGoalValue(goal)}>
