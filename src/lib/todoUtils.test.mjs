@@ -7,8 +7,13 @@ import {
 	buildAllTasksFeed,
 	buildTaskNoteIndexMaps,
 	buildGoalBlockSwapMap,
+	buildGoalBlockRelocateMap,
 	buildPairSwapMap,
 	collectGoalIndexRemaps,
+	defaultMergedGoalTitle,
+	appendGoalReadmes,
+	goalBlockHasContent,
+	getGoalBlockIndexSet,
 	getLinkedGoalIndex
 } from './todoUtils.js';
 
@@ -232,4 +237,69 @@ test('collectGoalIndexRemaps handles task-cell pair swaps', () => {
 	const todos = [{ id: 't1', goalIndex: 3, listType: 'goal' }];
 	const remaps = collectGoalIndexRemaps(todos, swapMap, (todo) => todo.goalIndex);
 	assert.deepEqual(remaps, [{ item: todos[0], from: 3, to: 5 }]);
+});
+
+test('buildGoalBlockRelocateMap is one-way from source to target block', () => {
+	const map = buildGoalBlockRelocateMap(10, 37);
+	assert.equal(map.get(10), 37);
+	assert.equal(map.get(0), 27);
+	assert.equal(map.get(30), 39);
+	assert.equal(map.has(37), false);
+});
+
+test('defaultMergedGoalTitle joins source and target labels', () => {
+	assert.equal(defaultMergedGoalTitle('Run', 'Health'), 'Run + Health');
+	assert.equal(defaultMergedGoalTitle('', 'Health'), 'Health');
+});
+
+test('appendGoalReadmes concatenates descriptions', () => {
+	assert.equal(appendGoalReadmes('Target notes', 'Source notes'), 'Target notes\n\nSource notes');
+	assert.equal(appendGoalReadmes('', 'Source only'), 'Source only');
+});
+
+test('goalBlockHasContent detects title, tasks, and links', () => {
+	const grid = Array.from({ length: 81 }, () => ({
+		text: '',
+		status: 'todo',
+		readme: '',
+		color: 'default',
+		updated_at: null
+	}));
+	grid[37] = { ...grid[37], text: 'Health' };
+	assert.equal(
+		goalBlockHasContent({
+			grid,
+			canonical: 37,
+			todos: [],
+			noteGoalLinks: [],
+			taskGoalLinks: []
+		}),
+		true
+	);
+	assert.equal(
+		goalBlockHasContent({
+			grid,
+			canonical: 10,
+			todos: [{ id: 't1', goalIndex: 2 }],
+			noteGoalLinks: [],
+			taskGoalLinks: []
+		}),
+		true
+	);
+	assert.equal(
+		goalBlockHasContent({
+			grid: Array.from({ length: 81 }, () => ({
+				text: '',
+				status: 'todo',
+				readme: '',
+				color: 'default',
+				updated_at: null
+			})),
+			canonical: 10,
+			todos: [],
+			noteGoalLinks: [],
+			taskGoalLinks: []
+		}),
+		false
+	);
 });

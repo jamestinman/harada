@@ -18,6 +18,10 @@ import {
 	getGoalViewSiblings,
 	isTaskPrimaryOnGoal,
 	getTaskGoalIndicesForTodo,
+	buildGoalBlockRelocateMap,
+	getGoalBlockIndexSet,
+	getLinkedGoalIndex,
+	appendGoalReadmes,
 	PINNED_GOAL_INDEX,
 	NO_GOAL_PSEUDO_INDEX,
 	isPinnedGoalIndex,
@@ -1346,6 +1350,193 @@ class Store {
 				return remapped;
 			});
 		}
+	}
+
+	_taskOnGoalBlock(taskId, blockIndices) {
+		const todo = (this.harada_chart.todos || []).find((t) => t.id === taskId);
+		if (todo && typeof todo.goalIndex === 'number' && blockIndices.has(todo.goalIndex)) {
+			return { via: 'primary', goalIndex: todo.goalIndex };
+		}
+		for (const link of this.taskGoalLinks || []) {
+			if (link.taskId === taskId && blockIndices.has(link.goalIndex)) {
+				return { via: 'link', goalIndex: link.goalIndex };
+			}
+		}
+		return null;
+	}
+
+	_noteOnGoalBlock(noteId, blockIndices) {
+		return (this.noteGoalLinks || []).some(
+			(link) => link.noteId === noteId && blockIndices.has(link.goalIndex)
+		);
+	}
+
+	/**
+	 * Merge source goal block into target: relocate tasks/notes, dedupe links, clear source.
+	 */
+	async mergeGoalBlocks(sourceCanonical, targetCanonical, { mergedTitle = '' } = {}) {
+		if (sourceCanonical === targetCanonical) return;
+		if (sourceCanonical === 40 || targetCanonical === 40) return;
+
+		const relocateMap = buildGoalBlockRelocateMap(sourceCanonical, targetCanonical);
+		const sourceBlock = getGoalBlockIndexSet(sourceCanonical);
+		const targetBlock = getGoalBlockIndexSet(targetCanonical);
+		const now = Date.now();
+
+		const cloudDeletes = [];
+		const noteLinksToDrop = new Set();
+		const taskLinksToDrop = new Set();
+
+		for (const link of this.noteGoalLinks || []) {
+			if (!sourceBlock.has(link.goalIndex)) continue;
+			if (this._noteOnGoalBlock(link.noteId, targetBlock)) {
+				cloudDeletes.push(this._softDeleteNoteGoalLinkInCloud(link));
+				noteLinksToDrop.add(`${link.noteId}:${link.goalIndex}`);
+			}
+		}
+
+		for (const link of this.taskGoalLinks || []) {
+			if (!sourceBlock.has(link.goalIndex)) continue;
+			if (this._taskOnGoalBlock(link.taskId, targetBlock)) {
+				cloudDeletes.push(this._softDeleteTaskGoalLinkInCloud(link));
+				taskLinksToDrop.add(`${link.taskId}:${link.goalIndex}`);
+			}
+		}
+
+		for (const todo of this.harada_chart.todos || []) {
+			if (todo?.listType && todo.listType !== 'goal') continue;
+			if (typeof todo?.goalIndex !== 'number' || !sourceBlock.has(todo.goalIndex)) continue;
+			if (this._taskOnGoalBlock(todo.id, targetBlock)) {
+				this._markTaskDirty(todo.id);
+			}
+		}
+
+		const noteGoalRemaps = [];
+		for (const link of this.noteGoalLinks || []) {
+			if (!sourceBlock.has(link.goalIndex)) continue;
+			if (noteLinksToDrop.has(`${link.noteId}:${link.goalIndex}`)) continue;
+			const mapped = relocateMap.get(link.goalIndex);
+			if (mapped !== undefined) noteGoalRemaps.push({ link, mapped });
+		}
+
+		const taskGoalRemaps = [];
+		for (const link of this.taskGoalLinks || []) {
+			if (!sourceBlock.has(link.goalIndex)) continue;
+			if (taskLinksToDrop.has(`${link.taskId}:${link.goalIndex}`)) continue;
+			const mapped = relocateMap.get(link.goalIndex);
+			if (mapped !== undefined) taskGoalRemaps.push({ link, mapped });
+		}
+
+		for (const { link } of noteGoalRemaps) {
+			cloudDeletes.push(this._softDeleteNoteGoalLinkInCloud(link));
+		}
+		for (const { link } of taskGoalRemaps) {
+			cloudDeletes.push(this._softDeleteTaskGoalLinkInCloud(link));
+		}
+
+		await Promise.all(cloudDeletes);
+
+		this.harada_chart.todos = (this.harada_chart.todos || []).map((todo) => {
+			if (todo?.listType && todo.listType !== 'goal') return todo;
+			const gIdx = typeof todo?.goalIndex === 'number' ? todo.goalIndex : null;
+			if (gIdx === null || !sourceBlock.has(gIdx)) return todo;
+
+			const onTarget = this._taskOnGoalBlock(todo.id, targetBlock);
+			if (onTarget) {
+				this._markTaskDirty(todo.id);
+				return {
+					...todo,
+					goalIndex: onTarget.goalIndex,
+					listType: 'goal',
+					listId: `goal:${onTarget.goalIndex}`,
+					updatedAt: now
+				};
+			}
+
+			const mapped = relocateMap.get(gIdx);
+			if (mapped === undefined) return todo;
+			this._markTaskDirty(todo.id);
+			return {
+				...todo,
+				goalIndex: mapped,
+				listType: 'goal',
+				listId: `goal:${mapped}`,
+				updatedAt: now
+			};
+		});
+
+		if (noteGoalRemaps.length > 0 || noteLinksToDrop.size > 0) {
+			const remapByKey = new Map(
+				noteGoalRemaps.map(({ link, mapped }) => [`${link.noteId}:${link.goalIndex}`, mapped])
+			);
+			this.noteGoalLinks = (this.noteGoalLinks || [])
+				.filter((link) => !noteLinksToDrop.has(`${link.noteId}:${link.goalIndex}`))
+				.map((link) => {
+					const mapped = remapByKey.get(`${link.noteId}:${link.goalIndex}`);
+					if (mapped === undefined) return link;
+					const remapped = normalizeNoteGoalLink({
+						noteId: link.noteId,
+						goalIndex: mapped,
+						createdAt: link.createdAt,
+						updatedAt: now
+					});
+					this._markNoteGoalLinkDirty(remapped);
+					return remapped;
+				});
+		}
+
+		if (taskGoalRemaps.length > 0 || taskLinksToDrop.size > 0) {
+			const remapByKey = new Map(
+				taskGoalRemaps.map(({ link, mapped }) => [`${link.taskId}:${link.goalIndex}`, mapped])
+			);
+			this.taskGoalLinks = (this.taskGoalLinks || [])
+				.filter((link) => !taskLinksToDrop.has(`${link.taskId}:${link.goalIndex}`))
+				.map((link) => {
+					const mapped = remapByKey.get(`${link.taskId}:${link.goalIndex}`);
+					if (mapped === undefined) return link;
+					const remapped = normalizeTaskGoalLink({
+						taskId: link.taskId,
+						goalIndex: mapped,
+						ordering: link.ordering,
+						parentId: link.parentId ?? null,
+						createdAt: link.createdAt,
+						updatedAt: now
+					});
+					this._markTaskGoalLinkDirty(remapped);
+					return remapped;
+				});
+		}
+
+		const grid = [...this.harada_chart.grid];
+		const sourceCell = grid[sourceCanonical] ?? {};
+		const targetCell = grid[targetCanonical] ?? {};
+		const mergedReadme = appendGoalReadmes(targetCell.readme, sourceCell.readme);
+		const title = (mergedTitle ?? '').trim();
+		const timestamp = new Date().toISOString();
+
+		const nextTargetCell = {
+			...targetCell,
+			text: title,
+			readme: mergedReadme,
+			updated_at: timestamp
+		};
+		grid[targetCanonical] = nextTargetCell;
+		const targetLinked = getLinkedGoalIndex(targetCanonical);
+		if (targetLinked !== null) {
+			grid[targetLinked] = { ...nextTargetCell };
+		}
+
+		for (const index of sourceBlock) {
+			grid[index] = defaultCell(index);
+		}
+
+		this.harada_chart = {
+			...this.harada_chart,
+			grid,
+			todos: this.harada_chart.todos
+		};
+		updateGoalTimestamp(this.harada_chart.grid, targetCanonical);
+		this.registerGridMutation({ immediate: true });
 	}
 
 	// --- Save ---

@@ -687,6 +687,74 @@ export function buildPairSwapMap(sourceIndex, targetIndex) {
 	return swapMap;
 }
 
+/** One-way index map: relocate a goal block onto another (merge / move onto empty). */
+export function buildGoalBlockRelocateMap(sourceCanonical, targetCanonical) {
+	const relocateMap = new Map();
+	const sourceCells = getBlockCellIndices(sourceCanonical);
+	const targetCells = getBlockCellIndices(targetCanonical);
+	for (let i = 0; i < sourceCells.length; i++) {
+		relocateMap.set(sourceCells[i], targetCells[i]);
+	}
+	const sourceLinked = getLinkedGoalIndex(sourceCanonical);
+	const targetLinked = getLinkedGoalIndex(targetCanonical);
+	if (sourceLinked !== null && targetLinked !== null) {
+		relocateMap.set(sourceLinked, targetLinked);
+	}
+	return relocateMap;
+}
+
+/** All grid indices belonging to a goal block (outer 3×3 + linked center cell). */
+export function getGoalBlockIndexSet(blockCenterIndex) {
+	const indices = new Set(getBlockCellIndices(blockCenterIndex));
+	const linked = getLinkedGoalIndex(blockCenterIndex);
+	if (linked !== null) indices.add(linked);
+	return indices;
+}
+
+export function appendGoalReadmes(targetReadme, sourceReadme) {
+	const target = (targetReadme ?? '').trim();
+	const source = (sourceReadme ?? '').trim();
+	if (!target) return source;
+	if (!source) return target;
+	return `${target}\n\n${source}`;
+}
+
+export function defaultMergedGoalTitle(sourceTitle, targetTitle) {
+	const a = (sourceTitle ?? '').trim();
+	const b = (targetTitle ?? '').trim();
+	if (!a) return b;
+	if (!b) return a;
+	return `${a} + ${b}`;
+}
+
+/** True when the goal block has a title, description, or any linked tasks/notes. */
+export function goalBlockHasContent({
+	grid = [],
+	canonical,
+	todos = [],
+	noteGoalLinks = [],
+	taskGoalLinks = []
+}) {
+	if (typeof canonical !== 'number') return false;
+	const blockIndices = getGoalBlockIndexSet(canonical);
+	const centerCell = grid[canonical];
+	if ((centerCell?.text ?? '').trim()) return true;
+	if ((centerCell?.readme ?? '').trim()) return true;
+	for (const index of blockIndices) {
+		if ((grid[index]?.text ?? '').trim()) return true;
+	}
+	for (const todo of todos) {
+		if (typeof todo?.goalIndex === 'number' && blockIndices.has(todo.goalIndex)) return true;
+	}
+	for (const link of noteGoalLinks) {
+		if (blockIndices.has(link.goalIndex)) return true;
+	}
+	for (const link of taskGoalLinks) {
+		if (blockIndices.has(link.goalIndex)) return true;
+	}
+	return false;
+}
+
 /** Pairs of items whose goal_index should move when a chart swap map is applied. */
 export function collectGoalIndexRemaps(items, swapMap, getGoalIndex) {
 	const remaps = [];

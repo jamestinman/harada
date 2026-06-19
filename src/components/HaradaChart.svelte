@@ -7,9 +7,13 @@
 		getBlockCellIndices,
 		buildGoalBlockSwapMap,
 		buildPairSwapMap,
+		getGoalLabelFromIndex,
+		goalBlockHasContent,
+		defaultMergedGoalTitle,
 		updateGoalTimestamp
 	} from '$lib/todoUtils.js';
 	import { store } from '$stores/store.svelte.js';
+	import GoalMergeModal from '$components/GoalMergeModal.svelte';
 
 	let { grid, onUpdateGrid = null } = $props();
 	
@@ -216,6 +220,14 @@
 		dragType: null
 	});
 
+	let mergeModalOpen = $state(false);
+	let mergeSourceCanonical = $state(null);
+	let mergeTargetCanonical = $state(null);
+	let mergeSourceLabel = $state('');
+	let mergeTargetLabel = $state('');
+	let mergeTitleDraft = $state('');
+	let blockCellClickUntil = 0;
+
 	function isMainGoalIndex(index) {
 		return index === 40;
 	}
@@ -356,6 +368,50 @@
 		window.removeEventListener('pointercancel', handleGlobalGoalPointerUp);
 	}
 
+	function shouldBlockCellClick() {
+		return Date.now() < blockCellClickUntil;
+	}
+
+	function isGoalBlockOccupied(canonicalIndex) {
+		if (
+			goalBlockHasContent({
+				grid,
+				canonical: canonicalIndex,
+				todos: store.harada_chart.todos,
+				noteGoalLinks: store.noteGoalLinks,
+				taskGoalLinks: store.taskGoalLinks
+			})
+		) {
+			return true;
+		}
+		return hasCustomTitle(canonicalIndex);
+	}
+
+	function openGoalMergePrompt(sourceIndex, targetIndex) {
+		const sourceCanonical = canonicalGoalIndex(sourceIndex);
+		const targetCanonical = canonicalGoalIndex(targetIndex);
+		const sourceLabel = getGoalLabelFromIndex(sourceCanonical, grid);
+		const targetLabel = getGoalLabelFromIndex(targetCanonical, grid);
+		mergeSourceCanonical = sourceCanonical;
+		mergeTargetCanonical = targetCanonical;
+		mergeSourceLabel = sourceLabel;
+		mergeTargetLabel = targetLabel;
+		mergeTitleDraft = defaultMergedGoalTitle(sourceLabel, targetLabel);
+		mergeModalOpen = true;
+	}
+
+	function cancelGoalMerge() {
+		mergeModalOpen = false;
+		mergeSourceCanonical = null;
+		mergeTargetCanonical = null;
+	}
+
+	async function confirmGoalMerge(mergedTitle) {
+		if (mergeSourceCanonical == null || mergeTargetCanonical == null) return;
+		await store.mergeGoalBlocks(mergeSourceCanonical, mergeTargetCanonical, { mergedTitle });
+		cancelGoalMerge();
+	}
+
 	async function swapGoalData(sourceIndex, targetIndex, dragType) {
 		if (!onUpdateGrid) return;
 		if (sourceIndex === targetIndex) return;
@@ -427,12 +483,29 @@
 
 		if (goalDrag.active && goalDrag.pointerId === event.pointerId) {
 			event.preventDefault();
-			if (
+			event.stopPropagation();
+			const didDrop =
 				goalDrag.sourceIndex != null &&
 				goalDrag.targetIndex != null &&
-				goalDrag.sourceIndex !== goalDrag.targetIndex
-			) {
-				await swapGoalData(goalDrag.sourceIndex, goalDrag.targetIndex, goalDrag.dragType);
+				goalDrag.sourceIndex !== goalDrag.targetIndex;
+			if (didDrop) {
+				blockCellClickUntil = Date.now() + 500;
+				if (goalDrag.dragType === 'goal') {
+					const sourceCanonical = canonicalGoalIndex(goalDrag.sourceIndex);
+					const targetCanonical = canonicalGoalIndex(goalDrag.targetIndex);
+					if (
+						sourceCanonical !== 40 &&
+						targetCanonical !== 40 &&
+						sourceCanonical !== targetCanonical &&
+						isGoalBlockOccupied(targetCanonical)
+					) {
+						openGoalMergePrompt(goalDrag.sourceIndex, goalDrag.targetIndex);
+					} else {
+						await swapGoalData(goalDrag.sourceIndex, goalDrag.targetIndex, goalDrag.dragType);
+					}
+				} else {
+					await swapGoalData(goalDrag.sourceIndex, goalDrag.targetIndex, goalDrag.dragType);
+				}
 			}
 			resetGoalDrag();
 			clearGlobalGoalPointerListeners();
@@ -518,7 +591,12 @@
 						type="button"
 						onpointerdown={(event) => handleCellPointerDown(event, i)}
 						onpointerenter={(event) => handleCellPointerEnter(event, i)}
-						onclick={() => {
+						onclick={(e) => {
+							if (shouldBlockCellClick()) {
+								e.preventDefault();
+								e.stopPropagation();
+								return;
+							}
 							if (isCellBlank(i)) {
 								startEditingGoal(i);
 							} else {
@@ -549,3 +627,12 @@
 		</div>
 	{/each}
 </div>
+
+<GoalMergeModal
+	bind:isOpen={mergeModalOpen}
+	sourceLabel={mergeSourceLabel}
+	targetLabel={mergeTargetLabel}
+	bind:mergedTitle={mergeTitleDraft}
+	onConfirm={confirmGoalMerge}
+	onCancel={cancelGoalMerge}
+/>
