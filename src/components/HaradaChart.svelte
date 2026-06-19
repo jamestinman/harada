@@ -4,6 +4,9 @@
 		indexToNomenclature,
 		canonicalGoalIndex,
 		getLinkedGoalIndex,
+		getBlockCellIndices,
+		buildGoalBlockSwapMap,
+		buildPairSwapMap,
 		updateGoalTimestamp
 	} from '$lib/todoUtils.js';
 	import { store } from '$stores/store.svelte.js';
@@ -244,21 +247,6 @@
 		return isGoalDragCell(index);
 	}
 
-	// Returns all 9 cell indices of the 3×3 outer block whose center is blockCenterIndex
-	function getBlockCellIndices(blockCenterIndex) {
-		const row = Math.floor(blockCenterIndex / 9);
-		const col = blockCenterIndex % 9;
-		const startRow = Math.floor(row / 3) * 3;
-		const startCol = Math.floor(col / 3) * 3;
-		const cells = [];
-		for (let r = startRow; r < startRow + 3; r++) {
-			for (let c = startCol; c < startCol + 3; c++) {
-				cells.push(r * 9 + c);
-			}
-		}
-		return cells;
-	}
-
 	function clearGoalPressTimer() {
 		if (goalPressTimer) {
 			clearTimeout(goalPressTimer);
@@ -368,7 +356,7 @@
 		window.removeEventListener('pointercancel', handleGlobalGoalPointerUp);
 	}
 
-	function swapGoalData(sourceIndex, targetIndex, dragType) {
+	async function swapGoalData(sourceIndex, targetIndex, dragType) {
 		if (!onUpdateGrid) return;
 		if (sourceIndex === targetIndex) return;
 
@@ -381,21 +369,7 @@
 			newGrid[sourceIndex] = t;
 			newGrid[targetIndex] = s;
 
-			// Swap todos keyed to these specific cell indices (each task cell is its own
-			// canonical goal, so todos created on its page travel with it)
-			const currentTodos = store.harada_chart.todos || [];
-			const nextTodos = currentTodos.map((todo) => {
-				if (todo?.listType && todo.listType !== 'goal') return todo;
-				const gIdx = typeof todo?.goalIndex === 'number' ? todo.goalIndex : null;
-				if (gIdx === sourceIndex) {
-					return { ...todo, goalIndex: targetIndex, listType: 'goal', listId: `goal:${targetIndex}` };
-				}
-				if (gIdx === targetIndex) {
-					return { ...todo, goalIndex: sourceIndex, listType: 'goal', listId: `goal:${sourceIndex}` };
-				}
-				return todo;
-			});
-			store.harada_chart.todos = nextTodos;
+			await store.applyGoalIndexSwapMap(buildPairSwapMap(sourceIndex, targetIndex));
 
 			onUpdateGrid(newGrid);
 			return;
@@ -431,44 +405,7 @@
 		updateGoalTimestamp(newGrid, sourceCanonical);
 		updateGoalTimestamp(newGrid, targetCanonical);
 
-		// Remap every goal key touched by the block swap: all 9 outer cells pair-wise, plus
-		// the two linked center-block "shadow" cells (notes/task links and per-cell todos).
-		const goalIndexSwapMap = new Map();
-		const addSwapPair = (a, b) => {
-			if (a !== b) {
-				goalIndexSwapMap.set(a, b);
-				goalIndexSwapMap.set(b, a);
-			}
-		};
-		for (let i = 0; i < sourceCells.length; i++) {
-			addSwapPair(sourceCells[i], targetCells[i]);
-		}
-		if (sourceLinked !== null && targetLinked !== null) {
-			addSwapPair(sourceLinked, targetLinked);
-		}
-
-		const now = Date.now();
-		const currentTodos = store.harada_chart.todos || [];
-		const nextTodos = currentTodos.map((todo) => {
-			if (todo?.listType && todo.listType !== 'goal') return todo;
-			const gIdx = typeof todo?.goalIndex === 'number' ? todo.goalIndex : null;
-			if (gIdx === null) return todo;
-			const mapped = goalIndexSwapMap.get(gIdx);
-			if (mapped === undefined) return todo;
-			return { ...todo, goalIndex: mapped, listType: 'goal', listId: `goal:${mapped}` };
-		});
-
-		store.harada_chart.todos = nextTodos;
-		store.noteGoalLinks = store.noteGoalLinks.map((link) => {
-			const mapped = goalIndexSwapMap.get(link.goalIndex);
-			if (mapped === undefined) return link;
-			return { ...link, goalIndex: mapped, updatedAt: now };
-		});
-		store.taskGoalLinks = store.taskGoalLinks.map((link) => {
-			const mapped = goalIndexSwapMap.get(link.goalIndex);
-			if (mapped === undefined) return link;
-			return { ...link, goalIndex: mapped, updatedAt: now };
-		});
+		await store.applyGoalIndexSwapMap(buildGoalBlockSwapMap(sourceCanonical, targetCanonical));
 
 		onUpdateGrid(newGrid);
 	}
@@ -481,7 +418,7 @@
 		return (Math.floor(row / 3) * 3 + 1) * 9 + (Math.floor(col / 3) * 3 + 1);
 	}
 
-	function handleGlobalGoalPointerUp(event) {
+	async function handleGlobalGoalPointerUp(event) {
 		if (pendingGoalDrag && pendingGoalDrag.pointerId === event.pointerId) {
 			clearPendingGoalDrag();
 			clearGlobalGoalPointerListeners();
@@ -495,7 +432,7 @@
 				goalDrag.targetIndex != null &&
 				goalDrag.sourceIndex !== goalDrag.targetIndex
 			) {
-				swapGoalData(goalDrag.sourceIndex, goalDrag.targetIndex, goalDrag.dragType);
+				await swapGoalData(goalDrag.sourceIndex, goalDrag.targetIndex, goalDrag.dragType);
 			}
 			resetGoalDrag();
 			clearGlobalGoalPointerListeners();

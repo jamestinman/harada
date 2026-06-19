@@ -640,6 +640,67 @@ export function getLinkedGoalIndex(index) {
 	return null;
 }
 
+/** All 9 cell indices in the 3×3 outer block whose center is blockCenterIndex. */
+export function getBlockCellIndices(blockCenterIndex) {
+	const row = Math.floor(blockCenterIndex / 9);
+	const col = blockCenterIndex % 9;
+	const startRow = Math.floor(row / 3) * 3;
+	const startCol = Math.floor(col / 3) * 3;
+	const cells = [];
+	for (let r = startRow; r < startRow + 3; r++) {
+		for (let c = startCol; c < startCol + 3; c++) {
+			cells.push(r * 9 + c);
+		}
+	}
+	return cells;
+}
+
+/** Pairwise index map for swapping two goal blocks (outer 3×3 + linked center cells). */
+export function buildGoalBlockSwapMap(sourceCanonical, targetCanonical) {
+	const swapMap = new Map();
+	const addSwapPair = (a, b) => {
+		if (a !== b) {
+			swapMap.set(a, b);
+			swapMap.set(b, a);
+		}
+	};
+	const sourceCells = getBlockCellIndices(sourceCanonical);
+	const targetCells = getBlockCellIndices(targetCanonical);
+	for (let i = 0; i < sourceCells.length; i++) {
+		addSwapPair(sourceCells[i], targetCells[i]);
+	}
+	const sourceLinked = getLinkedGoalIndex(sourceCanonical);
+	const targetLinked = getLinkedGoalIndex(targetCanonical);
+	if (sourceLinked !== null && targetLinked !== null) {
+		addSwapPair(sourceLinked, targetLinked);
+	}
+	return swapMap;
+}
+
+/** Index map for swapping two individual Harada chart cells (task squares). */
+export function buildPairSwapMap(sourceIndex, targetIndex) {
+	const swapMap = new Map();
+	if (sourceIndex !== targetIndex) {
+		swapMap.set(sourceIndex, targetIndex);
+		swapMap.set(targetIndex, sourceIndex);
+	}
+	return swapMap;
+}
+
+/** Pairs of items whose goal_index should move when a chart swap map is applied. */
+export function collectGoalIndexRemaps(items, swapMap, getGoalIndex) {
+	const remaps = [];
+	for (const item of items ?? []) {
+		const goalIndex = getGoalIndex(item);
+		if (typeof goalIndex !== 'number') continue;
+		const mapped = swapMap.get(goalIndex);
+		if (mapped !== undefined) {
+			remaps.push({ item, from: goalIndex, to: mapped });
+		}
+	}
+	return remaps;
+}
+
 // Canonical todo target: outer block center is the source of truth.
 export function canonicalGoalIndex(index) {
 	if (typeof index !== 'number' || index < 0 || index > 80) return index;

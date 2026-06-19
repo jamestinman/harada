@@ -1226,6 +1226,128 @@ class Store {
 		return immediate ? this.saveNow() : this.queueSave();
 	}
 
+	_softDeleteNoteGoalLinkInCloud(link) {
+		if (!browser || !authStore.user || !supabase) return Promise.resolve();
+		if (!link?.noteId) return Promise.resolve();
+		const now = new Date().toISOString();
+		let query = supabase
+			.from('note_goal_links')
+			.update({ deleted_at: now, updated_at: now })
+			.eq('user_id', authStore.user.id);
+		if (link.id) {
+			query = query.eq('id', link.id);
+		} else {
+			query = query
+				.eq('note_id', link.noteId)
+				.eq('goal_index', canonicalGoalIndex(link.goalIndex));
+		}
+		return query.then(({ error }) => {
+			if (error) console.error('Failed to soft-delete note/goal link:', error);
+		});
+	}
+
+	_softDeleteTaskGoalLinkInCloud(link) {
+		if (!browser || !authStore.user || !supabase) return Promise.resolve();
+		if (!link?.taskId) return Promise.resolve();
+		const now = new Date().toISOString();
+		let query = supabase
+			.from('task_goal_links')
+			.update({ deleted_at: now, updated_at: now })
+			.eq('user_id', authStore.user.id);
+		if (link.id) {
+			query = query.eq('id', link.id);
+		} else {
+			query = query
+				.eq('task_id', link.taskId)
+				.eq('goal_index', canonicalGoalIndex(link.goalIndex));
+		}
+		return query.then(({ error }) => {
+			if (error) console.error('Failed to soft-delete task/goal link:', error);
+		});
+	}
+
+	/**
+	 * Remap todos and goal-scoped links when Harada chart cells move or swap.
+	 * Awaits cloud soft-deletes for old link rows before applying in-memory remaps
+	 * (goal_index is part of the unique key, so deletes must land before upserts).
+	 */
+	async applyGoalIndexSwapMap(swapMap) {
+		if (!swapMap || swapMap.size === 0) return;
+
+		const now = Date.now();
+		const noteGoalRemaps = [];
+		const taskGoalRemaps = [];
+
+		for (const link of this.noteGoalLinks || []) {
+			const mapped = swapMap.get(link.goalIndex);
+			if (mapped !== undefined) noteGoalRemaps.push({ link, mapped });
+		}
+		for (const link of this.taskGoalLinks || []) {
+			const mapped = swapMap.get(link.goalIndex);
+			if (mapped !== undefined) taskGoalRemaps.push({ link, mapped });
+		}
+
+		await Promise.all([
+			...noteGoalRemaps.map(({ link }) => this._softDeleteNoteGoalLinkInCloud(link)),
+			...taskGoalRemaps.map(({ link }) => this._softDeleteTaskGoalLinkInCloud(link))
+		]);
+
+		const currentTodos = this.harada_chart.todos || [];
+		this.harada_chart.todos = currentTodos.map((todo) => {
+			if (todo?.listType && todo.listType !== 'goal') return todo;
+			const gIdx = typeof todo?.goalIndex === 'number' ? todo.goalIndex : null;
+			if (gIdx === null) return todo;
+			const mapped = swapMap.get(gIdx);
+			if (mapped === undefined) return todo;
+			this._markTaskDirty(todo.id);
+			return {
+				...todo,
+				goalIndex: mapped,
+				listType: 'goal',
+				listId: `goal:${mapped}`,
+				updatedAt: now
+			};
+		});
+
+		if (noteGoalRemaps.length > 0) {
+			const remapByKey = new Map(
+				noteGoalRemaps.map(({ link, mapped }) => [`${link.noteId}:${link.goalIndex}`, mapped])
+			);
+			this.noteGoalLinks = (this.noteGoalLinks || []).map((link) => {
+				const mapped = remapByKey.get(`${link.noteId}:${link.goalIndex}`);
+				if (mapped === undefined) return link;
+				const remapped = normalizeNoteGoalLink({
+					noteId: link.noteId,
+					goalIndex: mapped,
+					createdAt: link.createdAt,
+					updatedAt: now
+				});
+				this._markNoteGoalLinkDirty(remapped);
+				return remapped;
+			});
+		}
+
+		if (taskGoalRemaps.length > 0) {
+			const remapByKey = new Map(
+				taskGoalRemaps.map(({ link, mapped }) => [`${link.taskId}:${link.goalIndex}`, mapped])
+			);
+			this.taskGoalLinks = (this.taskGoalLinks || []).map((link) => {
+				const mapped = remapByKey.get(`${link.taskId}:${link.goalIndex}`);
+				if (mapped === undefined) return link;
+				const remapped = normalizeTaskGoalLink({
+					taskId: link.taskId,
+					goalIndex: mapped,
+					ordering: link.ordering,
+					parentId: link.parentId ?? null,
+					createdAt: link.createdAt,
+					updatedAt: now
+				});
+				this._markTaskGoalLinkDirty(remapped);
+				return remapped;
+			});
+		}
+	}
+
 	// --- Save ---
 
 	saveNow() {

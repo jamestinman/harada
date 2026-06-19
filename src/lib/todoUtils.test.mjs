@@ -5,7 +5,11 @@ import {
 	buildFeedPinnedRows,
 	filterFeedPinnedRowsBySearch,
 	buildAllTasksFeed,
-	buildTaskNoteIndexMaps
+	buildTaskNoteIndexMaps,
+	buildGoalBlockSwapMap,
+	buildPairSwapMap,
+	collectGoalIndexRemaps,
+	getLinkedGoalIndex
 } from './todoUtils.js';
 
 test('mergeTodoLists prefers todo with newer updatedAt', () => {
@@ -171,3 +175,61 @@ test('buildTaskNoteIndexMaps provides O(1) task lookups', () => {
 	assert.deepEqual(maps.goalIndicesByTaskId.get('t1'), [10]);
 });
 
+test('buildPairSwapMap exchanges two cell indices', () => {
+	const map = buildPairSwapMap(10, 12);
+	assert.equal(map.get(10), 12);
+	assert.equal(map.get(12), 10);
+	assert.equal(map.size, 2);
+});
+
+test('buildGoalBlockSwapMap maps outer blocks and linked center cells', () => {
+	// B2 outer center (10) <-> E2 outer center (37)
+	const map = buildGoalBlockSwapMap(10, 37);
+	assert.equal(map.get(10), 37);
+	assert.equal(map.get(37), 10);
+	assert.equal(map.get(getLinkedGoalIndex(10)), getLinkedGoalIndex(37));
+	assert.equal(map.get(30), 39);
+	assert.equal(map.get(39), 30);
+	// Same relative position within each 3×3 block
+	assert.equal(map.get(0), 27);
+	assert.equal(map.get(27), 0);
+});
+
+test('collectGoalIndexRemaps finds todos and links affected by a block swap', () => {
+	const swapMap = buildGoalBlockSwapMap(10, 37);
+	const todos = [
+		{ id: 't1', goalIndex: 10, listType: 'goal' },
+		{ id: 't2', goalIndex: 72, listType: 'goal' },
+		{ id: 't3', goalIndex: null, listType: 'custom' }
+	];
+	const noteGoalLinks = [
+		{ id: 'ngl-1', noteId: 'n1', goalIndex: 10 },
+		{ id: 'ngl-2', noteId: 'n2', goalIndex: 72 }
+	];
+	const taskGoalLinks = [
+		{ id: 'tgl-1', taskId: 't4', goalIndex: 37, parentId: null, ordering: 1000 }
+	];
+
+	const todoRemaps = collectGoalIndexRemaps(todos, swapMap, (todo) => todo.goalIndex);
+	const noteRemaps = collectGoalIndexRemaps(noteGoalLinks, swapMap, (link) => link.goalIndex);
+	const taskLinkRemaps = collectGoalIndexRemaps(taskGoalLinks, swapMap, (link) => link.goalIndex);
+
+	assert.equal(todoRemaps.length, 1);
+	assert.equal(todoRemaps[0].from, 10);
+	assert.equal(todoRemaps[0].to, 37);
+
+	assert.equal(noteRemaps.length, 1);
+	assert.equal(noteRemaps[0].item.id, 'ngl-1');
+	assert.equal(noteRemaps[0].to, 37);
+
+	assert.equal(taskLinkRemaps.length, 1);
+	assert.equal(taskLinkRemaps[0].from, 37);
+	assert.equal(taskLinkRemaps[0].to, 10);
+});
+
+test('collectGoalIndexRemaps handles task-cell pair swaps', () => {
+	const swapMap = buildPairSwapMap(3, 5);
+	const todos = [{ id: 't1', goalIndex: 3, listType: 'goal' }];
+	const remaps = collectGoalIndexRemaps(todos, swapMap, (todo) => todo.goalIndex);
+	assert.deepEqual(remaps, [{ item: todos[0], from: 3, to: 5 }]);
+});

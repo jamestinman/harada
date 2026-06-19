@@ -739,7 +739,7 @@ $effect(() => {
 					{:else}
 					<div class={`p-4 ${isEditing ? 'rounded-lg bg-white dark:bg-slate-900/70 dark:ring-1 dark:ring-slate-700/70' : 'todo-panel'}`}>
 							{#if isEditing || isNoteEmpty(selectedNote)}
-							<div class="mb-3 hidden justify-end md:flex">
+							<div class="mb-3 hidden justify-end md:flex gap-2">
 								{@render notesDesktopHeaderActions()}
 							</div>
 							<NoteHybridMarkdownEditor

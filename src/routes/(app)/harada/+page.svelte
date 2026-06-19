@@ -33,9 +33,8 @@
 	});
 
 	function handleUpdateGrid(newGrid) {
-		// Update grid and persist immediately.
 		store.harada_chart.grid = [...newGrid];
-		store.saveNow();
+		store.registerGridMutation({ immediate: true });
 	}
 </script>
 
