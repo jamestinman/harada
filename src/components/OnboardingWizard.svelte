@@ -1,5 +1,6 @@
 <script>
 	import { fade, fly } from 'svelte/transition';
+	import { ChevronRight, Compass, SquarePen, Target } from 'lucide-svelte';
 	import { store } from '$stores/store.svelte.js';
 	import { canonicalGoalIndex, getLinkedGoalIndex, updateGoalTimestamp } from '$lib/todoUtils.js';
 
@@ -9,11 +10,16 @@
 	// centre-block sub-goal, so writing one mirrors to its pair (same as the chart editor).
 	const PILLAR_INDICES = [10, 13, 16, 37, 43, 64, 67, 70];
 
+	const templateIcons = {
+		life: Compass,
+		goal: Target,
+		blank: SquarePen
+	};
+
 	const templates = {
 		life: {
 			label: 'Get on top of my life',
 			hint: 'Balance the big areas of your life',
-			emoji: '🧭',
 			centre: 'Get on top of my life',
 			centrePlaceholder: 'What does winning at life look like for you?',
 			areas: ['Health', 'Career', 'Money', 'Relationships', 'Growth', 'Home', 'Mind', 'Fun']
@@ -21,7 +27,6 @@
 		goal: {
 			label: 'Chase one big goal',
 			hint: 'Everything that supports a single ambition',
-			emoji: '🎯',
 			centre: '',
 			centrePlaceholder: 'e.g. Run a marathon · Launch my business',
 			areas: ['Skills', 'Health & energy', 'Mindset', 'Daily routine', 'People & support', 'Knowledge', 'Environment', 'Resources']
@@ -29,7 +34,6 @@
 		blank: {
 			label: 'Start blank',
 			hint: "I'll fill it in myself",
-			emoji: '✏️',
 			centre: '',
 			centrePlaceholder: 'What do you want to achieve?',
 			areas: ['', '', '', '', '', '', '', '']
@@ -158,18 +162,21 @@
 						<h2 class="text-xl font-bold tracking-tight text-slate-900 dark:text-white">Where do you want to start?</h2>
 						<p class="mt-2 text-sm text-slate-500 dark:text-slate-400">Pick a starting point - it's just a scaffold you can rewrite.</p>
 						<div class="mt-5 flex flex-col gap-3">
-							{#each Object.entries(templates) as [key, t]}
+							{#each Object.entries(templates) as [key, t] (key)}
+								{@const Icon = templateIcons[key]}
 								<button
 									type="button"
 									onclick={() => pick(key)}
 									class="group flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-violet-400 hover:bg-violet-50/50 dark:border-slate-700 dark:bg-slate-800/60 dark:hover:border-violet-500 dark:hover:bg-violet-950/30"
 								>
-									<span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-slate-100 text-xl dark:bg-slate-700/60">{t.emoji}</span>
+									<span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-slate-100 dark:bg-slate-700/60">
+										<Icon class="h-5 w-5 text-slate-600 dark:text-slate-300" strokeWidth={1.75} aria-hidden="true" />
+									</span>
 									<span class="min-w-0 flex-1">
 										<span class="block font-semibold text-slate-900 dark:text-white">{t.label}</span>
 										<span class="block text-sm text-slate-500 dark:text-slate-400">{t.hint}</span>
 									</span>
-									<svg class="h-5 w-5 shrink-0 text-slate-300 transition group-hover:text-violet-500 dark:text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+									<ChevronRight class="h-5 w-5 shrink-0 text-slate-300 transition group-hover:text-violet-500 dark:text-slate-600" aria-hidden="true" />
 								</button>
 							{/each}
 						</div>

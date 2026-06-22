@@ -3370,7 +3370,6 @@ class Store {
 		this.noteTaskLinks = [];
 		this.noteGoalLinks = [];
 		this.taskGoalLinks = [];
-    localSet('harada_onboarding_seen', false);
 		this._markAllDirty();
 		this.saveNow();
 	}

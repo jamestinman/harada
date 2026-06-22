@@ -35,8 +35,8 @@
 		openSettings: () => (showSettingsModal = true)
 	});
 
-	// Wipe all local data + onboarding flag so a logged-out visitor can start
-	// completely fresh (and re-trigger the setup wizard).
+	// Wipe all local data so a logged-out visitor can start completely fresh
+	// (and re-trigger the setup wizard when goals are still empty).
 	function resetAll() {
 		if (!browser) return;
 		const ok = confirm(

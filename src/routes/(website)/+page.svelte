@@ -1,7 +1,5 @@
 <script>
 	import { browser } from '$app/environment';
-	import { goto } from '$app/navigation';
-	import { Capacitor } from '@capacitor/core';
 	import AppleStoreBtn from '$components/AppleStoreBtn.svelte';
 	import GooglePlayBtn from '$components/GooglePlayBtn.svelte';
 
@@ -17,13 +15,6 @@
 			copiedPrompt = false;
 		}, 2000);
 	}
-
-	$effect(() => {
-		if (!browser) return;
-		if (Capacitor.isNativePlatform()) {
-			goto('/harada', { replaceState: true });
-		}
-	});
 </script>
 
 <svelte:head>

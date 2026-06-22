@@ -125,8 +125,8 @@ const clearAll = () => {
 		const result = await authStore.signOut();
 		if (result.success) {
 			store.mobileNavMenuOpen = false;
-			// Wipe local data + onboarding flag so the next user starts fresh
-			// (and the setup wizard runs again). Runs after sign-out, so the
+			// Wipe local data so the next user starts fresh (and the setup wizard
+			// runs again when they open the chart with empty goals).
 			// empty chart is only persisted locally, never synced to the cloud.
 			store.clearAll();
 		}

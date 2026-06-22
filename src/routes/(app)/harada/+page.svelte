@@ -1,7 +1,6 @@
 <script>
-	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
-	import { localGet, localSet } from '$lib/PersistentStorage.mjs';
+	import { isChartUnset } from '$lib/haradaGridUtils.js';
 	import { store } from '$stores/store.svelte.js';
 	import HaradaChart from '$components/HaradaChart.svelte';
 
@@ -9,19 +8,15 @@
 	const grid = $derived(store.harada_chart.grid);
 	const todos = $derived(store.harada_chart.todos);
 
-	function isChartEmpty() {
-		const g = store.harada_chart?.grid;
-		if (!Array.isArray(g)) return true;
-		return g.every((cell) => !(cell?.text ?? '').trim());
-	}
+	let wizardOfferedThisVisit = $state(false);
 
-	// First run: a blank chart is intimidating, so guide new users through a
-	// quick setup wizard instead of dropping them on an empty grid. Shows once.
-	onMount(() => {
-		if (!browser) return;
-		if (!localGet('harada_onboarding_seen', false) && isChartEmpty()) {
+	// A blank chart is intimidating — guide users through setup whenever goals
+	// are still empty (including the auto-seeded placeholder state).
+	$effect(() => {
+		if (!browser || store.isBootstrapping || wizardOfferedThisVisit) return;
+		if (isChartUnset(store.harada_chart?.grid)) {
 			store.showOnboardingWizard = true;
-			localSet('harada_onboarding_seen', true);
+			wizardOfferedThisVisit = true;
 		}
 	});
 
