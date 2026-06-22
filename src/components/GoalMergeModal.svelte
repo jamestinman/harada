@@ -7,6 +7,7 @@
 		targetLabel = '',
 		mergedTitle = $bindable(''),
 		onConfirm = null,
+		onSwap = null,
 		onCancel = null
 	} = $props();
 
@@ -26,8 +27,13 @@
 
 	async function confirm() {
 		const title = (mergedTitle ?? '').trim();
-		if (onConfirm) await onConfirm(title);
 		isOpen = false;
+		if (onConfirm) await onConfirm(title);
+	}
+
+	async function swap() {
+		isOpen = false;
+		if (onSwap) await onSwap();
 	}
 
 	function handleKeydown(e) {
@@ -93,6 +99,15 @@
 				>
 					Cancel
 				</button>
+				{#if onSwap}
+					<button
+						type="button"
+						onclick={() => void swap()}
+						class="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 hover:bg-slate-200/70 dark:hover:bg-slate-700/70 transition"
+					>
+						Swap
+					</button>
+				{/if}
 				<button
 					type="button"
 					onclick={() => void confirm()}

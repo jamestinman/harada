@@ -1,4 +1,7 @@
 import { browser, dev } from '$app/environment';
+import {
+	filterRetainedTaskRows
+} from '$lib/todoUtils.js';
 
 const DB_NAME = 'harada_local_mirror';
 const DB_VERSION = 1;
@@ -188,6 +191,11 @@ export async function loadLocalHaradaSnapshot(userId = null) {
 
 	await txDone(tx);
 
+	result.tasks = filterRetainedTaskRows(result.tasks);
+	const retainedTaskIds = new Set(result.tasks.map((row) => row.id));
+	result.noteTaskLinks = result.noteTaskLinks.filter((row) => retainedTaskIds.has(row.task_id));
+	result.taskGoalLinks = result.taskGoalLinks.filter((row) => retainedTaskIds.has(row.task_id));
+
 	if (
 		!chart &&
 		result.tasks.length === 0 &&
@@ -213,6 +221,15 @@ export async function saveLocalHaradaSnapshot({
 	taskGoalLinks = []
 } = {}) {
 	const start = browser ? performance.now() : 0;
+	const retainedTasks = filterRetainedTaskRows(tasks);
+	const retainedTaskIds = new Set(retainedTasks.map((row) => row.id));
+	const retainedNoteTaskLinks = (noteTaskLinks ?? []).filter((row) =>
+		retainedTaskIds.has(row.task_id)
+	);
+	const retainedTaskGoalLinks = (taskGoalLinks ?? []).filter((row) =>
+		retainedTaskIds.has(row.task_id)
+	);
+
 	const db = await openDb();
 	if (!db) return false;
 
@@ -237,11 +254,11 @@ export async function saveLocalHaradaSnapshot({
 	}
 
 	const tableRows = {
-		tasks,
+		tasks: retainedTasks,
 		notes,
-		note_task_links: noteTaskLinks,
+		note_task_links: retainedNoteTaskLinks,
 		note_goal_links: noteGoalLinks,
-		task_goal_links: taskGoalLinks
+		task_goal_links: retainedTaskGoalLinks
 	};
 
 	for (const table of TABLES) {

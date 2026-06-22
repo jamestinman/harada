@@ -348,7 +348,7 @@
 				(t.listType === 'goal' || !t.listType) &&
 				todoBelongsToGoalView(t, targetGoalIndex, taskGoalKeySet);
 			const isCompleted = t.status === 'done';
-			return matchesGoal && ((isPinnedGoalIndex(targetGoalIndex) ? false : showCompleted) || !isCompleted);
+			return matchesGoal && ((isPinnedGoalIndex(targetGoalIndex) ? false : showRecentlyCompleted) || !isCompleted);
 		});
 		return organizeTodosWithHierarchy(filtered, getTodoOrdering, {
 			goalIndex: targetGoalIndex,
@@ -571,7 +571,7 @@
 		mobileMenuOpen = false;
 		activeTodoId = targetTodoId;
 		if (todos.find((todo) => todo.id === targetTodoId)?.status === 'done') {
-			showCompleted = true;
+			showRecentlyCompleted = true;
 		}
 	});
 
@@ -1043,7 +1043,7 @@
 
 	// saveTodos removed - persistence now happens on explicit save points.
 
-	let showCompleted = $state(false);
+	let showRecentlyCompleted = $state(false);
 
 	// Available colors for goals
 	const goalColors = [
@@ -1146,51 +1146,32 @@
 		store.registerGridMutation({ immediate: true });
 	}
 
-	// Clear the goal's name and description (tasks and sub-goals are preserved)
+	// Clear the goal's name and description; unlink tasks/notes (Z2 if no other goals remain)
 	function clearGoal() {
 		if (goalIndex === null) return;
 
-		// Ensure the current goal cell exists in the grid
-		if (!store.harada_chart.grid[goalIndex]) {
-			store.harada_chart.grid[goalIndex] = {
-				text: '',
-				status: 'todo',
-				readme: '',
-				color: 'default',
-				updated_at: null
-			};
-		}
+		store.clearGoalBlock(goalIndex);
 
-		// Clear the goal's title and description for this cell
-		store.harada_chart.grid[goalIndex].text = '';
-		store.harada_chart.grid[goalIndex].readme = '';
+		const grid = [...store.harada_chart.grid];
+		const emptyCell = { text: '', status: 'todo', readme: '', color: 'default', updated_at: null };
 
-		// Also clear the linked goal cell, if any, to keep them in sync
+		if (!grid[goalIndex]) grid[goalIndex] = { ...emptyCell };
+		grid[goalIndex] = { ...grid[goalIndex], text: '', readme: '', color: 'default' };
+
 		const linkedGoalIndex = getLinkedGoalIndex(goalIndex);
 		if (linkedGoalIndex !== null) {
-			if (!store.harada_chart.grid[linkedGoalIndex]) {
-				store.harada_chart.grid[linkedGoalIndex] = {
-					text: '',
-					status: 'todo',
-					readme: '',
-					color: 'default',
-					updated_at: null
-				};
-			}
-			store.harada_chart.grid[linkedGoalIndex].text = '';
-			store.harada_chart.grid[linkedGoalIndex].readme = '';
+			if (!grid[linkedGoalIndex]) grid[linkedGoalIndex] = { ...emptyCell };
+			grid[linkedGoalIndex] = { ...grid[linkedGoalIndex], text: '', readme: '', color: 'default' };
 		}
 
-		// Update timestamp and force reactivity
-		updateGoalTimestamp(store.harada_chart.grid, goalIndex);
-		store.harada_chart.grid = [...store.harada_chart.grid];
+		updateGoalTimestamp(grid, goalIndex);
+		store.harada_chart = { ...store.harada_chart, grid };
 
-		// Reset local editing state
 		editedGoalTitle = '';
 		editedGoalDescription = '';
+		selectedColor = 'default';
 		isEditingGoal = false;
 
-		// Persist changes and return to HaradaChart screen
 		store.registerGridMutation({ immediate: true });
 		goto('/todo', { replaceState: true });
 	}
@@ -1394,10 +1375,10 @@
 								<label class="flex cursor-pointer select-none items-center gap-1.5 text-sm text-slate-800 dark:text-slate-200">
 									<input
 										type="checkbox"
-										bind:checked={showCompleted}
+										bind:checked={showRecentlyCompleted}
 										class="h-3.5 w-3.5 rounded border text-violet-600 focus:ring-2 focus:ring-violet-500/50"
 									/>
-									<span>Show completed</span>
+									<span>Show recently completed</span>
 								</label>
 							</div>
 							{/if}
@@ -1410,7 +1391,7 @@
 									type="button"
 									onclick={clearGoal}
 									class="rounded-md border px-2 py-1.5 text-sm font-semibold shadow-sm transition hover:border-rose-500 hover:bg-rose-900/40 hover:text-rose-200"
-									title="Clear goal name and description"
+									title="Clear goal and unlink its tasks and notes"
 								>
 									<Trash2 class="w-4 h-4" />
 								</button>
@@ -1723,10 +1704,10 @@
 									<label class="flex cursor-pointer select-none items-center gap-1.5 text-sm text-slate-300">
 										<input
 											type="checkbox"
-											bind:checked={showCompleted}
+											bind:checked={showRecentlyCompleted}
 											class="h-3.5 w-3.5 rounded border text-violet-600 focus:ring-2 focus:ring-violet-500/50"
 										/>
-										<span>Show completed</span>
+										<span>Show recently completed</span>
 									</label>
 								</div>
 								{/if}
@@ -1738,7 +1719,7 @@
 										type="button"
 										onclick={clearGoal}
 										class="rounded-md border px-2 py-1.5 text-sm font-semibold shadow-sm transition hover:border-rose-500 hover:bg-rose-900/40 hover:text-rose-200"
-										title="Clear goal name and description"
+										title="Clear goal and unlink its tasks and notes"
 									>
 										<Trash2 class="w-4 h-4" />
 									</button>

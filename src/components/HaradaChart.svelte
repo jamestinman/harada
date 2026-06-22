@@ -8,15 +8,14 @@
 		buildGoalBlockSwapMap,
 		buildPairSwapMap,
 		getGoalLabelFromIndex,
-		goalBlockHasContent,
 		defaultMergedGoalTitle,
+		resolveGoalDropTargetIndex,
 		updateGoalTimestamp
 	} from '$lib/todoUtils.js';
 	import { store } from '$stores/store.svelte.js';
 	import GoalMergeModal from '$components/GoalMergeModal.svelte';
 
 	let { grid, onUpdateGrid = null } = $props();
-	
 
 	// Get the block index (0-8) for a given cell
 	function getBlockIndex(row, col) {
@@ -221,12 +220,14 @@
 	});
 
 	let mergeModalOpen = $state(false);
-	let mergeSourceCanonical = $state(null);
-	let mergeTargetCanonical = $state(null);
+	let mergeSourceIndex = $state(null);
+	let mergeTargetIndex = $state(null);
 	let mergeSourceLabel = $state('');
 	let mergeTargetLabel = $state('');
 	let mergeTitleDraft = $state('');
 	let blockCellClickUntil = 0;
+	/** @type {Element | null} */
+	let goalPointerCaptureEl = null;
 
 	function isMainGoalIndex(index) {
 		return index === 40;
@@ -251,12 +252,6 @@
 
 	function isDraggableSource(index) {
 		return isGoalDragCell(index) || isTaskCell(index);
-	}
-
-	function isDraggableTarget(index) {
-		if (!goalDrag.active) return false;
-		if (goalDrag.dragType === 'task') return isTaskCell(index);
-		return isGoalDragCell(index);
 	}
 
 	function clearGoalPressTimer() {
@@ -300,6 +295,12 @@
 		window.addEventListener('pointerup', handleGlobalGoalPointerUp, { passive: false });
 		window.addEventListener('pointercancel', handleGlobalGoalPointerUp, { passive: false });
 
+		const captureEl = event.currentTarget;
+		if (captureEl instanceof Element && captureEl.setPointerCapture) {
+			captureEl.setPointerCapture(event.pointerId);
+			goalPointerCaptureEl = captureEl;
+		}
+
 		if (pendingGoalDrag.pointerType === 'touch') {
 			const cx = event.clientX;
 			const cy = event.clientY;
@@ -311,21 +312,61 @@
 		}
 	}
 
+	function resolveDragTargetIndex(rawIndex) {
+		if (!Number.isInteger(rawIndex)) return null;
+		if (goalDrag.dragType === 'goal') return resolveGoalDropTargetIndex(rawIndex);
+		// Non-central goal drags can land on any cell (move/merge/absorb).
+		return rawIndex;
+	}
+
+	function findRawCellIndexAtPoint(clientX, clientY) {
+		const hit = document
+			.elementFromPoint(clientX, clientY)
+			?.closest?.('[data-harada-cell-index]');
+		if (hit) return Number(hit.getAttribute('data-harada-cell-index'));
+
+		// Grid gaps are not inside any cell button — use bounding boxes as a fallback.
+		for (const cell of document.querySelectorAll('[data-harada-cell-index]')) {
+			const rect = cell.getBoundingClientRect();
+			if (
+				clientX >= rect.left &&
+				clientX <= rect.right &&
+				clientY >= rect.top &&
+				clientY <= rect.bottom
+			) {
+				return Number(cell.getAttribute('data-harada-cell-index'));
+			}
+		}
+		return null;
+	}
+
+	function updateGoalDragTargetFromRawIndex(rawIndex) {
+		const nextIndex = resolveDragTargetIndex(rawIndex);
+		if (nextIndex == null || goalDrag.targetIndex === nextIndex) return;
+		goalDrag = { ...goalDrag, targetIndex: nextIndex };
+	}
+
+	function updateGoalDragTargetFromEvent(event) {
+		if (!goalDrag.active || goalDrag.pointerId !== event.pointerId) return;
+		const rawIndex = findRawCellIndexAtPoint(event.clientX, event.clientY);
+		if (rawIndex == null) return;
+		updateGoalDragTargetFromRawIndex(rawIndex);
+	}
+
 	function handleCellPointerEnter(_event, index) {
 		if (!goalDrag.active) return;
-		if (!isDraggableTarget(index)) return;
-		if (goalDrag.targetIndex === index) return;
-		goalDrag = { ...goalDrag, targetIndex: index };
+		updateGoalDragTargetFromRawIndex(index);
 	}
 
 	function startGoalDrag(pointerId, index, _clientX, _clientY) {
 		if (!isDraggableSource(index)) return;
+		const dragType = isGoalDragCell(index) ? 'goal' : 'task';
 		goalDrag = {
 			active: true,
 			pointerId,
 			sourceIndex: index,
 			targetIndex: index,
-			dragType: isGoalDragCell(index) ? 'goal' : 'task'
+			dragType
 		};
 	}
 
@@ -348,52 +389,52 @@
 
 		if (goalDrag.active && goalDrag.pointerId === event.pointerId) {
 			event.preventDefault();
-			// Update target index based on current pointer position
-			const targetElement = document.elementFromPoint(event.clientX, event.clientY);
-			const cellElement = targetElement?.closest?.('[data-harada-cell-index]');
-			if (!cellElement) return;
-			const indexAttr = cellElement.getAttribute('data-harada-cell-index');
-			if (indexAttr == null) return;
-			const index = Number(indexAttr);
-			if (!Number.isInteger(index)) return;
-			if (!isDraggableTarget(index)) return;
-			if (goalDrag.targetIndex === index) return;
-			goalDrag = { ...goalDrag, targetIndex: index };
+			updateGoalDragTargetFromEvent(event);
 		}
 	}
 
-	function clearGlobalGoalPointerListeners() {
+	function releaseGoalPointerCapture(pointerId) {
+		if (!goalPointerCaptureEl?.releasePointerCapture) {
+			goalPointerCaptureEl = null;
+			return;
+		}
+		try {
+			goalPointerCaptureEl.releasePointerCapture(pointerId);
+		} catch {
+			// Already released or capture lost.
+		}
+		goalPointerCaptureEl = null;
+	}
+
+	function clearGlobalGoalPointerListeners(pointerId = null) {
 		window.removeEventListener('pointermove', handleGlobalGoalPointerMove);
 		window.removeEventListener('pointerup', handleGlobalGoalPointerUp);
 		window.removeEventListener('pointercancel', handleGlobalGoalPointerUp);
+		if (pointerId != null) releaseGoalPointerCapture(pointerId);
 	}
 
 	function shouldBlockCellClick() {
 		return Date.now() < blockCellClickUntil;
 	}
 
-	function isGoalBlockOccupied(canonicalIndex) {
-		if (
-			goalBlockHasContent({
-				grid,
-				canonical: canonicalIndex,
-				todos: store.harada_chart.todos,
-				noteGoalLinks: store.noteGoalLinks,
-				taskGoalLinks: store.taskGoalLinks
-			})
-		) {
-			return true;
-		}
-		return hasCustomTitle(canonicalIndex);
+	// Cell-level occupancy: a goal cell is "occupied" if it has a title, readme,
+	// or any linked task/note.
+	function isGoalCellOccupied(index) {
+		if (typeof index !== 'number') return false;
+		const cell = grid[index];
+		if ((cell?.text ?? '').trim()) return true;
+		if ((cell?.readme ?? '').trim()) return true;
+		if ((store.harada_chart.todos || []).some((t) => t?.goalIndex === index)) return true;
+		if ((store.taskGoalLinks || []).some((l) => l.goalIndex === index)) return true;
+		if ((store.noteGoalLinks || []).some((l) => l.goalIndex === index)) return true;
+		return false;
 	}
 
 	function openGoalMergePrompt(sourceIndex, targetIndex) {
-		const sourceCanonical = canonicalGoalIndex(sourceIndex);
-		const targetCanonical = canonicalGoalIndex(targetIndex);
-		const sourceLabel = getGoalLabelFromIndex(sourceCanonical, grid);
-		const targetLabel = getGoalLabelFromIndex(targetCanonical, grid);
-		mergeSourceCanonical = sourceCanonical;
-		mergeTargetCanonical = targetCanonical;
+		const sourceLabel = getGoalLabelFromIndex(sourceIndex, grid);
+		const targetLabel = getGoalLabelFromIndex(targetIndex, grid);
+		mergeSourceIndex = sourceIndex;
+		mergeTargetIndex = targetIndex;
 		mergeSourceLabel = sourceLabel;
 		mergeTargetLabel = targetLabel;
 		mergeTitleDraft = defaultMergedGoalTitle(sourceLabel, targetLabel);
@@ -402,13 +443,22 @@
 
 	function cancelGoalMerge() {
 		mergeModalOpen = false;
-		mergeSourceCanonical = null;
-		mergeTargetCanonical = null;
+		mergeSourceIndex = null;
+		mergeTargetIndex = null;
+		mergeSourceLabel = '';
+		mergeTargetLabel = '';
+		mergeTitleDraft = '';
 	}
 
 	async function confirmGoalMerge(mergedTitle) {
-		if (mergeSourceCanonical == null || mergeTargetCanonical == null) return;
-		await store.mergeGoalBlocks(mergeSourceCanonical, mergeTargetCanonical, { mergedTitle });
+		if (mergeSourceIndex == null || mergeTargetIndex == null) return;
+		await store.mergeGoalCells(mergeSourceIndex, mergeTargetIndex, { mergedTitle });
+		cancelGoalMerge();
+	}
+
+	async function swapGoalMerge() {
+		if (mergeSourceIndex == null || mergeTargetIndex == null) return;
+		await swapGoalData(mergeSourceIndex, mergeTargetIndex, 'task');
 		cancelGoalMerge();
 	}
 
@@ -466,49 +516,80 @@
 		onUpdateGrid(newGrid);
 	}
 
-	// Returns the outer block center index for any cell in that block, or null for center-block cells
-	function getOuterBlockCenter(index) {
-		const row = Math.floor(index / 9);
-		const col = index % 9;
-		if (row >= 3 && row <= 5 && col >= 3 && col <= 5) return null;
-		return (Math.floor(row / 3) * 3 + 1) * 9 + (Math.floor(col / 3) * 3 + 1);
+	function normalizeReleaseIntent(dragState, releaseRawIndex, clientX, clientY) {
+		const dragType = dragState.dragType;
+		const sourceIndex = dragState.sourceIndex;
+		const releaseIndex = Number.isInteger(releaseRawIndex)
+			? releaseRawIndex
+			: findRawCellIndexAtPoint(clientX, clientY);
+
+		// Theme (central) drags resolve to a goal/theme cell; non-central goal drags
+		// resolve to the exact cell the pointer is released over.
+		const targetIndex =
+			dragType === 'goal'
+				? resolveGoalDropTargetIndex(releaseIndex)
+				: Number.isInteger(releaseIndex)
+					? releaseIndex
+					: null;
+
+		return {
+			effectiveSourceIndex: sourceIndex,
+			effectiveTargetIndex: targetIndex,
+			effectiveDragType: dragType
+		};
 	}
 
 	async function handleGlobalGoalPointerUp(event) {
 		if (pendingGoalDrag && pendingGoalDrag.pointerId === event.pointerId) {
 			clearPendingGoalDrag();
-			clearGlobalGoalPointerListeners();
+			clearGlobalGoalPointerListeners(event.pointerId);
 			return;
 		}
 
 		if (goalDrag.active && goalDrag.pointerId === event.pointerId) {
 			event.preventDefault();
-			event.stopPropagation();
-			const didDrop =
-				goalDrag.sourceIndex != null &&
-				goalDrag.targetIndex != null &&
-				goalDrag.sourceIndex !== goalDrag.targetIndex;
-			if (didDrop) {
-				blockCellClickUntil = Date.now() + 500;
-				if (goalDrag.dragType === 'goal') {
-					const sourceCanonical = canonicalGoalIndex(goalDrag.sourceIndex);
-					const targetCanonical = canonicalGoalIndex(goalDrag.targetIndex);
+			// Suppress click-to-navigate after any completed drag gesture.
+			blockCellClickUntil = Date.now() + 500;
+			const releaseRawIndex = findRawCellIndexAtPoint(event.clientX, event.clientY);
+			const {
+				effectiveSourceIndex: sourceIndex,
+				effectiveTargetIndex: targetIndex,
+				effectiveDragType: dragType
+			} = normalizeReleaseIntent(goalDrag, releaseRawIndex, event.clientX, event.clientY);
+
+			if (sourceIndex != null && targetIndex != null && sourceIndex !== targetIndex) {
+				if (dragType === 'goal') {
+					// Central squares can ONLY be swapped with other central squares
+					// (whole block + sub-goals move together). Never merge, never main.
+					const sourceCanonical = canonicalGoalIndex(sourceIndex);
+					const targetCanonical = canonicalGoalIndex(targetIndex);
+					const targetIsTheme = isGoalDragCell(targetIndex);
 					if (
-						sourceCanonical !== 40 &&
-						targetCanonical !== 40 &&
+						targetIsTheme &&
 						sourceCanonical !== targetCanonical &&
-						isGoalBlockOccupied(targetCanonical)
+						sourceCanonical !== 40 &&
+						targetCanonical !== 40
 					) {
-						openGoalMergePrompt(goalDrag.sourceIndex, goalDrag.targetIndex);
-					} else {
-						await swapGoalData(goalDrag.sourceIndex, goalDrag.targetIndex, goalDrag.dragType);
+						await swapGoalData(sourceIndex, targetIndex, 'goal');
 					}
-				} else {
-					await swapGoalData(goalDrag.sourceIndex, goalDrag.targetIndex, goalDrag.dragType);
+				} else if (isTaskCell(targetIndex)) {
+					// Non-central goal onto another non-central square.
+					if (isGoalCellOccupied(targetIndex)) {
+						// Occupied → merge / swap / cancel prompt.
+						openGoalMergePrompt(sourceIndex, targetIndex);
+					} else {
+						// Empty → simply move it (with its tasks/notes).
+						await swapGoalData(sourceIndex, targetIndex, 'task');
+					}
+				} else if (isGoalDragCell(targetIndex) || isMainGoalIndex(targetIndex)) {
+					// Non-central goal onto a central goal → destroy the source goal,
+					// moving all of its tasks/notes onto the central goal.
+					const targetCanonical = canonicalGoalIndex(targetIndex);
+					await store.mergeGoalCells(sourceIndex, targetCanonical, { mergedTitle: null });
 				}
 			}
 			resetGoalDrag();
-			clearGlobalGoalPointerListeners();
+			clearGlobalGoalPointerListeners(event.pointerId);
 		}
 	}
 
@@ -546,14 +627,14 @@
 	class="mx-auto grid grid-cols-3 gap-1 sm:gap-1.5"
 	style="max-width: min(95vw, 95vh, 100dvw - 32px, 100dvh - 200px); touch-action: none;"
 >
-	{#each { length: 9 } as _, blockIndex}
+	{#each { length: 9 } as _, blockIndex (blockIndex)}
 		{@const blockRow = Math.floor(blockIndex / 3)}
 		{@const blockCol = blockIndex % 3}
 		<div
 			class="grid gap-0.5 sm:gap-1"
 			style="grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); aspect-ratio: 1;"
 		>
-			{#each { length: 9 } as _, innerIndex}
+			{#each { length: 9 } as _, innerIndex (innerIndex)}
 				{@const r = Math.floor(innerIndex / 3)}
 				{@const c = innerIndex % 3}
 				{@const row = blockRow * 3 + r}
@@ -634,5 +715,6 @@
 	targetLabel={mergeTargetLabel}
 	bind:mergedTitle={mergeTitleDraft}
 	onConfirm={confirmGoalMerge}
+	onSwap={swapGoalMerge}
 	onCancel={cancelGoalMerge}
 />

@@ -17,7 +17,11 @@ open ~/git/harada/electron/dist/
 Then run e.g. `Haradato-1.0.0-arm64.dmg`.
 
 ## Grid Structure
-Overall, the grid uses chess-like coordinates: `[letter][number]` (e.g. `E5`).
+Overall, the grid uses chess-like coordinates: `[letter][number]` e.g. from top left it goes A1, A2, A3, ...
+
+# Pseudo goals Z1, Z1
+`Z1` is the "Pinned Goals" goal
+`Z2` is the "Null goal" that tasks get if they have no goal (in order to _still_ have ordering in that context)
 
 Columns:
 [A][B][C][D][E][F][G][H][I]

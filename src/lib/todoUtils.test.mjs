@@ -9,12 +9,21 @@ import {
 	buildGoalBlockSwapMap,
 	buildGoalBlockRelocateMap,
 	buildPairSwapMap,
+	resolveGoalDropTargetIndex,
+	shouldMoveGoalToVacantSlot,
 	collectGoalIndexRemaps,
 	defaultMergedGoalTitle,
 	appendGoalReadmes,
 	goalBlockHasContent,
 	getGoalBlockIndexSet,
-	getLinkedGoalIndex
+	getLinkedGoalIndex,
+	goalIndexMatchesCanonical,
+	RECENTLY_COMPLETED_MS,
+	isRecentlyCompletedTodo,
+	shouldRetainTodoInStore,
+	filterRetainedTodos,
+	shouldRetainTaskRow,
+	filterRetainedTaskRows
 } from './todoUtils.js';
 
 test('mergeTodoLists prefers todo with newer updatedAt', () => {
@@ -247,6 +256,16 @@ test('buildGoalBlockRelocateMap is one-way from source to target block', () => {
 	assert.equal(map.has(37), false);
 });
 
+test('goalIndexMatchesCanonical matches a goal and its linked pair, not sibling block cells', () => {
+	const linked = getLinkedGoalIndex(10);
+	assert.equal(linked, 30);
+	assert.equal(goalIndexMatchesCanonical(10, 10), true);
+	assert.equal(goalIndexMatchesCanonical(30, 10), true);
+	assert.equal(goalIndexMatchesCanonical(0, 10), false);
+	assert.equal(goalIndexMatchesCanonical(18, 10), false);
+	assert.equal(getGoalBlockIndexSet(10).has(0), true);
+});
+
 test('defaultMergedGoalTitle joins source and target labels', () => {
 	assert.equal(defaultMergedGoalTitle('Run', 'Health'), 'Run + Health');
 	assert.equal(defaultMergedGoalTitle('', 'Health'), 'Health');
@@ -255,6 +274,20 @@ test('defaultMergedGoalTitle joins source and target labels', () => {
 test('appendGoalReadmes concatenates descriptions', () => {
 	assert.equal(appendGoalReadmes('Target notes', 'Source notes'), 'Target notes\n\nSource notes');
 	assert.equal(appendGoalReadmes('', 'Source only'), 'Source only');
+});
+
+test('resolveGoalDropTargetIndex maps task cells to block center', () => {
+	assert.equal(resolveGoalDropTargetIndex(10), 10);
+	assert.equal(resolveGoalDropTargetIndex(30), 30);
+	assert.equal(resolveGoalDropTargetIndex(2), 10);
+	assert.equal(resolveGoalDropTargetIndex(40), null);
+});
+
+test('shouldMoveGoalToVacantSlot only when source has content and target does not', () => {
+	assert.equal(shouldMoveGoalToVacantSlot(true, false), true);
+	assert.equal(shouldMoveGoalToVacantSlot(false, true), false);
+	assert.equal(shouldMoveGoalToVacantSlot(true, true), false);
+	assert.equal(shouldMoveGoalToVacantSlot(false, false), false);
 });
 
 test('goalBlockHasContent detects title, tasks, and links', () => {
@@ -302,4 +335,39 @@ test('goalBlockHasContent detects title, tasks, and links', () => {
 		}),
 		false
 	);
+});
+
+test('recently completed retention keeps active and fresh done todos', () => {
+	const now = Date.now();
+	const active = { id: 'a', status: 'todo', updatedAt: now };
+	const recentDone = { id: 'b', status: 'done', updatedAt: now - 60_000 };
+	const staleDone = { id: 'c', status: 'done', updatedAt: now - RECENTLY_COMPLETED_MS - 1 };
+
+	assert.equal(shouldRetainTodoInStore(active, now), true);
+	assert.equal(isRecentlyCompletedTodo(recentDone, now), true);
+	assert.equal(shouldRetainTodoInStore(recentDone, now), true);
+	assert.equal(shouldRetainTodoInStore(staleDone, now), false);
+
+	const retained = filterRetainedTodos([active, recentDone, staleDone], now);
+	assert.deepEqual(
+		retained.map((todo) => todo.id),
+		['a', 'b']
+	);
+});
+
+test('filterRetainedTaskRows mirrors todo retention using updated_at', () => {
+	const now = Date.now();
+	const cutoffIso = new Date(now - RECENTLY_COMPLETED_MS - 1).toISOString();
+	const rows = [
+		{ id: 'a', status: 'todo', deleted_at: null },
+		{ id: 'b', status: 'done', updated_at: new Date(now - 60_000).toISOString(), deleted_at: null },
+		{ id: 'c', status: 'done', updated_at: cutoffIso, deleted_at: null }
+	];
+
+	const retained = filterRetainedTaskRows(rows, now);
+	assert.deepEqual(
+		retained.map((row) => row.id),
+		['a', 'b']
+	);
+	assert.equal(shouldRetainTaskRow(rows[2], now), false);
 });

@@ -322,6 +322,25 @@
 	}
 </script>
 
+{#snippet taskStatusCheckbox()}
+	<button
+		type="button"
+		onclick={handleCheckbox}
+		class={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border-2 transition ${
+			todo.status === 'done'
+				? 'border-emerald-500 bg-emerald-500 text-white'
+				: 'todo-checkbox-todo'
+		}`}
+		title={todo.status === 'done' ? 'Mark as to-do' : 'Mark as done'}
+	>
+		{#if todo.status === 'done'}
+			<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+			</svg>
+		{/if}
+	</button>
+{/snippet}
+
 {#snippet taskLinkControls()}
 	<div class="flex flex-wrap items-center gap-1.5">
 			{#each linkedGoalsForDisplay as linkedGoal}
@@ -401,23 +420,7 @@
 			</button>
 		{/if}
 
-		<!-- Checkbox -->
-		<button
-			type="button"
-			onclick={handleCheckbox}
-			class={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border-2 transition ${
-				todo.status === 'done'
-					? 'border-emerald-500 bg-emerald-500 text-white'
-					: `todo-checkbox-todo`
-			}`}
-			title={todo.status === 'done' ? 'Mark as to-do' : 'Mark as done'}
-		>
-			{#if todo.status === 'done'}
-				<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
-				</svg>
-			{/if}
-		</button>
+		{@render taskStatusCheckbox()}
 
 		<!-- Title - editable inline -->
 		{#if isEditingTitle}
@@ -559,17 +562,18 @@
 {:else}
 	<!-- Desktop expanded editor -->
 	<div class="desktop-expanded-editor" style="margin-left: {indentLevel * 1.5}rem;">
-		<div class="mb-2 flex items-start gap-2">
+		<div class="mb-2 flex items-center gap-2">
+			{@render taskStatusCheckbox()}
 			<input
 				type="text"
 				bind:value={editTitle}
 				placeholder="Task title"
-				class="task-edit-title flex-1"
+				class={`task-edit-title flex-1 ${todo.status === 'done' ? 'line-through opacity-70' : ''}`}
 			/>
 			<button
 				type="button"
 				onclick={togglePinned}
-				class={`mt-1 flex-shrink-0 rounded p-1.5 transition ${
+				class={`flex-shrink-0 rounded p-1.5 transition ${
 					isPinned
 						? 'text-pink-400 hover:bg-pink-500/20 hover:text-pink-300'
 						: 'text-slate-500 hover:bg-slate-700/50 hover:text-slate-300'
@@ -637,17 +641,18 @@
 			transition:sheet3d
 			class="composer-panel !rounded-2xl"
 		>
-			<div class="mb-2 flex items-start gap-2">
+			<div class="mb-2 flex items-center gap-2">
+				{@render taskStatusCheckbox()}
 				<input
 					type="text"
 					bind:value={editTitle}
 					placeholder="Task title"
-					class="composer-title-input flex-1"
+					class={`task-edit-title flex-1 ${todo.status === 'done' ? 'line-through opacity-70' : ''}`}
 				/>
 				<button
 					type="button"
 					onclick={togglePinned}
-					class={`mt-1 flex-shrink-0 rounded p-1.5 transition ${
+					class={`flex-shrink-0 rounded p-1.5 transition ${
 						isPinned
 							? 'text-pink-400 hover:bg-pink-500/20 hover:text-pink-300'
 							: 'text-slate-500 hover:bg-slate-700/50 hover:text-slate-300'

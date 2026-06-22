@@ -158,9 +158,15 @@ h4 {
   }
 }
 
-/* Borderless title field inside the expanded editor */
+/* Title field inside the expanded editor */
 .task-edit-title {
-  @apply !border-0 !bg-transparent !px-0 !py-1 !text-base font-medium focus:!ring-0;
+  @apply rounded-md border px-2 py-1 text-base font-medium outline-none;
+  .dark & {
+    @apply border-slate-600/70 bg-slate-900/40 text-slate-100 placeholder:text-slate-500 focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50;
+  }
+  .light & {
+    @apply border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50;
+  }
 }
 
 /* Borderless note textarea inside the expanded editor */

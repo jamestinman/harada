@@ -38,6 +38,51 @@ export function defaultNote({ content = '' } = {}) {
 	};
 }
 
+/** Keep completed tasks in the hot path for this long (status=done, by updatedAt). */
+export const RECENTLY_COMPLETED_MS = 7 * 24 * 60 * 60 * 1000;
+
+export function getRecentlyCompletedCutoffMs(now = Date.now()) {
+	return now - RECENTLY_COMPLETED_MS;
+}
+
+export function getRecentlyCompletedCutoffIso(now = Date.now()) {
+	return new Date(getRecentlyCompletedCutoffMs(now)).toISOString();
+}
+
+export function isRecentlyCompletedTodo(todo, now = Date.now()) {
+	if (!todo || todo.status !== 'done') return false;
+	const updatedAt =
+		typeof todo.updatedAt === 'number' && Number.isFinite(todo.updatedAt) ? todo.updatedAt : 0;
+	return updatedAt >= getRecentlyCompletedCutoffMs(now);
+}
+
+/** Active todos plus done tasks completed within the retention window. */
+export function shouldRetainTodoInStore(todo, now = Date.now()) {
+	if (!todo) return false;
+	if (todo.status !== 'done') return true;
+	return isRecentlyCompletedTodo(todo, now);
+}
+
+export function filterRetainedTodos(todos, now = Date.now()) {
+	return (todos ?? []).filter((todo) => shouldRetainTodoInStore(todo, now));
+}
+
+export function shouldRetainTaskRow(row, now = Date.now()) {
+	if (!row || row.deleted_at) return false;
+	if (row.status !== 'done') return true;
+	const updatedAt = row.updated_at ? new Date(row.updated_at).getTime() : 0;
+	return updatedAt >= getRecentlyCompletedCutoffMs(now);
+}
+
+export function filterRetainedTaskRows(rows, now = Date.now()) {
+	return (rows ?? []).filter((row) => shouldRetainTaskRow(row, now));
+}
+
+export function filterLinksForRetainedTasks(links, retainedTaskIds) {
+	const ids = retainedTaskIds instanceof Set ? retainedTaskIds : new Set(retainedTaskIds);
+	return (links ?? []).filter((link) => link?.taskId && ids.has(link.taskId));
+}
+
 function slugifyListName(name) {
 	return String(name || '')
 		.trim()
@@ -687,6 +732,25 @@ export function buildPairSwapMap(sourceIndex, targetIndex) {
 	return swapMap;
 }
 
+/**
+ * Map a pointer cell to the goal index used for goal-block drag/drop.
+ * Task squares in an outer block resolve to that block's center; center sub-goals stay as-is.
+ */
+export function resolveGoalDropTargetIndex(index) {
+	if (typeof index !== 'number' || index < 0 || index > 80) return null;
+	if (index === 40) return null;
+	if (isCenterSubGoalIndex(index) || isOuterBlockCenterIndex(index)) return index;
+	const row = Math.floor(index / 9);
+	const col = index % 9;
+	if (row >= 3 && row <= 5 && col >= 3 && col <= 5) return null;
+	return (Math.floor(row / 3) * 3 + 1) * 9 + (Math.floor(col / 3) * 3 + 1);
+}
+
+/** Move onto a vacant slot; otherwise offer merge. */
+export function shouldMoveGoalToVacantSlot(sourceOccupied, targetOccupied) {
+	return sourceOccupied && !targetOccupied;
+}
+
 /** One-way index map: relocate a goal block onto another (merge / move onto empty). */
 export function buildGoalBlockRelocateMap(sourceCanonical, targetCanonical) {
 	const relocateMap = new Map();
@@ -709,6 +773,12 @@ export function getGoalBlockIndexSet(blockCenterIndex) {
 	const linked = getLinkedGoalIndex(blockCenterIndex);
 	if (linked !== null) indices.add(linked);
 	return indices;
+}
+
+/** True when a stored goal index refers to the same canonical goal (not sibling block cells). */
+export function goalIndexMatchesCanonical(goalIndex, canonical) {
+	if (typeof goalIndex !== 'number' || typeof canonical !== 'number') return false;
+	return canonicalGoalIndex(goalIndex) === canonicalGoalIndex(canonical);
 }
 
 export function appendGoalReadmes(targetReadme, sourceReadme) {
