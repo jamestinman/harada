@@ -23,8 +23,22 @@ import {
 	shouldRetainTodoInStore,
 	filterRetainedTodos,
 	shouldRetainTaskRow,
-	filterRetainedTaskRows
+	filterRetainedTaskRows,
+	collectDescendantTaskIds
 } from './todoUtils.js';
+
+test('collectDescendantTaskIds returns nested descendants via parentId', () => {
+	const todos = [
+		{ id: 'a', parentId: null },
+		{ id: 'b', parentId: 'a' },
+		{ id: 'c', parentId: 'b' },
+		{ id: 'd', parentId: 'a' },
+		{ id: 'e', parentId: 'x' }
+	];
+	assert.deepEqual(collectDescendantTaskIds('a', todos).sort(), ['b', 'c', 'd']);
+	assert.deepEqual(collectDescendantTaskIds('b', todos), ['c']);
+	assert.deepEqual(collectDescendantTaskIds('e', todos), []);
+});
 
 test('mergeTodoLists prefers todo with newer updatedAt', () => {
 	const id = 'todo-1';

@@ -1015,6 +1015,31 @@ export function getTaskGoalLink(taskGoalLinks, taskId, goalIndex) {
 	);
 }
 
+/** Descendant task ids under rootTaskId via tasks.parentId (does not include root). */
+export function collectDescendantTaskIds(rootTaskId, todos = []) {
+	if (!rootTaskId) return [];
+	const childrenByParent = new Map();
+	for (const candidate of todos) {
+		const parentId = candidate?.parentId;
+		if (!parentId) continue;
+		if (!childrenByParent.has(parentId)) childrenByParent.set(parentId, []);
+		childrenByParent.get(parentId).push(candidate.id);
+	}
+	const descendants = [];
+	const queue = [rootTaskId];
+	const seen = new Set([rootTaskId]);
+	while (queue.length > 0) {
+		const currentId = queue.shift();
+		for (const childId of childrenByParent.get(currentId) || []) {
+			if (seen.has(childId)) continue;
+			seen.add(childId);
+			descendants.push(childId);
+			queue.push(childId);
+		}
+	}
+	return descendants;
+}
+
 /** All goal indices a task appears in (primary + secondary links). */
 export function getTaskGoalIndicesForTodo(todo, taskGoalLinks = []) {
 	const goals = new Set();

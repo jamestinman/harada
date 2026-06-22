@@ -18,6 +18,7 @@ import {
 	getGoalViewSiblings,
 	isTaskPrimaryOnGoal,
 	getTaskGoalIndicesForTodo,
+	collectDescendantTaskIds,
 	buildGoalBlockRelocateMap,
 	getGoalBlockIndexSet,
 	getLinkedGoalIndex,
@@ -3157,24 +3158,7 @@ class Store {
 		const todo = this.harada_chart.todos.find((t) => t.id === taskId);
 		if (!todo) return;
 		const todos = this.harada_chart.todos || [];
-		const childrenByParent = new Map();
-		for (const candidate of todos) {
-			const parentId = candidate?.parentId;
-			if (!parentId) continue;
-			if (!childrenByParent.has(parentId)) childrenByParent.set(parentId, []);
-			childrenByParent.get(parentId).push(candidate.id);
-		}
-		const tasksToLink = new Set([taskId]);
-		const queue = [taskId];
-		while (queue.length > 0) {
-			const currentId = queue.shift();
-			const childIds = childrenByParent.get(currentId) || [];
-			for (const childId of childIds) {
-				if (tasksToLink.has(childId)) continue;
-				tasksToLink.add(childId);
-				queue.push(childId);
-			}
-		}
+		const tasksToLink = new Set([taskId, ...collectDescendantTaskIds(taskId, todos)]);
 		const now = Date.now();
 		const taskGoalKeySet = new Set(
 			(this.taskGoalLinks ?? []).map((link) => `${link.taskId}:${link.goalIndex}`)
@@ -3214,29 +3198,57 @@ class Store {
 	unlinkTaskFromGoal(taskId, goalIndex) {
 		if (!taskId || typeof goalIndex !== 'number') return;
 		const canonical = this._applyCanonicalGoalIndex(goalIndex);
-		const existing = this.taskGoalLinks.find(
-			(link) => link.taskId === taskId && link.goalIndex === canonical
-		);
-		this.taskGoalLinks = this.taskGoalLinks.filter(
-			(link) => !(link.taskId === taskId && link.goalIndex === canonical)
-		);
-		if (existing) this._markTaskGoalLinkDirty(existing);
-		const remainingGoal = this.taskGoalLinks.find((link) => link.taskId === taskId)?.goalIndex ?? null;
-		const todo = this.harada_chart.todos.find((t) => t.id === taskId);
-		if (todo && typeof todo.goalIndex === 'number' && canonicalGoalIndex(todo.goalIndex) === canonical) {
-			this.updateTodo(taskId, buildGoalListMeta(remainingGoal));
+		const todos = this.harada_chart.todos || [];
+		const taskIds = new Set([taskId]);
+		if (!isPseudoGoalIndex(canonical)) {
+			for (const id of collectDescendantTaskIds(taskId, todos)) {
+				taskIds.add(id);
+			}
 		}
-		if (browser && authStore.user && supabase) {
+
+		const removedLinks = (this.taskGoalLinks ?? []).filter(
+			(link) => taskIds.has(link.taskId) && link.goalIndex === canonical
+		);
+		this.taskGoalLinks = (this.taskGoalLinks ?? []).filter(
+			(link) => !(taskIds.has(link.taskId) && link.goalIndex === canonical)
+		);
+		for (const link of removedLinks) this._markTaskGoalLinkDirty(link);
+
+		for (const id of taskIds) {
+			const todo = this.harada_chart.todos.find((t) => t.id === id);
+			if (!todo) continue;
+
+			const primaryOnUnlinkedGoal =
+				typeof todo.goalIndex === 'number' && canonicalGoalIndex(todo.goalIndex) === canonical;
+
+			if (primaryOnUnlinkedGoal) {
+				const remainingGoals = getTaskGoalIndicesForTodo(
+					{ ...todo, goalIndex: null },
+					this.taskGoalLinks
+				);
+				this.updateTodo(id, buildGoalListMeta(remainingGoals[0] ?? null));
+				continue;
+			}
+
+			const remainingRealGoals = getTaskGoalIndicesForTodo(todo, this.taskGoalLinks);
+			if (remainingRealGoals.length === 0 && todo.goalIndex == null) {
+				this.ensureNoGoalTaskLink(id);
+			}
+		}
+
+		if (browser && authStore.user && supabase && removedLinks.length > 0) {
 			const now = new Date().toISOString();
-			supabase
-				.from('task_goal_links')
-				.update({ deleted_at: now, updated_at: now })
-				.eq('task_id', taskId)
-				.eq('goal_index', canonical)
-				.eq('user_id', authStore.user.id)
-				.then(({ error }) => {
-					if (error) console.error('Failed to soft-delete task/goal link:', error);
-				});
+			for (const link of removedLinks) {
+				supabase
+					.from('task_goal_links')
+					.update({ deleted_at: now, updated_at: now })
+					.eq('task_id', link.taskId)
+					.eq('goal_index', canonical)
+					.eq('user_id', authStore.user.id)
+					.then(({ error }) => {
+						if (error) console.error('Failed to soft-delete task/goal link:', error);
+					});
+			}
 		}
 		this.queueSave();
 	}
