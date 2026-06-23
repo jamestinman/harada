@@ -79,6 +79,8 @@
 	const websiteLinkActive = $derived(
 		isLight ? 'text-orange-600 font-semibold' : 'text-orange-400 font-semibold'
 	);
+
+	const brandHref = $derived(isApp ? '/harada' : '/');
 </script>
 
 <header
@@ -89,7 +91,7 @@
 		<!-- Brand -->
 		<div class="flex min-w-0 items-center gap-2">
     <!-- <SquareMap href="/harada" interactive={false} className="shrink-0" /> -->
-    <a href="/">
+    <a href={brandHref}>
       <img src="/img/haradato.webp" alt="Haradato" class="w-8 h-8" />
     </a>
 			<a href="/harada" class="truncate text-lg font-semibold tracking-tight {brandClass}">

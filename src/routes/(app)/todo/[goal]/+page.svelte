@@ -1,14 +1,13 @@
 <script>
 	import { onMount, tick } from 'svelte';
 	import { page } from '$app/state';
-	import { afterNavigate, goto } from '$app/navigation';
+	import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
 	import { browser } from '$app/environment';
 	import { store } from '$stores/store.svelte.js';
 	import { authStore } from '$stores/auth.svelte.js';
 	import {
 		nomenclatureToIndex,
 		indexToNomenclature,
-		renderMarkdown,
 		getNoteTitle,
 		defaultTodo,
 		canonicalGoalIndex,
@@ -1107,6 +1106,21 @@
 		store.registerGridMutation({ immediate: true });
 	}
 
+	function getGoalDescriptionPreview(content = '') {
+		return content
+			.replace(/\s+/g, ' ')
+			.replace(/^#+\s*/gm, '')
+			.trim();
+	}
+
+	function flushGoalEditIfNeeded() {
+		if (isEditingGoal) saveGoalEdit();
+	}
+
+	beforeNavigate(() => {
+		flushGoalEditIfNeeded();
+	});
+
 	// Save edited goal content
 	function saveGoalEdit() {
 		if (goalIndex === null || !isEditingGoal) return;
@@ -1347,9 +1361,9 @@
 											{goalLabel || indexToNomenclature(goalIndex)}
 										</h1>
 										{#if goalMarkdown}
-											<div class="markdown mt-2 text-sm leading-relaxed transition-colors">
-												{@html renderMarkdown(goalMarkdown)}
-											</div>
+											<p class="goal-header-description mt-2 line-clamp-3 text-sm leading-relaxed">
+												{getGoalDescriptionPreview(goalMarkdown)}
+											</p>
 										{:else}
 											<div class="goal-header-placeholder">
 												Click to add description...
@@ -1676,9 +1690,9 @@
 												{goalLabel || indexToNomenclature(goalIndex)}
 											</h1>
 											{#if goalMarkdown}
-												<div class="markdown mt-2 text-sm leading-relaxed transition-colors">
-													{@html renderMarkdown(goalMarkdown)}
-												</div>
+												<p class="goal-header-description mt-2 line-clamp-3 text-sm leading-relaxed">
+													{getGoalDescriptionPreview(goalMarkdown)}
+												</p>
 											{:else}
 												<div class="goal-header-placeholder">
 													Click to add description...

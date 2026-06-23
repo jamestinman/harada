@@ -64,11 +64,8 @@
 					id="goal-merge-title"
 					class="text-lg font-semibold text-slate-900 dark:text-slate-100 leading-snug"
 				>
-					Merge {sourceLabel} with {targetLabel}
+					Merge {sourceLabel} with {targetLabel}?
 				</h2>
-				<p class="mt-2 text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-					Tasks and notes from {sourceLabel} will join {targetLabel}. The source goal will be cleared.
-				</p>
 			</div>
 
 			<div class="px-5 py-4 space-y-2">

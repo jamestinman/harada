@@ -792,6 +792,7 @@ export function appendGoalReadmes(targetReadme, sourceReadme) {
 export function defaultMergedGoalTitle(sourceTitle, targetTitle) {
 	const a = (sourceTitle ?? '').trim();
 	const b = (targetTitle ?? '').trim();
+  if (a == b) return a;
 	if (!a) return b;
 	if (!b) return a;
 	return `${a} + ${b}`;

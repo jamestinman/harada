@@ -7,6 +7,7 @@
 	import UserSettingsModal from '$components/UserSettingsModal.svelte';
 	import { authStore } from '$stores/auth.svelte.js';
 	import { store } from '$stores/store.svelte.js';
+	import { isPackagedApp } from '$lib/appRuntime.js';
 	import { isWebsiteTrackingActive } from '$lib/websiteTracking.js';
 
 	let { children } = $props();
@@ -50,6 +51,12 @@
 	$effect(() => {
 		if (!browser) return;
 		document.documentElement.classList.toggle('dark', store.theme === 'dark');
+	});
+
+	// Packaged apps (iOS, Android, Electron) should never show marketing pages.
+	$effect(() => {
+		if (!browser || !isPackagedApp()) return;
+		goto('/harada', { replaceState: true });
 	});
 </script>
 

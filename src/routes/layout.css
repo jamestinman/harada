@@ -1060,6 +1060,16 @@ h4 {
   }
 }
 
+.goal-header-description {
+  @apply transition-colors;
+  .dark & {
+    @apply text-slate-400 group-hover:text-slate-300;
+  }
+  .light & {
+    @apply text-slate-600 group-hover:text-slate-700;
+  }
+}
+
 .goal-color-button {
   @apply h-6 w-6 rounded border-2 transition-all;
 }
