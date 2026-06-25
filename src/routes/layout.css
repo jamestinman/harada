@@ -6,7 +6,7 @@
 }
 
 #root-container.light {
-  @apply bg-gradient-to-br from-slate-200 via-slate-100 to-violet-200 text-slate-900;
+  @apply bg-white text-slate-900;
 }
 
 h1 {
@@ -745,6 +745,58 @@ h4 {
   color: var(--cm-placeholder-color, #94a3b8);
   pointer-events: none;
   user-select: none;
+}
+
+/* Static markdown styling fallback for desktop webviews where runtime style injection is restricted. */
+.notes-hybrid-markdown-editor .cm-line.cm-md-fallback-h1,
+.notes-hybrid-markdown-editor .cm-line.cm-md-fallback-h2,
+.notes-hybrid-markdown-editor .cm-line.cm-md-fallback-h3,
+.notes-hybrid-markdown-editor .cm-line.cm-md-fallback-h4,
+.notes-hybrid-markdown-editor .cm-line.cm-md-fallback-h5,
+.notes-hybrid-markdown-editor .cm-line.cm-md-fallback-h6 {
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.notes-hybrid-markdown-editor .cm-line.cm-md-fallback-h1,
+.notes-hybrid-markdown-editor .cm-line.cm-note-title-line {
+  font-size: 1.125rem;
+}
+
+.notes-hybrid-markdown-editor .cm-line.cm-md-fallback-h2 {
+  font-size: 1rem;
+}
+
+.notes-hybrid-markdown-editor .cm-line.cm-md-fallback-h3 {
+  font-size: 0.9375rem;
+}
+
+.notes-hybrid-markdown-editor .cm-line.cm-md-fallback-h4,
+.notes-hybrid-markdown-editor .cm-line.cm-md-fallback-h5,
+.notes-hybrid-markdown-editor .cm-line.cm-md-fallback-h6 {
+  font-size: 0.875rem;
+}
+
+.notes-hybrid-markdown-editor .cm-md-fallback-strong {
+  font-weight: 700;
+}
+
+.notes-hybrid-markdown-editor .cm-md-fallback-strike {
+  text-decoration: line-through;
+}
+
+.notes-hybrid-markdown-editor .cm-md-fallback-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.8125rem;
+  border-radius: 0.25rem;
+  padding: 0.05rem 0.2rem;
+  background-color: var(--cm-code-bg, rgba(15, 23, 42, 0.08));
+}
+
+.notes-hybrid-markdown-editor .cm-md-fallback-link {
+  color: var(--cm-link-color, #6d28d9);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .dark .notes-hybrid-markdown-editor .cm-placeholder {

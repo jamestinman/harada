@@ -266,7 +266,7 @@ function startEditingName() {
 				<div class="flex items-center justify-between">
 					<div>
 						<div class="settings-appearance-label">Appearance</div>
-						<div class="settings-appearance-help">Light or dark mode for this account</div>
+						<div class="settings-appearance-help">Light, auto, or dark mode for this account</div>
 					</div>
 					<div class="settings-appearance-toggle">
 						<button
@@ -279,6 +279,17 @@ function startEditingName() {
 							}`}
 						>
 							Light
+						</button>
+						<button
+							type="button"
+							onclick={() => store.setTheme('auto')}
+							class={`settings-theme-option ${
+								store.theme == 'auto'
+									? 'settings-theme-option-active'
+									: 'settings-theme-option-inactive'
+							}`}
+						>
+							Auto
 						</button>
 						<button
 							type="button"

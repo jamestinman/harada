@@ -47,7 +47,7 @@
 	// Get color class based on block
 	function getBlockColor(row, col) {
 		const blockIndex = getBlockIndex(row, col);
-		const isDark = store.theme === 'dark';
+		const isDark = store.activeTheme === 'dark';
 		const darkColors = [
 			'bg-rose-900/60 border-rose-600/50',
 			'bg-amber-900/60 border-amber-600/50',
@@ -699,7 +699,7 @@
 									<div class="absolute bottom-0.5 left-0.5 text-[8px] sm:text-[10px]" title="Done">✓</div>
 								{/if}
 							{:else}
-								<span class={`text-[8px] sm:text-[10px] ${store.theme === 'dark' ? 'text-white/40' : 'text-slate-400/70'}`}>{i == 40 ? 'Central Goal' : store.getDefaultCell(i).text}</span>
+								<span class={`text-[8px] sm:text-[10px] ${store.activeTheme === 'dark' ? 'text-white/40' : 'text-slate-400/70'}`}>{i == 40 ? 'Central Goal' : store.getDefaultCell(i).text}</span>
 							{/if}
 						</div>
 					</button>

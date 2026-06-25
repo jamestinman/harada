@@ -50,7 +50,7 @@
 
 	$effect(() => {
 		if (!browser) return;
-		document.documentElement.classList.toggle('dark', store.theme === 'dark');
+		document.documentElement.classList.toggle('dark', store.activeTheme === 'dark');
 	});
 
 	// Packaged apps (iOS, Android, Electron) should never show marketing pages.
@@ -64,7 +64,7 @@
 	<WebsiteTrackingBoot />
 {/if}
 
-<div class="{store.theme} min-h-dvh bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+<div class="{store.activeTheme} min-h-dvh bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
 	<DesktopTopNav
 		variant="website"
 		onSignIn={() => (showAuthModal = true)}

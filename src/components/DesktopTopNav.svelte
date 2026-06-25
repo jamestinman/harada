@@ -13,7 +13,7 @@
 	let { variant = 'website', onSignIn = () => {}, onOpenSettings = () => {} } = $props();
 
 	const isApp = $derived(variant === 'app');
-	const isLight = $derived(store.theme === 'light');
+	const isLight = $derived(store.activeTheme === 'light');
 	const isOnline = $derived(store.isOnline);
 	const needsSignIn = $derived(
 		isOnline && !authStore.loading && !authStore.user && !!authStore.lastKnownUser

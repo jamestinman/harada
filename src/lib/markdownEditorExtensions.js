@@ -1,4 +1,5 @@
 import { markdown } from '@codemirror/lang-markdown';
+import { RangeSetBuilder } from '@codemirror/state';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
 import { Decoration, EditorView, ViewPlugin, WidgetType } from '@codemirror/view';
@@ -87,6 +88,85 @@ function noteTitleLineExtension() {
 				return Decoration.set([
 					Decoration.line({ class: 'cm-note-title-line' }).range(firstLine.from)
 				]);
+			}
+		},
+		{ decorations: (v) => v.decorations }
+	);
+}
+
+/**
+ * Lightweight, CSS-class based markdown decorations that do not rely on runtime style injection.
+ * This keeps inline formatting visible in constrained desktop webviews.
+ */
+function markdownFallbackDecorationExtension() {
+	return ViewPlugin.fromClass(
+		class {
+			/** @param {EditorView} view */
+			constructor(view) {
+				this.decorations = this.build(view);
+			}
+
+			/** @param {import('@codemirror/view').ViewUpdate} update */
+			update(update) {
+				if (update.docChanged || update.viewportChanged) {
+					this.decorations = this.build(update.view);
+				}
+			}
+
+			/** @param {EditorView} view */
+			build(view) {
+				const builder = new RangeSetBuilder();
+				for (const { from, to } of view.visibleRanges) {
+					let line = view.state.doc.lineAt(from);
+					while (line.from <= to) {
+						this.decorateLine(builder, line);
+						if (line.to >= to) break;
+						line = view.state.doc.line(line.number + 1);
+					}
+				}
+				return builder.finish();
+			}
+
+			/**
+			 * @param {RangeSetBuilder<import('@codemirror/view').Decoration>} builder
+			 * @param {import('@codemirror/state').Text['lineAt'] extends (pos: number) => infer T ? T : never} line
+			 */
+			decorateLine(builder, line) {
+				const text = line.text;
+				const headingMatch = text.match(/^(#{1,6})\s+/);
+				if (headingMatch) {
+					const level = headingMatch[1].length;
+					builder.add(
+						line.from,
+						line.from,
+						Decoration.line({ class: `cm-md-fallback-h${level}` })
+					);
+				}
+
+				this.decorateInline(builder, line, /\*\*([^*\n]+)\*\*/g, 2, 2, 'cm-md-fallback-strong');
+				this.decorateInline(builder, line, /~~([^~\n]+)~~/g, 2, 2, 'cm-md-fallback-strike');
+				this.decorateInline(builder, line, /`([^`\n]+)`/g, 1, 1, 'cm-md-fallback-code');
+				this.decorateInline(builder, line, /\[([^\]\n]+)\]\(([^)\n]+)\)/g, 1, 1, 'cm-md-fallback-link');
+			}
+
+			/**
+			 * @param {RangeSetBuilder<import('@codemirror/view').Decoration>} builder
+			 * @param {import('@codemirror/state').Text['lineAt'] extends (pos: number) => infer T ? T : never} line
+			 * @param {RegExp} regex
+			 * @param {number} leftTrim
+			 * @param {number} rightTrim
+			 * @param {string} className
+			 */
+			decorateInline(builder, line, regex, leftTrim, rightTrim, className) {
+				const text = line.text;
+				let match;
+				while ((match = regex.exec(text)) !== null) {
+					const start = line.from + match.index + leftTrim;
+					const end = line.from + match.index + match[0].length - rightTrim;
+					if (end > start) {
+						builder.add(start, end, Decoration.mark({ class: className }));
+					}
+				}
 			}
 		},
 		{ decorations: (v) => v.decorations }
@@ -189,6 +269,7 @@ export function createMarkdownEditorExtensions(placeholderText = '', options = {
 		EditorView.lineWrapping,
 		editorBaseTheme,
 		syntaxHighlighting(markdownHighlightStyle),
+		markdownFallbackDecorationExtension(),
 		markdownListKeymap
 	];
 

@@ -3,6 +3,7 @@ import { Capacitor } from '@capacitor/core';
 import { localGet, localSet, prefGet, prefSet } from '$lib/PersistentStorage.mjs';
 import { loadLocalHaradaSnapshot, saveLocalHaradaSnapshot } from '$lib/LocalHaradaDb.js';
 import { supabase } from '$lib/supabaseClient.js';
+import { isChartUnset } from '$lib/haradaGridUtils.js';
 import { synthStore } from './synth.svelte.js';
 import {
 	buildGoalListMeta,
@@ -176,11 +177,14 @@ class Store {
 	selectedGoalForNew = $state('');
 	sidebarOpen = $state(false);
 	currentGoalIndex = $state(null);
-	theme = $state(localGet('theme', 'light'));
+	theme = $state('auto');
+	systemPrefersDark = $state(false);
 	saveStatus = $state('idle');
 	isBootstrapping = $state(true);
 	isLoading = $state(true);
 	isRefreshing = $state(false);
+	initialCloudHydrationStatus = $state('idle');
+	remoteAccountHasData = $state(false);
 	isOnline = $state(browser ? navigator.onLine : true);
 	syncError = $state(null);
   showHowItWorksModal = $state(false);
@@ -266,10 +270,20 @@ class Store {
 		this.recordLastOpenedNote(null);
 	}
 
-  setTheme(value) {
-    this.theme = value;
-    localSet('theme', value);
-  }
+	get activeTheme() {
+		return this.theme === 'auto' ? (this.systemPrefersDark ? 'dark' : 'light') : this.theme;
+	}
+
+	setTheme(value) {
+		const nextTheme = value === 'dark' || value === 'light' || value === 'auto' ? value : 'auto';
+		this.theme = nextTheme;
+		localSet('theme', nextTheme);
+	}
+
+	_updateSystemThemePreference() {
+		if (!browser || typeof window.matchMedia !== 'function') return;
+		this.systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+	}
 
 	harada_chart = $state({
 		grid: Array.from({ length: 81 }, () => defaultCell()),
@@ -306,6 +320,16 @@ class Store {
 
 	constructor() {
 		if (!browser) return;
+		const savedTheme = localGet('theme', 'auto');
+		this.setTheme(savedTheme);
+		this._updateSystemThemePreference();
+
+		if (typeof window.matchMedia === 'function') {
+			const media = window.matchMedia('(prefers-color-scheme: dark)');
+			media.addEventListener('change', (event) => {
+				this.systemPrefersDark = event.matches;
+			});
+		}
 
 		try {
 			const v = localGet('harada_last_note_id', null);
@@ -616,6 +640,23 @@ class Store {
 		return authStore.user?.id ?? authStore.lastKnownUser?.id ?? null;
 	}
 
+	_resetInitialCloudHydration() {
+		this.initialCloudHydrationStatus = 'idle';
+		this.remoteAccountHasData = false;
+	}
+
+	_hasRemoteAccountData(remoteSnapshot) {
+		if (!remoteSnapshot || typeof remoteSnapshot !== 'object') return false;
+		if (!isChartUnset(remoteSnapshot.grid)) return true;
+		return (
+			(remoteSnapshot.todos || []).length > 0 ||
+			(remoteSnapshot.notes || []).length > 0 ||
+			(remoteSnapshot.noteTaskLinks || []).length > 0 ||
+			(remoteSnapshot.noteGoalLinks || []).length > 0 ||
+			(remoteSnapshot.taskGoalLinks || []).length > 0
+		);
+	}
+
 	async _loadLocalSnapshot() {
 		const userId = this._localOwnerUserId();
 		try {
@@ -639,6 +680,13 @@ class Store {
 		if (!browser || this._isInitialized) return;
 
 		this._setBootstrapping(true);
+		const shouldHydrateFromCloud = !!(authStore.user && supabase);
+		if (shouldHydrateFromCloud) {
+			this.initialCloudHydrationStatus = 'loading';
+			this.remoteAccountHasData = false;
+		} else {
+			this._resetInitialCloudHydration();
+		}
 
 		try {
 			// Wait for auth before choosing the IndexedDB owner or hitting Supabase.
@@ -671,15 +719,24 @@ class Store {
 
 			// 3) If online and authenticated, hydrate from Supabase and overwrite local snapshot
 			const data = await this.loadFromSupabase();
+			if (this.syncError) {
+				this.initialCloudHydrationStatus = 'error';
+				return;
+			}
+			this.remoteAccountHasData = this._hasRemoteAccountData(data);
 			if (data) {
 				await this._mergeAndApplyRemoteSnapshot(data, { persistLocal: true });
 				this._migrateLegacyTaskMarkdownInMemory();
 				this._migratePrimaryTaskNotesInMemory();
 				this._migrateLegacyTaskLinksInMemory();
 			}
+			this.initialCloudHydrationStatus = 'ready';
 		} catch (err) {
 			console.error('Failed to initialize from Supabase:', err);
 			this.syncError = err.message;
+			if (shouldHydrateFromCloud) {
+				this.initialCloudHydrationStatus = 'error';
+			}
 		} finally {
 			if (this._applyRetainedTaskScope()) {
 				void this._saveLocally();
@@ -3300,6 +3357,7 @@ class Store {
 
 		this._isInitialized = false;
 		this._unsubscribeRealtime();
+		this._resetInitialCloudHydration();
 
 		if (!authStore.user) {
 			// If we're offline, the session may have expired and Supabase fired SIGNED_OUT
