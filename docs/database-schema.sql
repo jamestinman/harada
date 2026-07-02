@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   title TEXT NOT NULL DEFAULT '',
   markdown TEXT NOT NULL DEFAULT '',
+  url TEXT,
   status TEXT NOT NULL DEFAULT 'todo' CHECK (status IN ('todo', 'done')),
   list_type TEXT NOT NULL DEFAULT 'goal' CHECK (list_type IN ('goal', 'custom')),
   list_id TEXT NOT NULL DEFAULT 'goal:none',
@@ -88,6 +89,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 
 -- Existing databases: add pin support (safe to run once)
 -- ALTER TABLE tasks ADD COLUMN IF NOT EXISTS pinned BOOLEAN NOT NULL DEFAULT false;
+-- ALTER TABLE tasks ADD COLUMN IF NOT EXISTS url TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_tasks_user_updated ON tasks(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tasks_user_list_parent_order ON tasks(user_id, list_id, parent_id, ordering);

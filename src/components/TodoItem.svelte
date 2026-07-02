@@ -5,6 +5,7 @@
 		indexToNomenclature,
 		filterDisplayGoalIndices
 	} from '$lib/todoUtils.js';
+	import { parseStandaloneUrl } from '$lib/urlUtils.js';
 	import { store } from '$stores/store.svelte.js';
 	import { todoEditorStore } from '$stores/todoEditor.svelte.js';
 	import GoalSelect from './GoalSelect.svelte';
@@ -144,8 +145,12 @@
 
 	function saveTitle(syncHighlight = true) {
 		if (isCreatingNext) return; // Don't save if we're creating next
-		if (editTitle.trim() !== (todo.title || '').trim()) {
-			onUpdate({ title: editTitle.trim() });
+		const trimmed = editTitle.trim();
+		if (trimmed !== (todo.title || '').trim()) {
+			onUpdate({ title: trimmed });
+			if (parseStandaloneUrl(trimmed)) {
+				void store.enrichTodoFromUrl(todo.id, trimmed);
+			}
 		}
 		isEditingTitle = false;
 		if (syncHighlight && onTitleFocus) onTitleFocus(todo.id);
@@ -468,6 +473,17 @@
 					>
 						{todo.title || '\u00A0'}
 					</span>
+					{#if todo.url}
+						<a
+							href={todo.url}
+							target="_blank"
+							rel="noopener noreferrer"
+							class="truncate text-xs text-violet-500 underline decoration-violet-500/40 underline-offset-2 hover:text-violet-400 dark:text-violet-300"
+							onclick={(e) => e.stopPropagation()}
+						>
+							{todo.url}
+						</a>
+					{/if}
 					{#if hasNotes}
 						<div
 							role="button"
@@ -564,12 +580,24 @@
 	<div class="desktop-expanded-editor" style="margin-left: {indentLevel * 1.5}rem;">
 		<div class="mb-2 flex items-center gap-2">
 			{@render taskStatusCheckbox()}
-			<input
-				type="text"
-				bind:value={editTitle}
-				placeholder="Task title"
-				class={`task-edit-title flex-1 ${todo.status === 'done' ? 'line-through opacity-70' : ''}`}
-			/>
+			<div class="flex min-w-0 flex-1 flex-col gap-1">
+				<input
+					type="text"
+					bind:value={editTitle}
+					placeholder="Task title"
+					class={`task-edit-title w-full ${todo.status === 'done' ? 'line-through opacity-70' : ''}`}
+				/>
+				{#if todo.url}
+					<a
+						href={todo.url}
+						target="_blank"
+						rel="noopener noreferrer"
+						class="truncate text-xs text-violet-500 underline decoration-violet-500/40 underline-offset-2 hover:text-violet-400 dark:text-violet-300"
+					>
+						{todo.url}
+					</a>
+				{/if}
+			</div>
 			<button
 				type="button"
 				onclick={togglePinned}

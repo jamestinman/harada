@@ -15,6 +15,7 @@ export function defaultTodo() {
 		listName: null,
 		title: '',
 		markdown: '',
+		url: '',
 		status: 'todo',
 		parentId: null,
 		pinned: false,

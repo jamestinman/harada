@@ -746,6 +746,7 @@ $effect(() => {
 								bind:this={editEditorDesktop}
 								bind:value={editContent}
 								treatFirstLineAsTitle={true}
+								showFormattingToolbar={true}
 								minHeight="22rem"
 								placeholder="Write in markdown. First line becomes the title."
 							/>
@@ -895,6 +896,7 @@ $effect(() => {
 							bind:this={editEditorMobile}
 							bind:value={editContent}
 							treatFirstLineAsTitle={true}
+							showFormattingToolbar={true}
 							minHeight="18rem"
 							placeholder="Write in markdown. First line becomes the title."
 						/>

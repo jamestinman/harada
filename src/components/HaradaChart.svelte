@@ -99,40 +99,13 @@
 				classes += `${customColor}${hasBorderWidth ? '' : ' border'}`;
 			}
 		} else {
-			// Main goal: strong green when done, otherwise original styling
 			if (isMainGoal(row, col)) {
-				if (status === 'done') {
-					classes +=
-						'bg-gradient-to-br from-emerald-500 to-green-500 border-2 border-emerald-300 text-white font-bold shadow-lg shadow-emerald-400/50 z-10';
-				} else if (status === 'underway') {
-					classes +=
-						'bg-gradient-to-br from-yellow-500 to-amber-500 border-2 border-yellow-300 text-white font-bold shadow-lg shadow-yellow-400/50 z-10';
-				} else {
-					classes +=
-						'bg-gradient-to-br from-violet-600 to-fuchsia-600 border-2 border-violet-400 text-white font-bold shadow-lg shadow-violet-500/30 z-10';
-				}
+				classes +=
+					'bg-gradient-to-br from-violet-600 to-fuchsia-600 border-2 border-violet-400 text-white font-bold shadow-lg shadow-violet-500/30 z-10';
 			} else if (isSubGoal(row, col)) {
-				// Sub-goals: strong green when done, otherwise same grey as their twinned outer block centers
-				if (status === 'done') {
-					classes +=
-						'bg-gradient-to-br from-emerald-600 to-green-600 border border-emerald-400 text-white font-semibold shadow-lg shadow-emerald-500/40';
-				} else if (status === 'underway') {
-					classes +=
-						'bg-gradient-to-br from-yellow-600 to-amber-600 border border-yellow-400 text-white font-semibold shadow-lg shadow-yellow-500/40';
-				} else {
-					classes += 'harada-chart-center-default';
-				}
+				classes += 'harada-chart-center-default';
 			} else if (isBlockCenter(row, col)) {
-				// Linked sub-goals: strong green when done, otherwise original styling
-				if (status === 'done') {
-					classes +=
-						'bg-gradient-to-br from-emerald-600 to-green-600 border border-emerald-400 text-white font-semibold shadow-lg shadow-emerald-500/40';
-				} else if (status === 'underway') {
-					classes +=
-						'bg-gradient-to-br from-yellow-600 to-amber-600 border border-yellow-400 text-white font-semibold shadow-lg shadow-yellow-500/40';
-				} else {
-					classes += 'harada-chart-center-default';
-				}
+				classes += 'harada-chart-center-default';
 			} else {
 				// Action / task squares: color driven by status
 				if (status === 'underway') {
@@ -693,11 +666,6 @@
 								<div class="w-full text-center text-[8px] leading-tight sm:text-[10px] md:text-xs overflow-hidden line-clamp-3">
 									{grid[i]?.text || ''}
 								</div>
-								{#if grid[i]?.status === 'underway'}
-									<div class="absolute bottom-0.5 left-0.5 text-[8px] sm:text-[10px]" title="Underway">⏳</div>
-								{:else if grid[i]?.status === 'done'}
-									<div class="absolute bottom-0.5 left-0.5 text-[8px] sm:text-[10px]" title="Done">✓</div>
-								{/if}
 							{:else}
 								<span class={`text-[8px] sm:text-[10px] ${store.activeTheme === 'dark' ? 'text-white/40' : 'text-slate-400/70'}`}>{i == 40 ? 'Central Goal' : store.getDefaultCell(i).text}</span>
 							{/if}

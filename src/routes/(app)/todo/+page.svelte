@@ -24,6 +24,7 @@
 		executeTodoMove,
 		getGoalViewIndentLevel
 	} from '$lib/todoUtils.js';
+	import { enqueueTodoUrlEnrichment } from '$lib/urlUtils.js';
 	import TodoList from '$components/TodoList.svelte';
 	import TodoSidebarNav from '$components/TodoSidebarNav.svelte';
 	import WorkspaceToolbar from '$components/WorkspaceToolbar.svelte';
@@ -615,6 +616,7 @@
 			if (created && markdown?.trim()) {
 				store.setPrimaryNoteForTask(created.id, { content: markdown.trim() });
 			}
+			enqueueTodoUrlEnrichment(store, created?.id, title);
 			if (created && shouldNavigate) navigateToNewTask(created);
 			return;
 		}
@@ -625,6 +627,7 @@
 		if (created && markdown?.trim()) {
 			store.setPrimaryNoteForTask(created.id, { content: markdown.trim(), goalIndex: normalizedGoalIndex });
 		}
+		enqueueTodoUrlEnrichment(store, created?.id, title);
 		if (created && shouldNavigate) navigateToNewTask(created);
 	}
 

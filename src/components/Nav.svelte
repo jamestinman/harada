@@ -6,6 +6,7 @@
 	import { page } from '$app/state';
 	import { browser } from '$app/environment';
 	import { NEW_LIST_OPTION_VALUE, parseListSelection } from '$lib/todoUtils.js';
+	import { parseStandaloneUrl, sanitizeUrlInput } from '$lib/urlUtils.js';
 	import { resumePathTodo, workspaceNavActiveSection } from '$lib/workspaceNavResume.js';
 	import { store } from '$stores/store.svelte.js';
 	import { navComposerHandlers } from '$stores/navComposerHandlers.svelte.js';
@@ -43,6 +44,9 @@
 
 	const effectiveCreateTodo = $derived(navComposerHandlers.onCreateTodo ?? onCreateTodo);
 	const effectiveCreateNote = $derived(navComposerHandlers.onCreateNote ?? onCreateNote);
+	const composerUrlIsValid = $derived(
+		store.composerPanelTab !== 'url' || !!parseStandaloneUrl(composerTitle)
+	);
 
 	let composerTitle = $state('');
 	let composerMarkdown = $state('');
@@ -83,7 +87,7 @@ const clearAll = () => {
 			composerGoalValue =
 				typeof activeGoalIndex === 'number' ? String(activeGoalIndex) : '';
 			composerNewListName = '';
-			if (store.composerPanelTab === 'task') {
+			if (store.composerPanelTab === 'task' || store.composerPanelTab === 'url') {
 				focusTaskTitleInput();
 			}
 		}
@@ -98,12 +102,23 @@ const clearAll = () => {
 		if (!effectiveCreateTodo) return;
 		const listMeta = parseListSelection(composerGoalValue, composerNewListName);
 		if (!listMeta) return;
+		let title = composerTitle.trim();
+		if (store.composerPanelTab === 'url') {
+			const url = parseStandaloneUrl(title);
+			if (!url) return;
+			title = url;
+		}
 		effectiveCreateTodo({
-			title: composerTitle.trim(),
+			title,
 			markdown: composerMarkdown.trim(),
 			...listMeta
 		});
 		closeComposer();
+	}
+
+	function handleComposerTitleInput(event) {
+		const value = event.currentTarget.value;
+		composerTitle = store.composerPanelTab === 'url' ? sanitizeUrlInput(value) : value;
 	}
 
 	function submitNoteTab() {
@@ -461,6 +476,13 @@ const clearAll = () => {
 				</button>
 				<button
 					type="button"
+					onclick={() => { store.composerPanelTab = 'url'; focusTaskTitleInput(); }}
+					class="goal-tab {store.composerPanelTab === 'url' ? 'goal-tab-active' : ''}"
+				>
+					URL
+				</button>
+				<button
+					type="button"
 					onclick={closeComposer}
 					class="composer-close-button ml-auto mb-2 shrink-0"
 					aria-label="Close panel"
@@ -471,12 +493,30 @@ const clearAll = () => {
 				</button>
 			</div>
 
-			{#if store.composerPanelTab === 'task'}
+			{#if store.composerPanelTab === 'note'}
+				<NoteHybridMarkdownEditor
+					bind:value={composerNoteContent}
+					treatFirstLineAsTitle={true}
+					placeholder="Write your note…"
+					minHeight="12rem"
+					class="composer-hybrid-editor"
+				/>
+				<div class="flex justify-end">
+					<button
+						type="button"
+						onclick={submitNoteTab}
+						class="task-edit-save-button"
+					>
+						Save note
+					</button>
+				</div>
+			{:else}
 				<input
 					bind:this={composerTitleInputElement}
 					type="text"
-					bind:value={composerTitle}
-					placeholder="Task title"
+					value={composerTitle}
+					oninput={handleComposerTitleInput}
+					placeholder={store.composerPanelTab === 'url' ? 'Paste URL' : 'Task title'}
 					class="composer-title-input"
 				/>
 
@@ -511,27 +551,13 @@ const clearAll = () => {
 					<button
 						type="button"
 						onclick={submitComposer}
-						disabled={composerGoalValue === NEW_LIST_OPTION_VALUE && !composerNewListName.trim()}
+						disabled={
+							(composerGoalValue === NEW_LIST_OPTION_VALUE && !composerNewListName.trim()) ||
+							!composerUrlIsValid
+						}
 						class="task-edit-save-button disabled:opacity-40"
 					>
 						Save
-					</button>
-				</div>
-			{:else}
-				<NoteHybridMarkdownEditor
-					bind:value={composerNoteContent}
-					treatFirstLineAsTitle={true}
-					placeholder="Write your note…"
-					minHeight="12rem"
-					class="composer-hybrid-editor"
-				/>
-				<div class="flex justify-end">
-					<button
-						type="button"
-						onclick={submitNoteTab}
-						class="task-edit-save-button"
-					>
-						Save note
 					</button>
 				</div>
 			{/if}

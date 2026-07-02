@@ -13,6 +13,7 @@
 		"android": "./prepare.sh dev && BUILD_TARGET=static vite build && npx cap run android",
 		"preview": "vite preview",
 		"test:todo-utils": "node --test src/lib/todoUtils.test.mjs",
+		"test:url-utils": "node --test src/lib/urlUtils.test.mjs",
 		"prepare": "svelte-kit sync || echo ''"
 	},
 	"devDependencies": {
@@ -43,12 +44,16 @@
 		"@codemirror/state": "^6.6.0",
 		"@codemirror/view": "^6.43.1",
 		"@lezer/highlight": "^1.2.3",
+		"@mozilla/readability": "^0.6.0",
 		"@supabase/supabase-js": "^2.95.3",
 		"@sveltejs/adapter-node": "^5.4.0",
 		"@sveltejs/adapter-static": "^3.0.10",
 		"@sveltejs/adapter-vercel": "^6.3.0",
 		"dotenv": "^16.6.1",
+		"jsdom": "^29.1.1",
 		"lucide-svelte": "^0.563.0",
-		"marked": "^17.0.3"
+		"marked": "^17.0.3",
+		"undici": "^8.5.0",
+		"unpdf": "^1.6.2"
 	}
 }

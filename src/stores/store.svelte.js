@@ -40,6 +40,8 @@ import {
 	shouldRetainTodoInStore
 } from '$lib/todoUtils.js';
 import { authStore } from './auth.svelte.js';
+import { fetchUrlContent } from '$lib/urlContent.mjs';
+import { parseStandaloneUrl } from '$lib/urlUtils.js';
 
 const defaultCells = [
   { text: 'Central Goal', index: 4 * 9 + 4 },
@@ -217,10 +219,10 @@ class Store {
 	/** Shared mobile slide-over menu (Nav panel); toggled from todo/notes headers too */
 	mobileNavMenuOpen = $state(false);
 	composerPanelOpen = $state(false);
-	composerPanelTab = $state(/** @type {'task' | 'note'} */ ('task'));
+	composerPanelTab = $state(/** @type {'task' | 'note' | 'url'} */ ('task'));
 
 	openComposerPanel(tab = 'task') {
-		this.composerPanelTab = tab === 'note' ? 'note' : 'task';
+		this.composerPanelTab = tab === 'note' ? 'note' : tab === 'url' ? 'url' : 'task';
 		this.composerPanelOpen = true;
 	}
 
@@ -2294,6 +2296,7 @@ class Store {
 			id: row.id,
 			title: typeof row.title === 'string' ? row.title : '',
 			markdown: typeof row.markdown === 'string' ? row.markdown : '',
+			url: typeof row.url === 'string' ? row.url : '',
 			status: row.status === 'done' ? 'done' : 'todo',
 			listType: row.list_type === 'custom' ? 'custom' : 'goal',
 			listId: typeof row.list_id === 'string' ? row.list_id : 'goal:none',
@@ -2328,6 +2331,7 @@ class Store {
 			user_id: userId,
 			title: typeof normalized.title === 'string' ? normalized.title : '',
 			markdown: typeof normalized.markdown === 'string' ? normalized.markdown : '',
+			url: typeof normalized.url === 'string' && normalized.url ? normalized.url : null,
 			status: normalized.status === 'done' ? 'done' : 'todo',
 			list_type: normalized.listType === 'custom' ? 'custom' : 'goal',
 			list_id: typeof normalized.listId === 'string' ? normalized.listId : 'goal:none',
@@ -2923,6 +2927,24 @@ class Store {
 		}
 
 		this.queueSave();
+	}
+
+	async enrichTodoFromUrl(todoId, candidate) {
+		const url = parseStandaloneUrl(candidate);
+		if (!url || !todoId) return;
+
+		this.updateTodo(todoId, { url });
+		this.registerTodoMutation(todoId, { immediate: true });
+
+		try {
+			const content = await fetchUrlContent(url);
+			if (content?.title) {
+				this.updateTodo(todoId, { title: String(content.title).trim(), url });
+				this.registerTodoMutation(todoId, { immediate: true });
+			}
+		} catch (error) {
+			console.warn('[enrichTodoFromUrl]', error);
+		}
 	}
 
 	deleteTodo(id) {

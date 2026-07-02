@@ -702,6 +702,29 @@ h4 {
   }
 }
 
+.notes-markdown-editor-with-toolbar {
+  @apply p-0;
+}
+
+.note-formatting-toolbar {
+  .dark & {
+    @apply border-slate-600/70 bg-slate-800/60;
+  }
+  .light & {
+    @apply border-slate-200 bg-slate-50;
+  }
+}
+
+.note-formatting-toolbar-btn {
+  @apply inline-flex h-7 min-w-7 items-center justify-center rounded px-1.5 text-sm text-slate-600 transition hover:bg-slate-500/10;
+  .dark & {
+    @apply text-slate-300 hover:bg-white/10;
+  }
+  .light & {
+    @apply text-slate-600 hover:bg-slate-500/10;
+  }
+}
+
 .notes-hybrid-markdown-editor {
   @apply w-full resize-y overflow-hidden p-0;
   max-height: calc(100vh - 4rem);

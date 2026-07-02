@@ -1,4 +1,5 @@
 import { keymap } from '@codemirror/view';
+import { toggleBold, toggleItalic } from './markdownEditorFormatting.js';
 
 function nextOrderedMarker(marker) {
 	const match = marker.match(/^(\d+)([.)])$/);
@@ -86,6 +87,11 @@ function indentListItem(view, outdent = false) {
 	});
 	return true;
 }
+
+export const markdownFormattingKeymap = keymap.of([
+	{ key: 'Mod-b', run: toggleBold },
+	{ key: 'Mod-i', run: toggleItalic }
+]);
 
 export const markdownListKeymap = keymap.of([
 	{ key: 'Enter', run: continueListOnEnter },

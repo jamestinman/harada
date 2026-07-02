@@ -35,6 +35,7 @@
 		taskHasRealGoalMembership,
 		todoBelongsToGoalView
 	} from '$lib/todoUtils.js';
+	import { enqueueTodoUrlEnrichment } from '$lib/urlUtils.js';
 	import TodoList from '$components/TodoList.svelte';
 	import TodoSidebarNav from '$components/TodoSidebarNav.svelte';
 	import WorkspaceToolbar from '$components/WorkspaceToolbar.svelte';
@@ -743,6 +744,7 @@
 			if (markdown?.trim()) {
 				store.setPrimaryNoteForTask(todo.id, { content: markdown.trim() });
 			}
+			enqueueTodoUrlEnrichment(store, todo.id, title);
 			store.registerTodoMutation(todo.id, { immediate: true });
 			if (shouldNavigate) navigateToNewTask(todo);
 			return;
@@ -775,6 +777,7 @@
 				store.setPrimaryNoteForTask(todo.id, { content: markdown.trim() });
 			}
 			activeTodoId = todo.id;
+			enqueueTodoUrlEnrichment(store, todo.id, title);
 			store.registerTodoMutation(todo.id, { immediate: true });
 			if (shouldNavigate) navigateToNewTask(todo);
 			return;
@@ -792,6 +795,8 @@
 		if (markdown?.trim()) {
 			store.setPrimaryNoteForTask(todo.id, { content: markdown.trim(), goalIndex: targetGoalIndex });
 		}
+
+		enqueueTodoUrlEnrichment(store, todo.id, title);
 
 		if (typeof targetGoalIndex === 'number') {
 			store.bumpGoalAfterTodoActivity(targetGoalIndex);

@@ -3,7 +3,7 @@ import { RangeSetBuilder } from '@codemirror/state';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
 import { Decoration, EditorView, ViewPlugin, WidgetType } from '@codemirror/view';
-import { markdownListKeymap } from './markdownEditorKeymaps.js';
+import { markdownFormattingKeymap, markdownListKeymap } from './markdownEditorKeymaps.js';
 
 class PlaceholderWidget extends WidgetType {
 	/** @param {string} text */
@@ -270,6 +270,7 @@ export function createMarkdownEditorExtensions(placeholderText = '', options = {
 		editorBaseTheme,
 		syntaxHighlighting(markdownHighlightStyle),
 		markdownFallbackDecorationExtension(),
+		markdownFormattingKeymap,
 		markdownListKeymap
 	];
 

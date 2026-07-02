@@ -11,6 +11,7 @@
 		buildGoalListMeta,
 		resolveTopOrderingForNewTodo
 	} from '$lib/todoUtils.js';
+	import { enqueueTodoUrlEnrichment } from '$lib/urlUtils.js';
 	import Nav from '$components/Nav.svelte';
 	import SignInBanner from '$components/SignInBanner.svelte';
 	import { persistWorkspacePath } from '$lib/workspaceNavResume.js';
@@ -162,6 +163,7 @@
 		if (typeof normalizedGoalIndex === 'number') {
 			store.bumpGoalAfterTodoActivity(normalizedGoalIndex);
 		}
+		enqueueTodoUrlEnrichment(store, todo.id, title);
 		store.saveNow();
 		const taskQ = new URLSearchParams({ task: todo.id }).toString();
 		if (typeof normalizedGoalIndex === 'number') {
