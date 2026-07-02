@@ -1,3 +1,7 @@
+import { normalizeUrl, parseStandaloneUrl } from './urlUtils.js';
+
+const MARKDOWN_LINK_RE = /^\[([^\]]*)\]\(([^)\s]+)\)$/;
+
 /**
  * @param {import('@codemirror/state').EditorState} state
  * @param {number} from
@@ -147,6 +151,54 @@ export function cycleHeadingLevel(view) {
 			anchor: mapLinePos(anchor, lineStart, lineEnd, oldPrefixLen, newPrefix.length),
 			head: mapLinePos(head, lineStart, lineEnd, oldPrefixLen, newPrefix.length)
 		}
+	});
+	return true;
+}
+
+/**
+ * Infer URL/title fields from the current editor selection.
+ * @param {string} text
+ */
+export function parseLinkSelection(text) {
+	const trimmed = String(text ?? '').trim();
+	if (!trimmed) return { url: '', title: '', lockTitle: false };
+
+	const mdMatch = trimmed.match(MARKDOWN_LINK_RE);
+	if (mdMatch) {
+		return { url: mdMatch[2], title: mdMatch[1], lockTitle: true };
+	}
+
+	const url = parseStandaloneUrl(trimmed);
+	if (url) {
+		return { url, title: '', lockTitle: false };
+	}
+
+	return { url: '', title: trimmed, lockTitle: Boolean(trimmed) };
+}
+
+/** @param {string} text */
+function escapeMarkdownLinkText(text) {
+	return String(text ?? '').replace(/\\/g, '\\\\').replace(/\[/g, '\\[').replace(/\]/g, '\\]');
+}
+
+/**
+ * Insert or replace a markdown link at the given range.
+ * @param {import('@codemirror/view').EditorView} view
+ * @param {number} from
+ * @param {number} to
+ * @param {string} title
+ * @param {string} url
+ */
+export function insertMarkdownLink(view, from, to, title, url) {
+	const normalized = normalizeUrl(url);
+	if (!normalized) return false;
+
+	const label = String(title ?? '').trim() || normalized;
+	const markdown = `[${escapeMarkdownLinkText(label)}](${normalized})`;
+
+	view.dispatch({
+		changes: { from, to, insert: markdown },
+		selection: { anchor: from + markdown.length }
 	});
 	return true;
 }

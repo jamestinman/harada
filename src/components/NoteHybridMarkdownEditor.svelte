@@ -2,8 +2,16 @@
 	import { onMount } from 'svelte';
 	import { EditorState } from '@codemirror/state';
 	import { EditorView } from '@codemirror/view';
+	import { Link } from 'lucide-svelte';
 	import { createMarkdownEditorExtensions } from '$lib/markdownEditorExtensions.js';
-	import { toggleBold, toggleItalic, cycleHeadingLevel } from '$lib/markdownEditorFormatting.js';
+	import {
+		toggleBold,
+		toggleItalic,
+		cycleHeadingLevel,
+		parseLinkSelection,
+		insertMarkdownLink
+	} from '$lib/markdownEditorFormatting.js';
+	import NoteLinkModal from './NoteLinkModal.svelte';
 
 	let {
 		value = $bindable(''),
@@ -19,6 +27,12 @@
 	/** @type {EditorView | null} */
 	let view = null;
 	let syncingFromEditor = false;
+	let linkModalOpen = $state(false);
+	let linkUrl = $state('');
+	let linkTitle = $state('');
+	let linkLockTitle = $state(false);
+	/** @type {{ from: number, to: number } | null} */
+	let linkSelectionRange = null;
 
 	export function focus() {
 		view?.focus();
@@ -55,6 +69,29 @@
 		if (!view) return;
 		cycleHeadingLevel(view);
 		view.focus();
+	}
+
+	function openLinkModal() {
+		if (!view) return;
+
+		const { from, to } = view.state.selection.main;
+		linkSelectionRange = { from, to };
+		const parsed = parseLinkSelection(view.state.sliceDoc(from, to));
+		linkUrl = parsed.url;
+		linkTitle = parsed.title;
+		linkLockTitle = parsed.lockTitle;
+		linkModalOpen = true;
+	}
+
+	function saveLink({ url, title }) {
+		if (!view || !linkSelectionRange) return;
+		insertMarkdownLink(view, linkSelectionRange.from, linkSelectionRange.to, title, url);
+		linkSelectionRange = null;
+		view.focus();
+	}
+
+	function cancelLinkModal() {
+		linkSelectionRange = null;
 	}
 
 	onMount(() => {
@@ -141,6 +178,15 @@
 			>
 				<span class="font-semibold">H</span>
 			</button>
+			<button
+				type="button"
+				class="note-formatting-toolbar-btn"
+				aria-label="Insert link"
+				title="Insert link"
+				onclick={openLinkModal}
+			>
+				<Link class="h-3.5 w-3.5" strokeWidth={2.25} />
+			</button>
 		</div>
 		<div
 			bind:this={container}
@@ -150,6 +196,15 @@
 			aria-label={placeholder || 'Note editor'}
 		></div>
 	</div>
+
+	<NoteLinkModal
+		bind:isOpen={linkModalOpen}
+		bind:url={linkUrl}
+		bind:title={linkTitle}
+		lockTitle={linkLockTitle}
+		onSave={saveLink}
+		onCancel={cancelLinkModal}
+	/>
 {:else}
 	<div
 		bind:this={container}
