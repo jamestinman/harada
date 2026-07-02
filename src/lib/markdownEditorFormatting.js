@@ -87,7 +87,105 @@ export function toggleInlineMarkdown(view, marker) {
 
 /** @param {import('@codemirror/view').EditorView} view */
 export function toggleBold(view) {
-	return toggleInlineMarkdown(view, '**');
+	const { state } = view;
+	const { from, to, empty, anchor, head } = state.selection.main;
+	const marker = '**';
+	const markerLen = marker.length;
+	const selected = state.sliceDoc(from, to);
+
+	if (hasOutsideMarkers(state, from, to, marker)) {
+		view.dispatch({
+			changes: [
+				{ from: from - markerLen, to: from, insert: '' },
+				{ from: to, to: to + markerLen, insert: '' }
+			],
+			selection: { anchor: from - markerLen, head: to - markerLen }
+		});
+		return true;
+	}
+
+	if (selectionIsSingleBold(selected)) {
+		const inner = selected.slice(markerLen, selected.length - markerLen);
+		view.dispatch({
+			changes: { from, to, insert: inner },
+			selection: empty
+				? { anchor: from + markerLen }
+				: { anchor: from + markerLen, head: from + markerLen + inner.length }
+		});
+		return true;
+	}
+
+	if (selectionContainsInternalBold(selected)) {
+		const newText = stripInternalBold(selected);
+		view.dispatch({
+			changes: { from, to, insert: newText },
+			selection: {
+				anchor: from + mapPosThroughStripBold(anchor - from, selected),
+				head: from + mapPosThroughStripBold(head - from, selected)
+			}
+		});
+		return true;
+	}
+
+	view.dispatch({
+		changes: { from, to, insert: `${marker}${selected}${marker}` },
+		selection: empty
+			? { anchor: from + markerLen }
+			: { anchor: from + markerLen, head: to + markerLen }
+	});
+	return true;
+}
+
+const BOLD_MARKER_LEN = 2;
+
+/** @param {string} text */
+function selectionIsSingleBold(text) {
+	return /^\*\*([^*\n]+)\*\*$/.test(text);
+}
+
+/** @param {string} text */
+function selectionContainsInternalBold(text) {
+	return /\*\*([^*\n]+)\*\*/.test(text);
+}
+
+/** @param {string} text */
+function stripInternalBold(text) {
+	return text.replace(/\*\*([^*\n]+)\*\*/g, '$1');
+}
+
+/**
+ * Map a position within `text` to the same logical spot after stripping internal bold.
+ * @param {number} relPos
+ * @param {string} text
+ */
+function mapPosThroughStripBold(relPos, text) {
+	if (relPos <= 0) return 0;
+
+	let orig = 0;
+	let mapped = 0;
+	while (orig < relPos && orig < text.length) {
+		const rest = text.slice(orig);
+		const match = rest.match(/^\*\*([^*\n]+)\*\*/);
+		if (match) {
+			const fullLen = match[0].length;
+			const innerLen = match[1].length;
+			if (orig + fullLen <= relPos) {
+				orig += fullLen;
+				mapped += innerLen;
+				continue;
+			}
+
+			const innerPos = relPos - orig - BOLD_MARKER_LEN;
+			if (innerPos < 0) return mapped;
+			if (innerPos > innerLen) return mapped + innerLen;
+			return mapped + innerPos;
+		}
+
+		orig += 1;
+		mapped += 1;
+	}
+
+	return mapped;
 }
 
 /** @param {import('@codemirror/view').EditorView} view */
