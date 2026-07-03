@@ -54,6 +54,22 @@ test('mergeTodoLists prefers todo with newer updatedAt', () => {
 	assert.equal(merged2[0].title, 'New');
 });
 
+test('mergeTodoLists preserves url when newer remote row lacks it', () => {
+	const id = 'todo-1';
+	const local = {
+		id,
+		title: 'Article',
+		url: 'https://techcrunch.com/example',
+		updatedAt: 1000,
+		ordering: 1
+	};
+	const remote = { id, title: 'Article', url: '', updatedAt: 2000, ordering: 1 };
+
+	const merged = mergeTodoLists([local], [remote]);
+	assert.equal(merged.length, 1);
+	assert.equal(merged[0].url, 'https://techcrunch.com/example');
+});
+
 test('mergeTodoLists keeps todos that exist only on one side', () => {
 	const localOnly = { id: 'local', title: 'Local', updatedAt: 1000, ordering: 1 };
 	const remoteOnly = { id: 'remote', title: 'Remote', updatedAt: 1000, ordering: 2 };

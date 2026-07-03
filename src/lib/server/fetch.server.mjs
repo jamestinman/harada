@@ -1,5 +1,5 @@
 import { NODE_ENV } from '$env/static/private';
-import { Agent } from 'undici';
+import { Agent, fetch as undiciFetch } from 'undici';
 
 function devDispatcher() {
 	if (NODE_ENV !== 'development') return undefined;
@@ -12,8 +12,9 @@ function devDispatcher() {
 
 export async function doFetchRaw(url) {
 	const dispatcher = devDispatcher();
-	return fetch(url, {
-		method: 'GET',
-		...(dispatcher ? { dispatcher } : {})
-	});
+	if (dispatcher) {
+		// Node's global fetch cannot use an Agent from the npm undici package.
+		return undiciFetch(url, { method: 'GET', dispatcher });
+	}
+	return fetch(url, { method: 'GET' });
 }

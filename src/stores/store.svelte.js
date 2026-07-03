@@ -37,7 +37,8 @@ import {
 	filterRetainedTaskRows,
 	filterLinksForRetainedTasks,
 	getRecentlyCompletedCutoffIso,
-	shouldRetainTodoInStore
+	shouldRetainTodoInStore,
+	todoBelongsToGoalView
 } from '$lib/todoUtils.js';
 import { authStore } from './auth.svelte.js';
 import { fetchUrlContent } from '$lib/urlContent.mjs';
@@ -357,14 +358,14 @@ class Store {
 		document.addEventListener('visibilitychange', () => {
 			if (!this._isInitialized) return;
 			if (document.visibilityState === 'hidden') {
-				void this.saveNow();
+				void this._handleTabHidden();
 				return;
 			}
-			this.refreshFromSupabase();
+			void this._handleTabVisible();
 		});
 		window.addEventListener('focus', () => {
 			if (this._isInitialized) {
-				this.refreshFromSupabase();
+				void this._handleTabVisible();
 			}
 		});
 		window.addEventListener('beforeunload', () => {
@@ -374,6 +375,20 @@ class Store {
 		});
 
 		this.initialize();
+	}
+
+	async _handleTabHidden() {
+		await this.saveNow();
+	}
+
+	async _handleTabVisible() {
+		if (this._localSavingPromise || this._cloudSavingPromise) {
+			await Promise.all(
+				[this._localSavingPromise, this._cloudSavingPromise].filter(Boolean)
+			);
+		}
+		if (this._hasPendingDirty()) return;
+		await this.refreshFromSupabase();
 	}
 
 	_recordRecentWrite(id) {
@@ -863,7 +878,19 @@ class Store {
 		const remoteNotes = Array.isArray(remoteNotesSnapshot)
 			? remoteNotesSnapshot.map((note) => normalizeNote(note))
 			: [];
-		const merged = mergeNoteLists(localNotes, remoteNotes);
+		const remoteSansDirty = this._dirtyNotes.size
+			? remoteNotes.filter((note) => !this._dirtyNotes.has(note.id))
+			: remoteNotes;
+		let merged = mergeNoteLists(localNotes, remoteSansDirty);
+		if (this._dirtyNotes.size) {
+			const byId = new Map(merged.map((note) => [note.id, note]));
+			for (const note of localNotes) {
+				if (this._dirtyNotes.has(note.id)) {
+					byId.set(note.id, note);
+				}
+			}
+			merged = [...byId.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+		}
 		const changed =
 			merged.length !== localNotes.length ||
 			merged.some((note, idx) => {
@@ -1192,9 +1219,15 @@ class Store {
 
 			// Only apply if remote is strictly newer - protects in-progress local edits
 			if (remoteUpdatedAt > localUpdatedAt) {
+				const mergedUrl =
+					(typeof remoteTodo.url === 'string' && remoteTodo.url.trim()) ||
+					(typeof localTodo?.url === 'string' && localTodo.url.trim()) ||
+					'';
+				const nextTodo =
+					mergedUrl === (remoteTodo.url || '') ? remoteTodo : { ...remoteTodo, url: mergedUrl };
 				this.harada_chart = {
 					...this.harada_chart,
-					todos: this.harada_chart.todos.map((t) => (t.id === remoteTodo.id ? remoteTodo : t))
+					todos: this.harada_chart.todos.map((t) => (t.id === remoteTodo.id ? nextTodo : t))
 				};
 			}
 		}
@@ -2611,15 +2644,13 @@ class Store {
 	}
 
 	getPinnedTaskCount() {
-		const linked = new Set(
-			(this.taskGoalLinks ?? [])
-				.filter((link) => link.goalIndex === PINNED_GOAL_INDEX)
-				.map((link) => link.taskId)
-		);
-		for (const todo of this.harada_chart.todos ?? []) {
-			if (todo.pinned === true && todo.id) linked.add(todo.id);
-		}
-		return linked.size;
+		const taskGoalKeySet = this._buildTaskGoalKeySet();
+		return (this.harada_chart.todos ?? []).filter(
+			(t) =>
+				!t?.isDraft &&
+				t.status !== 'done' &&
+				todoBelongsToGoalView(t, PINNED_GOAL_INDEX, taskGoalKeySet)
+		).length;
 	}
 
 	normalizeGoalViewOrderings(goalIndex, parentId = null) {

@@ -74,6 +74,9 @@
 	let activeTodoId = $state(null);
 	let focusTodoId = $state(null);
 	let skipTaskScroll = false;
+	let showRecentlyCompleted = $state(false);
+	/** Avoid re-enabling "Show recently completed" on unrelated todo updates when `?task=` is stale. */
+	let deepLinkCompletedHandledFor = $state(null);
 
 	function requestTaskFocus(id) {
 		if (!id) return;
@@ -570,7 +573,11 @@
 		activeGoalTab = 'tasks';
 		mobileMenuOpen = false;
 		activeTodoId = targetTodoId;
-		if (todos.find((todo) => todo.id === targetTodoId)?.status === 'done') {
+		if (deepLinkCompletedHandledFor === targetTodoId) return;
+		const todo = todos.find((t) => t.id === targetTodoId);
+		if (!todo) return;
+		deepLinkCompletedHandledFor = targetTodoId;
+		if (todo.status === 'done') {
 			showRecentlyCompleted = true;
 		}
 	});
@@ -1046,8 +1053,6 @@
 	}
 
 	// saveTodos removed - persistence now happens on explicit save points.
-
-	let showRecentlyCompleted = $state(false);
 
 	// Available colors for goals
 	const goalColors = [

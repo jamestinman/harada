@@ -1241,12 +1241,30 @@ h4 {
 
 .mobile-bottom-nav {
   @apply fixed inset-x-0 bottom-0 z-40 lg:hidden backdrop-blur;
+  bottom: var(--playback-bar-offset, 0px);
   .dark & {
     @apply bg-slate-900/95;
   }
   .light & {
     @apply bg-slate-900/5;
   }
+}
+
+.playback-control-bar {
+  --playback-bar-height: 7.5rem;
+  --playback-bar-offset: 7.5rem;
+  @apply fixed inset-x-0 bottom-0 z-50 border-t backdrop-blur;
+  .dark & {
+    @apply border-slate-800/90 bg-slate-900/95 text-slate-100;
+  }
+  .light & {
+    @apply border-slate-300/80 bg-slate-100/95 text-slate-900;
+  }
+}
+
+.has-playback-bar {
+  --playback-bar-offset: 7.5rem;
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem + var(--playback-bar-height, 7.5rem)) !important;
 }
 
 .mobile-bottom-nav-inner {

@@ -17,17 +17,17 @@
 		filterDisplayGoalIndices
 	} from '$lib/todoUtils.js';
 	import {
-		cancelNoteSpeech,
 		isNoteSpeechSupported,
-		speakNoteText,
 		speechTextFromNoteContent
 	} from '$lib/noteSpeech.js';
+	import { playback } from '$stores/playback.svelte.js';
+	import SpeechPlayButton from './SpeechPlayButton.svelte';
 	import GoalSelect from './GoalSelect.svelte';
 	import WorkspaceToolbar from './WorkspaceToolbar.svelte';
 	import ClearableTextInput from './ClearableTextInput.svelte';
 	import NotesPresentationOverlay from './NotesPresentationOverlay.svelte';
 	import NoteHybridMarkdownEditor from './NoteHybridMarkdownEditor.svelte';
-	import { ChevronLeft, Trash2, Maximize2, Volume2, Square, SquarePen, Pin } from 'lucide-svelte';
+	import { ChevronLeft, Trash2, Maximize2, SquarePen, Pin } from 'lucide-svelte';
 	import {
 		persistNotesMobileSidebar,
 		readNotesMobileSidebarOpen,
@@ -46,12 +46,14 @@
 
 	onMount(() => {
 		speechSupported = isNoteSpeechSupported();
-		console.log('[Notes TTS][Workspace] speechSupported:', speechSupported);
 		if (isWorkspaceNarrowLayout() && readNotesMobileSidebarOpen()) {
 			mobileMenuOpen = true;
 		}
 		mobileSidebarHydrated = true;
+		// Capture phase so edits flush before the store's visibility handler saves.
+		document.addEventListener('visibilitychange', handleVisibilityChange, true);
 		return () => {
+			document.removeEventListener('visibilitychange', handleVisibilityChange, true);
 			stopSpeaking();
 		};
 	});
@@ -225,7 +227,6 @@
 
 	$effect(() => {
 		if (!selectedNote) {
-			if (isSpeaking) stopSpeaking();
 			selectedNoteId = null;
 			editContent = '';
 			lastSavedContent = '';
@@ -242,11 +243,16 @@
 		}
 
 		const content = selectedNote.content || '';
+		const hasUnsavedEdits = editContent !== lastSavedContent;
 
-		editContent = content;
-		lastSavedContent = content;
+		// Only load from the store when switching notes or when there are no local edits.
+		// Background refresh must not clobber in-progress typing.
+		if (selectedNoteChanged || !hasUnsavedEdits) {
+			editContent = content;
+			lastSavedContent = content;
+		}
 
-		const noteIsEmpty = content.trim().length === 0;
+		const noteIsEmpty = (selectedNoteChanged ? content : editContent).trim().length === 0;
 		if (selectedNoteChanged) {
 			// Default empty notes to editing so users can immediately type.
 			isEditing = shouldAutoEdit || noteIsEmpty;
@@ -254,10 +260,6 @@
 			isEditing = true;
 		}
 		shouldAutoEdit = false;
-
-		if (shouldAutoEdit === false && isEditing === true) {
-			// no-op: kept for clarity
-		}
 	});
 
 	function formatUpdatedAt(ms) {
@@ -367,6 +369,12 @@ $effect(() => {
 		isEditing = noteIsEmpty;
 	}
 
+	function handleVisibilityChange() {
+		if (document.visibilityState === 'hidden') {
+			flushNoteEditsIfNeeded();
+		}
+	}
+
 	beforeNavigate(() => {
 		flushNoteEditsIfNeeded();
 	});
@@ -413,19 +421,16 @@ $effect(() => {
 		return window.matchMedia('(min-width: 768px)').matches ? editEditorDesktop : editEditorMobile;
 	}
 
-	$effect(() => {
-		const currentNoteId = selectedNote?.id ?? null;
-		if (lastSpokenWatchNoteId !== null && currentNoteId !== lastSpokenWatchNoteId && isSpeaking) {
-			console.log(
-				'[Notes TTS][Workspace] note changed while speaking, stopping:',
-				lastSpokenWatchNoteId,
-				'->',
-				currentNoteId
-			);
-			stopSpeaking();
-		}
-		lastSpokenWatchNoteId = currentNoteId;
-	});
+	function playSelectedNote() {
+		if (!speechSupported || !selectedNote) return;
+		const text = speechTextFromNoteContent(selectedNote.content ?? '');
+		if (!text) return;
+		void playback.play({
+			id: selectedNote.id,
+			type: 'note',
+			title: getNoteTitle(selectedNote.content ?? '')
+		});
+	}
 
 	function enterEditMode() {
 		if (!selectedNote) return;
@@ -440,99 +445,13 @@ $effect(() => {
 		}, 0);
 	}
 
-	const notesDeleteToolbarButtonClass =
-		'shrink-0 inline-flex h-9 w-9 items-center justify-center rounded-md border border-rose-600/80 bg-rose-600 text-white transition hover:bg-rose-500';
-	const notesNewToolbarButtonClass =
-		'shrink-0 inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-600 bg-slate-900/45 text-slate-100 transition hover:border-violet-500/60 hover:bg-violet-500/10';
+	const notesToolbarIconButtonClass =
+		'shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-violet-500/10 hover:text-violet-400 dark:hover:text-violet-300';
+	const notesToolbarTrashButtonClass =
+		'shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-md text-rose-500 transition hover:bg-rose-500/10 hover:text-rose-400 dark:text-rose-400 dark:hover:text-rose-300';
 
 	let presentationOpen = $state(false);
 	let speechSupported = $state(false);
-	let isSpeaking = $state(false);
-	let activeSpeechController = null;
-	let speechRunId = 0;
-	let lastSpokenWatchNoteId = null;
-
-	function stopSpeaking() {
-		console.log('[Notes TTS][Workspace] stopSpeaking called');
-		speechRunId += 1;
-		activeSpeechController?.abort();
-		activeSpeechController = null;
-		cancelNoteSpeech();
-		isSpeaking = false;
-	}
-
-	function selectNextNoteInCurrentList(currentNoteId) {
-		const currentIndex = filteredNotes.findIndex((note) => note.id === currentNoteId);
-		if (currentIndex === -1) return null;
-		const nextNote = filteredNotes[currentIndex + 1];
-		if (!nextNote) return null;
-		selectedNoteId = nextNote.id;
-		store.recordLastOpenedNote(nextNote.id);
-		mobileMenuOpen = false;
-		shouldAutoEdit = false;
-		return nextNote.id;
-	}
-
-	async function speakSelectedNote() {
-		if (!speechSupported) {
-			console.warn('[Notes TTS][Workspace] audio playback not supported');
-			return;
-		}
-		if (!selectedNote) {
-			console.warn('[Notes TTS][Workspace] no selected note to read');
-			return;
-		}
-		const text = speechTextFromNoteContent(selectedNote.content ?? '');
-		console.log('[Notes TTS][Workspace] extracted text length:', text.length);
-		if (!text) {
-			console.warn('[Notes TTS][Workspace] note text is empty after cleanup');
-			return;
-		}
-
-		const noteIdAtStart = selectedNote.id;
-		console.log('[Notes TTS][Workspace] speaking note:', noteIdAtStart);
-		stopSpeaking();
-
-		const runId = ++speechRunId;
-		const controller = new AbortController();
-		activeSpeechController = controller;
-		isSpeaking = true;
-
-		try {
-			const provider = await speakNoteText(text, {
-				signal: controller.signal,
-				onended: () => {
-					console.log('[Notes TTS][Workspace] speech ended');
-					if (runId !== speechRunId) return;
-					isSpeaking = false;
-					const advancedToNoteId = selectNextNoteInCurrentList(noteIdAtStart);
-					if (advancedToNoteId) {
-						console.log('[Notes TTS][Workspace] auto-advancing to next note:', advancedToNoteId);
-						void tick().then(() => speakSelectedNote());
-					}
-				}
-			});
-			if (runId !== speechRunId || controller.signal.aborted) return;
-			if (activeSpeechController === controller) activeSpeechController = null;
-			console.log('[Notes TTS][Workspace] spoke with provider:', provider);
-		} catch (error) {
-			if (controller.signal.aborted) return;
-			console.error('[Notes TTS][Workspace] speech error:', error);
-			if (runId === speechRunId) {
-				activeSpeechController = null;
-				isSpeaking = false;
-			}
-		}
-	}
-
-	function toggleSpeech() {
-		console.log('[Notes TTS][Workspace] toggleSpeech, currently speaking:', isSpeaking);
-		if (isSpeaking) {
-			stopSpeaking();
-			return;
-		}
-		speakSelectedNote();
-	}
 </script>
 
 {#snippet notesDeleteToolbarTrailing()}
@@ -540,10 +459,10 @@ $effect(() => {
 		<button
 			type="button"
 			onclick={deleteNote}
-			class={notesDeleteToolbarButtonClass}
+			class={notesToolbarTrashButtonClass}
 			aria-label="Delete note"
 		>
-			<Trash2 class="h-5 w-5" strokeWidth={2} />
+			<Trash2 class="h-4 w-4" strokeWidth={2} />
 		</button>
 	{/if}
 {/snippet}
@@ -552,27 +471,31 @@ $effect(() => {
 	<button
 		type="button"
 		onclick={createNewNote}
-		class={notesNewToolbarButtonClass}
+		class={notesToolbarIconButtonClass}
 		aria-label="New note"
 	>
-		<SquarePen class="h-5 w-5" strokeWidth={2} />
+		<SquarePen class="h-4 w-4" strokeWidth={2} />
 	</button>
 	{#if selectedNote}
 		<button
 			type="button"
 			onclick={toggleNotePin}
-			class={`${notesDeleteToolbarButtonClass} ${store.isNotePinned(selectedNote.id) ? 'text-pink-400 dark:text-pink-300' : ''}`}
+			class={`${notesToolbarIconButtonClass} ${store.isNotePinned(selectedNote.id) ? '!text-pink-400 hover:!text-pink-300 dark:!text-pink-300' : ''}`}
 			aria-label={store.isNotePinned(selectedNote.id) ? 'Unpin note' : 'Pin note'}
 		>
-			<Pin class="h-5 w-5" strokeWidth={2} />
+			<Pin
+				class="h-4 w-4"
+				strokeWidth={2}
+				fill={store.isNotePinned(selectedNote.id) ? 'currentColor' : 'none'}
+			/>
 		</button>
 		<button
 			type="button"
 			onclick={deleteNote}
-			class={notesDeleteToolbarButtonClass}
+			class={notesToolbarTrashButtonClass}
 			aria-label="Delete note"
 		>
-			<Trash2 class="h-5 w-5" strokeWidth={2} />
+			<Trash2 class="h-4 w-4" strokeWidth={2} />
 		</button>
 	{/if}
 {/snippet}
@@ -761,19 +684,15 @@ $effect(() => {
 								{getNoteTitle(selectedNote.content)}
 							</button>
 						</h1>
-						<button
-							type="button"
-							onclick={toggleSpeech}
-							class="shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-violet-500/10 hover:text-violet-400 dark:hover:text-violet-300"
-							aria-label={isSpeaking ? 'Stop reading note aloud' : 'Read note aloud'}
-							title={isSpeaking ? 'Stop reading' : 'Read aloud'}
-						>
-							{#if isSpeaking}
-								<Square class="h-4 w-4" />
-							{:else}
-								<Volume2 class="h-4 w-4" />
-							{/if}
-						</button>
+						{#if speechSupported}
+							<SpeechPlayButton
+								boxed
+								active={playback.isActiveItem(selectedNote.id)}
+								ariaLabel="Read note aloud"
+								title="Read aloud"
+								onclick={playSelectedNote}
+							/>
+						{/if}
 						<button
 							type="button"
 							onclick={() => (presentationOpen = true)}
@@ -911,19 +830,16 @@ $effect(() => {
 								{getNoteTitle(selectedNote.content)}
 							</button>
 						</h1>
-						<button
-							type="button"
-							onclick={toggleSpeech}
-							class="mt-0.5 shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-violet-500/10 hover:text-violet-400 dark:hover:text-violet-300"
-							aria-label={isSpeaking ? 'Stop reading note aloud' : 'Read note aloud'}
-							title={isSpeaking ? 'Stop reading' : 'Read aloud'}
-						>
-							{#if isSpeaking}
-								<Square class="h-4 w-4" />
-							{:else}
-								<Volume2 class="h-4 w-4" />
-							{/if}
-						</button>
+						{#if speechSupported}
+							<SpeechPlayButton
+								boxed
+								class="mt-0.5"
+								active={playback.isActiveItem(selectedNote.id)}
+								ariaLabel="Read note aloud"
+								title="Read aloud"
+								onclick={playSelectedNote}
+							/>
+						{/if}
 						<button
 							type="button"
 							onclick={() => (presentationOpen = true)}

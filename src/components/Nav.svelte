@@ -9,6 +9,7 @@
 	import { parseStandaloneUrl, sanitizeUrlInput } from '$lib/urlUtils.js';
 	import { resumePathTodo, workspaceNavActiveSection } from '$lib/workspaceNavResume.js';
 	import { store } from '$stores/store.svelte.js';
+	import { playback } from '$stores/playback.svelte.js';
 	import { navComposerHandlers } from '$stores/navComposerHandlers.svelte.js';
 	import { authStore } from '$stores/auth.svelte.js';
 	import { synthStore } from '$stores/synth.svelte.js';
@@ -402,6 +403,7 @@ const clearAll = () => {
 <!-- Mobile bottom nav -->
 <div
 	class="mobile-bottom-nav"
+	class:has-playback-bar={playback.curItem != null}
 	style="padding-bottom: env(safe-area-inset-bottom, 0px);"
 >
 	<div class="mobile-bottom-nav-inner {borderColorClass}">

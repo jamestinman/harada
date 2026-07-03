@@ -159,6 +159,7 @@ BEGIN
       user_id,
       title,
       markdown,
+      url,
       status,
       list_type,
       list_id,
@@ -176,6 +177,7 @@ BEGIN
       (row_data->>'user_id')::uuid,
       COALESCE(row_data->>'title', ''),
       COALESCE(row_data->>'markdown', ''),
+      NULLIF(row_data->>'url', ''),
       COALESCE(row_data->>'status', 'todo'),
       COALESCE(row_data->>'list_type', 'goal'),
       COALESCE(row_data->>'list_id', 'goal:none'),
@@ -192,6 +194,7 @@ BEGIN
     SET
       title = EXCLUDED.title,
       markdown = EXCLUDED.markdown,
+      url = EXCLUDED.url,
       status = EXCLUDED.status,
       list_type = EXCLUDED.list_type,
       list_id = EXCLUDED.list_id,

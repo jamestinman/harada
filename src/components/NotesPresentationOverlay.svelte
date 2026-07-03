@@ -1,24 +1,16 @@
 <script>
 	import { onMount } from 'svelte';
 	import { store } from '$stores/store.svelte.js';
+	import { playback } from '$stores/playback.svelte.js';
 	import { getNoteTitle, renderNoteBodyMarkdown } from '$lib/todoUtils.js';
-	import {
-		cancelNoteSpeech,
-		isNoteSpeechSupported,
-		speakNoteText,
-		speechTextFromNoteContent
-	} from '$lib/noteSpeech.js';
-	import { X, Sun, Moon, ChevronLeft, ChevronRight, Volume2, Square } from 'lucide-svelte';
+	import { isNoteSpeechSupported, speechTextFromNoteContent } from '$lib/noteSpeech.js';
+	import SpeechPlayButton from './SpeechPlayButton.svelte';
+	import { X, Sun, Moon, ChevronLeft, ChevronRight } from 'lucide-svelte';
 
 	let { note, notes = [], onclose } = $props();
 
 	let presentationTheme = $state(store.theme);
 	let speechSupported = $state(false);
-	let isSpeaking = $state(false);
-
-	let activeSpeechController = null;
-	let speechRunId = 0;
-	let lastSpokenWatchNoteId = null;
 
 	let currentNote = $state();
 	const currentIndex = $derived(notes.findIndex((n) => n.id === currentNote?.id));
@@ -41,85 +33,23 @@
 		if (e.key === 'ArrowRight') next();
 	}
 
-	function stopSpeaking() {
-		speechRunId += 1;
-		activeSpeechController?.abort();
-		activeSpeechController = null;
-		cancelNoteSpeech();
-		isSpeaking = false;
-	}
-
-	async function speakCurrentNote() {
-		if (!speechSupported) {
-			return;
-		}
+	function playCurrentNote() {
+		if (!speechSupported || !currentNote) return;
 		const text = speechTextFromNoteContent(currentNote?.content ?? '');
-		console.log('[Notes TTS][Presentation] extracted text length:', text.length);
-		if (!text) {
-			console.warn('[Notes TTS][Presentation] note text is empty after cleanup');
-			return;
-		}
-
-		console.log('[Notes TTS][Presentation] speaking note:', currentNote?.id ?? 'unknown');
-		stopSpeaking();
-
-		const runId = ++speechRunId;
-		const controller = new AbortController();
-		activeSpeechController = controller;
-		isSpeaking = true;
-
-		try {
-			const provider = await speakNoteText(text, {
-				signal: controller.signal,
-				onended: () => {
-					console.log('[Notes TTS][Presentation] speech ended');
-					if (runId === speechRunId) isSpeaking = false;
-				}
-			});
-			if (runId !== speechRunId || controller.signal.aborted) return;
-			if (activeSpeechController === controller) activeSpeechController = null;
-			console.log('[Notes TTS][Presentation] spoke with provider:', provider);
-		} catch (error) {
-			if (controller.signal.aborted) return;
-			console.error('[Notes TTS][Presentation] speech error:', error);
-			if (runId === speechRunId) {
-				activeSpeechController = null;
-				isSpeaking = false;
-			}
-		}
-	}
-
-	function toggleSpeech() {
-		console.log('[Notes TTS][Presentation] toggleSpeech, currently speaking:', isSpeaking);
-		if (isSpeaking) {
-			stopSpeaking();
-			return;
-		}
-		speakCurrentNote();
+		if (!text) return;
+		void playback.play({
+			id: currentNote.id,
+			type: 'note',
+			title: getNoteTitle(currentNote?.content ?? '')
+		});
 	}
 
 	onMount(() => {
 		speechSupported = isNoteSpeechSupported();
-		console.log('[Notes TTS][Presentation] speechSupported:', speechSupported);
 		document.addEventListener('keydown', handleKeydown);
 		return () => {
 			document.removeEventListener('keydown', handleKeydown);
-			stopSpeaking();
 		};
-	});
-
-	$effect(() => {
-		const currentNoteId = currentNote?.id ?? null;
-		if (lastSpokenWatchNoteId !== null && currentNoteId !== lastSpokenWatchNoteId && isSpeaking) {
-			console.log(
-				'[Notes TTS][Presentation] note changed while speaking, stopping:',
-				lastSpokenWatchNoteId,
-				'->',
-				currentNoteId
-			);
-			stopSpeaking();
-		}
-		lastSpokenWatchNoteId = currentNoteId;
 	});
 
 	const isDark = $derived(presentationTheme === 'dark');
@@ -170,19 +100,13 @@
 		</div>
 		<div class="flex items-center gap-1">
 			{#if speechSupported}
-				<button
-					type="button"
-					onclick={toggleSpeech}
-					class={btnBase}
-					aria-label={isSpeaking ? 'Stop reading note aloud' : 'Read note aloud'}
-					title={isSpeaking ? 'Stop reading' : 'Read aloud'}
-				>
-					{#if isSpeaking}
-						<Square class="h-4 w-4" />
-					{:else}
-						<Volume2 class="h-4 w-4" />
-					{/if}
-				</button>
+				<SpeechPlayButton
+					boxed
+					active={playback.isActiveItem(currentNote?.id)}
+					ariaLabel="Read note aloud"
+					title="Read aloud"
+					onclick={playCurrentNote}
+				/>
 			{/if}
 			<button
 				type="button"

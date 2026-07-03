@@ -3,14 +3,19 @@
 	import { cubicOut } from 'svelte/easing';
 	import {
 		indexToNomenclature,
-		filterDisplayGoalIndices
+		filterDisplayGoalIndices,
+		canonicalGoalIndex,
+		isPinnedGoalIndex,
+		isNoGoalPseudoIndex
 	} from '$lib/todoUtils.js';
 	import { parseStandaloneUrl } from '$lib/urlUtils.js';
 	import { store } from '$stores/store.svelte.js';
 	import { todoEditorStore } from '$stores/todoEditor.svelte.js';
 	import GoalSelect from './GoalSelect.svelte';
 	import NoteHybridMarkdownEditor from './NoteHybridMarkdownEditor.svelte';
-	import { ArrowRightToLine, ArrowLeftFromLine, ChevronDown, Check, Pin } from 'lucide-svelte';
+	import SpeechPlayButton from './SpeechPlayButton.svelte';
+	import { playback } from '$stores/playback.svelte.js';
+	import { ArrowRightToLine, ArrowLeftFromLine, ChevronDown, Check, Pin, SquarePen } from 'lucide-svelte';
 
 	let { 
 		todo,
@@ -61,6 +66,9 @@
 	let markdownEditorElement = $state(null);
 	let isCreatingNext = $state(false);
 	let autoFocusedTodoId = $state(null);
+	let isEditingUrl = $state(false);
+	let editUrl = $state('');
+	let urlInputElement = $state(null);
 
 	const taskNoteContent = $derived(
 		(primaryNote?.content || todo.markdown || linkedNotes[0]?.content || '')
@@ -156,6 +164,49 @@
 		if (syncHighlight && onTitleFocus) onTitleFocus(todo.id);
 	}
 
+	function clearTodoUrl() {
+		onUpdate({ url: '' });
+	}
+
+	async function startEditingUrl(event) {
+		event?.stopPropagation?.();
+		editUrl = todo.url || '';
+		isEditingUrl = true;
+		await tick();
+		urlInputElement?.focus();
+		urlInputElement?.select();
+	}
+
+	function saveUrl() {
+		const trimmed = editUrl.trim();
+		isEditingUrl = false;
+		if (!trimmed) {
+			if (todo.url) clearTodoUrl();
+			return;
+		}
+		const parsed = parseStandaloneUrl(trimmed);
+		const nextUrl = parsed || trimmed;
+		if (nextUrl !== todo.url) {
+			onUpdate({ url: nextUrl });
+			if (parsed) void store.enrichTodoFromUrl(todo.id, nextUrl);
+		}
+	}
+
+	function cancelUrlEdit() {
+		isEditingUrl = false;
+		editUrl = todo.url || '';
+	}
+
+	function handleUrlKeydown(e) {
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			saveUrl();
+		} else if (e.key === 'Escape') {
+			e.preventDefault();
+			cancelUrlEdit();
+		}
+	}
+
 	function handleTitleKeydown(e) {
 		if (e.key === 'Enter') {
 			e.preventDefault();
@@ -176,16 +227,8 @@
 				onOutdent();
 			}
 		} else if (e.key === 'Backspace' || e.key === 'Delete') {
-			// If title is empty or will be empty after this keypress, delete and focus previous
-			const trimmedTitle = editTitle.trim();
-			const isCurrentlyEmpty = trimmedTitle === '';
-			// For backspace: if length is 0 or 1, it will be empty after
-			// For delete: if already empty, delete
-			const willBeEmptyAfterKeypress = 
-				(e.key === 'Backspace' && editTitle.length <= 1) ||
-				(e.key === 'Delete' && isCurrentlyEmpty);
-			
-			if ((isCurrentlyEmpty || willBeEmptyAfterKeypress) && onDeletePrevious) {
+			// Only delete when already empty — clearing the last character leaves an empty field to re-type
+			if (editTitle.trim() === '' && onDeletePrevious) {
 				e.preventDefault();
 				onDeletePrevious();
 			}
@@ -304,8 +347,30 @@
 
 	const linkedGoalsForDisplay = $derived(filterDisplayGoalIndices([...new Set(linkedGoalIndices)]));
 
+	const pinnedRowGoal = $derived.by(() => {
+		if (mainFeedPinStyle !== 'top') return null;
+		let goalIdx = null;
+		if (typeof todo.goalIndex === 'number') {
+			const canonical = canonicalGoalIndex(todo.goalIndex);
+			if (!isPinnedGoalIndex(canonical) && !isNoGoalPseudoIndex(canonical)) {
+				goalIdx = canonical;
+			}
+		}
+		if (goalIdx === null && linkedGoalsForDisplay.length > 0) {
+			goalIdx = linkedGoalsForDisplay[0];
+		}
+		if (goalIdx === null) return null;
+		return {
+			index: goalIdx,
+			label: getGoalLabel(goalIdx),
+			href: `/todo/${indexToNomenclature(goalIdx)}`
+		};
+	});
+
 	function cancelEdit() {
 		todoEditorStore.close(todo.id);
+		isEditingUrl = false;
+		editUrl = todo.url || '';
 		isEditing = false;
 		showMobileEditor = false;
 	}
@@ -346,6 +411,25 @@
 	</button>
 {/snippet}
 
+{#snippet taskPlayButton()}
+	{#if todo.url}
+		<SpeechPlayButton
+			compact
+			active={playback.isActiveItem(todo.id)}
+			ariaLabel="Read linked article aloud"
+			title="Read aloud"
+			onclick={() => {
+				void playback.play({
+					id: todo.id,
+					type: 'todo',
+					title: todo.title || todo.url,
+					url: todo.url
+				});
+			}}
+		/>
+	{/if}
+{/snippet}
+
 {#snippet taskLinkControls()}
 	<div class="flex flex-wrap items-center gap-1.5">
 			{#each linkedGoalsForDisplay as linkedGoal}
@@ -372,7 +456,7 @@
 					class="task-link-add-button"
 					onclick={openLinkPanel}
 				>
-					+ link goal
+					+ goal
 				</button>
 			{:else}
 				<div class="inline-flex w-52 max-w-full">
@@ -386,6 +470,46 @@
 				</div>
 			{/if}
 	</div>
+{/snippet}
+
+{#snippet todoUrlRow(showEdit = false)}
+	{#if todo.url || isEditingUrl}
+		<div class="flex min-w-0 items-center gap-0.5">
+			{#if isEditingUrl}
+				<input
+					bind:this={urlInputElement}
+					type="text"
+					bind:value={editUrl}
+					class="min-w-0 flex-1 rounded border border-slate-300 bg-transparent px-1.5 py-0.5 text-xs text-violet-600 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50 dark:border-slate-600 dark:text-violet-300"
+					placeholder="https://…"
+					onclick={(e) => e.stopPropagation()}
+					onkeydown={handleUrlKeydown}
+					onblur={saveUrl}
+				/>
+			{:else}
+				<a
+					href={todo.url}
+					target="_blank"
+					rel="noopener noreferrer"
+					class="min-w-0 truncate text-xs text-violet-500 underline decoration-violet-500/40 underline-offset-2 hover:text-violet-400 dark:text-violet-300"
+					onclick={(e) => e.stopPropagation()}
+				>
+					{todo.url}
+				</a>
+			{/if}
+			{#if showEdit && !isEditingUrl}
+				<button
+					type="button"
+					class="flex-shrink-0 rounded p-0.5 text-slate-400 transition hover:bg-slate-500/10 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"
+					title="Edit link"
+					aria-label="Edit link"
+					onclick={startEditingUrl}
+				>
+					<SquarePen class="h-3.5 w-3.5" />
+				</button>
+			{/if}
+		</div>
+	{/if}
 {/snippet}
 
 <!-- Compact single-line view -->
@@ -426,6 +550,7 @@
 		{/if}
 
 		{@render taskStatusCheckbox()}
+		{@render taskPlayButton()}
 
 		<!-- Title - editable inline -->
 		{#if isEditingTitle}
@@ -473,17 +598,7 @@
 					>
 						{todo.title || '\u00A0'}
 					</span>
-					{#if todo.url}
-						<a
-							href={todo.url}
-							target="_blank"
-							rel="noopener noreferrer"
-							class="truncate text-xs text-violet-500 underline decoration-violet-500/40 underline-offset-2 hover:text-violet-400 dark:text-violet-300"
-							onclick={(e) => e.stopPropagation()}
-						>
-							{todo.url}
-						</a>
-					{/if}
+					{@render todoUrlRow()}
 					{#if hasNotes}
 						<div
 							role="button"
@@ -533,6 +648,15 @@
 				</button>
 			{/if}
 		{/if}
+		{#if pinnedRowGoal}
+			<a
+				href={pinnedRowGoal.href}
+				class="ml-auto flex-shrink-0 text-sm font-bold text-slate-600 underline-offset-2 hover:text-violet-600 hover:underline dark:text-slate-400 dark:hover:text-violet-300"
+				onclick={(e) => e.stopPropagation()}
+			>
+				{pinnedRowGoal.label}
+			</a>
+		{/if}
 		<button
 			type="button"
 			onpointerdown={(e) => e.stopPropagation()}
@@ -580,6 +704,7 @@
 	<div class="desktop-expanded-editor" style="margin-left: {indentLevel * 1.5}rem;">
 		<div class="mb-2 flex items-center gap-2">
 			{@render taskStatusCheckbox()}
+			{@render taskPlayButton()}
 			<div class="flex min-w-0 flex-1 flex-col gap-1">
 				<input
 					type="text"
@@ -587,16 +712,7 @@
 					placeholder="Task title"
 					class={`task-edit-title w-full ${todo.status === 'done' ? 'line-through opacity-70' : ''}`}
 				/>
-				{#if todo.url}
-					<a
-						href={todo.url}
-						target="_blank"
-						rel="noopener noreferrer"
-						class="truncate text-xs text-violet-500 underline decoration-violet-500/40 underline-offset-2 hover:text-violet-400 dark:text-violet-300"
-					>
-						{todo.url}
-					</a>
-				{/if}
+				{@render todoUrlRow(true)}
 			</div>
 			<button
 				type="button"
@@ -671,6 +787,7 @@
 		>
 			<div class="mb-2 flex items-center gap-2">
 				{@render taskStatusCheckbox()}
+				{@render taskPlayButton()}
 				<input
 					type="text"
 					bind:value={editTitle}
@@ -695,6 +812,8 @@
 					/>
 				</button>
 			</div>
+
+			{@render todoUrlRow(true)}
 
 			{@render taskLinkControls()}
 

@@ -53,7 +53,7 @@ function pickEnglishVoice() {
 	);
 }
 
-function speakWithWebSpeech(text, { signal, onended } = {}) {
+export function speakWithWebSpeech(text, { signal, onended } = {}) {
 	return new Promise((resolve, reject) => {
 		if (!isWebSpeechAvailable()) {
 			reject(new Error('Web Speech API not supported'));
@@ -111,19 +111,29 @@ function speakWithWebSpeech(text, { signal, onended } = {}) {
 	});
 }
 
+export function createAudioFromBlob(blob) {
+	const objectUrl = URL.createObjectURL(blob);
+	const audio = new Audio(objectUrl);
+	return { audio, objectUrl };
+}
+
+/** Stop and release a managed HTML5 audio element. */
+export function stopManagedAudio(audio, objectUrl) {
+	if (!audio) return;
+	audio.pause();
+	audio.currentTime = 0;
+	audio.onended = null;
+	audio.onerror = null;
+	audio.src = '';
+	if (objectUrl) URL.revokeObjectURL(objectUrl);
+}
+
 function playAudioBlob(blob, { signal, onended } = {}) {
 	return new Promise((resolve, reject) => {
-		const url = URL.createObjectURL(blob);
-		const audio = new Audio(url);
+		const { audio, objectUrl } = createAudioFromBlob(blob);
 
 		let settled = false;
-		const cleanup = () => {
-			audio.pause();
-			audio.onended = null;
-			audio.onerror = null;
-			audio.src = '';
-			URL.revokeObjectURL(url);
-		};
+		const cleanup = () => stopManagedAudio(audio, objectUrl);
 
 		const settle = (fn, value) => {
 			if (settled) return;
@@ -153,6 +163,37 @@ function playAudioBlob(blob, { signal, onended } = {}) {
 
 function shouldUseWebSpeechFirst() {
 	return typeof navigator !== 'undefined' && navigator.onLine === false;
+}
+
+/** Fetch TTS audio or fall back to Web Speech for a single chunk. */
+export async function synthesizeSpeechChunk(text, { signal } = {}) {
+	if (!text) throw new Error('No text to speak');
+
+	if (shouldUseWebSpeechFirst()) {
+		if (!isWebSpeechAvailable()) {
+			throw new Error('Speech is unavailable while offline');
+		}
+		return { mode: 'web-speech', text };
+	}
+
+	if (isGeminiPlaybackAvailable()) {
+		try {
+			const blob = await fetchNoteSpeechBlob(text, { signal });
+			return { mode: 'blob', blob };
+		} catch (error) {
+			if (error?.name === 'AbortError') throw error;
+			if (error?.fallback !== false && isWebSpeechAvailable()) {
+				return { mode: 'web-speech', text };
+			}
+			throw error;
+		}
+	}
+
+	if (isWebSpeechAvailable()) {
+		return { mode: 'web-speech', text };
+	}
+
+	throw new Error('Speech is not supported in this browser');
 }
 
 export async function fetchNoteSpeechBlob(text, { signal } = {}) {

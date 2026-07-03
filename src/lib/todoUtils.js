@@ -206,6 +206,27 @@ export function mergeNoteLists(localNotes, remoteNotes) {
 }
 
 // Merge two todo arrays by id, preferring the todo with the newer updatedAt timestamp
+function mergeTodoUrl(localUrl, remoteUrl) {
+	const local = typeof localUrl === 'string' ? localUrl.trim() : '';
+	const remote = typeof remoteUrl === 'string' ? remoteUrl.trim() : '';
+	return local || remote || '';
+}
+
+function mergeTodoRecord(localTodo, remoteTodo) {
+	const localUpdated =
+		typeof localTodo.updatedAt === 'number' && Number.isFinite(localTodo.updatedAt)
+			? localTodo.updatedAt
+			: 0;
+	const remoteUpdated =
+		typeof remoteTodo.updatedAt === 'number' && Number.isFinite(remoteTodo.updatedAt)
+			? remoteTodo.updatedAt
+			: 0;
+	const winner = remoteUpdated > localUpdated ? remoteTodo : localTodo;
+	const loser = winner === localTodo ? remoteTodo : localTodo;
+	const url = mergeTodoUrl(winner.url, loser.url);
+	return url === winner.url ? winner : { ...winner, url };
+}
+
 export function mergeTodoLists(localTodos, remoteTodos) {
 	const safeLocal = Array.isArray(localTodos) ? localTodos : [];
 	const safeRemote = Array.isArray(remoteTodos) ? remoteTodos : [];
@@ -233,16 +254,7 @@ export function mergeTodoLists(localTodos, remoteTodos) {
 		const remoteTodo = byIdRemote.get(id);
 
 		if (localTodo && remoteTodo) {
-			const localUpdated =
-				typeof localTodo.updatedAt === 'number' && Number.isFinite(localTodo.updatedAt)
-					? localTodo.updatedAt
-					: 0;
-			const remoteUpdated =
-				typeof remoteTodo.updatedAt === 'number' && Number.isFinite(remoteTodo.updatedAt)
-					? remoteTodo.updatedAt
-					: 0;
-
-			merged.push(remoteUpdated > localUpdated ? remoteTodo : localTodo);
+			merged.push(mergeTodoRecord(localTodo, remoteTodo));
 		} else if (localTodo) {
 			merged.push(localTodo);
 		} else if (remoteTodo) {

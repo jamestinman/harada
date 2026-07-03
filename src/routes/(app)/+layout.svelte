@@ -14,6 +14,8 @@
 	import { enqueueTodoUrlEnrichment } from '$lib/urlUtils.js';
 	import Nav from '$components/Nav.svelte';
 	import SignInBanner from '$components/SignInBanner.svelte';
+	import PlaybackControlBar from '$components/PlaybackControlBar.svelte';
+	import { playback } from '$stores/playback.svelte.js';
 	import { persistWorkspacePath } from '$lib/workspaceNavResume.js';
 	import '../layout.css';
 
@@ -27,6 +29,7 @@
 	// Use icon.png for OG: favicon.png is 192×192 (below Meta/WhatsApp minimum 200×200 for link images)
 	const ogImageUrl = $derived(`${page.url.origin}/icon.png`);
 	const ogPageUrl = $derived(`${page.url.origin}${page.url.pathname}`);
+	const playbackBarVisible = $derived(playback.curItem != null);
 
 	// Grid is reactive via the store - no local copy needed
 	const grid = $derived(store.harada_chart.grid);
@@ -219,7 +222,7 @@
 
 <div
   id="root-container"
-	class="{store.activeTheme} min-h-dvh overflow-x-hidden {needsSignIn ? 'pt-[calc(env(safe-area-inset-top,0px)+2.75rem)] lg:pt-[8.5rem]' : 'pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] lg:pt-[3rem]'}"
+	class="{store.activeTheme} min-h-dvh overflow-x-hidden {playbackBarVisible ? 'has-playback-bar' : ''} {needsSignIn ? 'pt-[calc(env(safe-area-inset-top,0px)+2.75rem)] lg:pt-[8.5rem]' : 'pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] lg:pt-[3rem]'}"
 	style="padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem);"
 >
 	{#if needsSignIn}
@@ -234,6 +237,8 @@
     onCreateTodo={createTodoFromComposer}
     onCreateNote={createNoteFromComposer}
   />
+
+  <PlaybackControlBar />
 
 </div>
 
