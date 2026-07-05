@@ -1,15 +1,49 @@
 <script>
 	import { playback } from '$stores/playback.svelte.js';
-	import { SkipBack, Rewind, Pause, Play, FastForward } from 'lucide-svelte';
+	import { Pause, Play } from 'lucide-svelte';
 
 	let intervalId = null;
+	let progressBarEl = $state(null);
+	let isDragging = $state(false);
+	let dragProgress = $state(0);
 
 	const visible = $derived(playback.curItem != null);
 	const title = $derived(playback.curItem?.title ?? '');
 	const progress = $derived(playback.curItem?.progress ?? 0);
+	const displayProgress = $derived(isDragging ? dragProgress : progress);
 	const isPlaying = $derived(
 		playback.playStatus === 'PLAYING' || playback.playStatus === 'BUFFERING'
 	);
+
+	function progressFromClientX(clientX) {
+		if (!progressBarEl) return 0;
+		const rect = progressBarEl.getBoundingClientRect();
+		if (!rect.width) return 0;
+		const x = clientX - rect.left;
+		return Math.max(0, Math.min(100, (x / rect.width) * 100));
+	}
+
+	function handleProgressPointerDown(event) {
+		if (!progressBarEl) return;
+		isDragging = true;
+		dragProgress = progressFromClientX(event.clientX);
+		progressBarEl.setPointerCapture(event.pointerId);
+	}
+
+	function handleProgressPointerMove(event) {
+		if (!isDragging) return;
+		dragProgress = progressFromClientX(event.clientX);
+	}
+
+	function handleProgressPointerUp(event) {
+		if (!isDragging || !progressBarEl) return;
+		isDragging = false;
+		const target = progressFromClientX(event.clientX);
+		if (progressBarEl.hasPointerCapture(event.pointerId)) {
+			progressBarEl.releasePointerCapture(event.pointerId);
+		}
+		void playback.seekToProgress(target);
+	}
 
 	$effect(() => {
 		if (intervalId) {
@@ -44,44 +78,33 @@
 				{title}
 			</p>
 
-			<div
-				class="h-1 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700"
-				role="progressbar"
-				aria-valuenow={progress}
-				aria-valuemin="0"
-				aria-valuemax="100"
+			<button
+				bind:this={progressBarEl}
+				type="button"
+				class="group flex h-5 w-full touch-none items-center"
+				aria-label="Seek playback position"
+				onpointerdown={handleProgressPointerDown}
+				onpointermove={handleProgressPointerMove}
+				onpointerup={handleProgressPointerUp}
+				onpointercancel={handleProgressPointerUp}
 			>
-				<div
-					class="h-full rounded-full bg-emerald-500 transition-all duration-200 dark:bg-emerald-400"
-					style="width: {progress}%"
-				></div>
-			</div>
-
-			<div class="flex flex-row items-center justify-center gap-2">
-				<button
-					type="button"
-					class="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-					aria-label="Skip to start"
-					onclick={() => {
-						if (playback.preventMultipleBtnPresses()) return;
-						void playback.skipStartTrack();
-					}}
+				<span
+					class="relative h-1.5 w-full overflow-hidden rounded-full bg-slate-200 group-hover:h-2 dark:bg-slate-700"
+					role="progressbar"
+					aria-valuenow={displayProgress}
+					aria-valuemin="0"
+					aria-valuemax="100"
 				>
-					<SkipBack class="h-7 w-7" />
-				</button>
+					<span
+						class={`absolute inset-y-0 left-0 rounded-full bg-emerald-500 dark:bg-emerald-400 ${
+							isDragging ? '' : 'transition-all duration-200'
+						}`}
+						style="width: {displayProgress}%"
+					></span>
+				</span>
+			</button>
 
-				<button
-					type="button"
-					class="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-					aria-label="Rewind chunk"
-					onclick={() => {
-						if (playback.preventMultipleBtnPresses()) return;
-						void playback.skipPrevChunk();
-					}}
-				>
-					<Rewind class="h-7 w-7" />
-				</button>
-
+			<div class="flex flex-row items-center justify-center">
 				{#if isPlaying}
 					<button
 						type="button"
@@ -107,18 +130,6 @@
 						<Play class="h-8 w-8" />
 					</button>
 				{/if}
-
-				<button
-					type="button"
-					class="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-					aria-label="Fast forward chunk"
-					onclick={() => {
-						if (playback.preventMultipleBtnPresses()) return;
-						void playback.skipNextChunk();
-					}}
-				>
-					<FastForward class="h-7 w-7" />
-				</button>
 			</div>
 		</div>
 	</div>

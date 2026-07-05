@@ -1251,8 +1251,8 @@ h4 {
 }
 
 .playback-control-bar {
-  --playback-bar-height: 7.5rem;
-  --playback-bar-offset: 7.5rem;
+  --playback-bar-height: 6.5rem;
+  --playback-bar-offset: 6.5rem;
   @apply fixed inset-x-0 bottom-0 z-50 border-t backdrop-blur;
   .dark & {
     @apply border-slate-800/90 bg-slate-900/95 text-slate-100;
@@ -1263,8 +1263,8 @@ h4 {
 }
 
 .has-playback-bar {
-  --playback-bar-offset: 7.5rem;
-  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem + var(--playback-bar-height, 7.5rem)) !important;
+  --playback-bar-offset: 6.5rem;
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem + var(--playback-bar-height, 6.5rem)) !important;
 }
 
 .mobile-bottom-nav-inner {

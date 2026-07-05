@@ -54,7 +54,7 @@
 		document.addEventListener('visibilitychange', handleVisibilityChange, true);
 		return () => {
 			document.removeEventListener('visibilitychange', handleVisibilityChange, true);
-			stopSpeaking();
+			void playback.stop();
 		};
 	});
 

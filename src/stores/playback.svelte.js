@@ -180,7 +180,7 @@ class PlaybackStore {
 		}
 	}
 
-	async playCurrentChunk() {
+	async playCurrentChunk(startOffset = 0) {
 		const item = this.curItem;
 		if (!item || !this.chunks.length) return false;
 
@@ -188,6 +188,13 @@ class PlaybackStore {
 		if (!chunk) {
 			return this.finish();
 		}
+
+		const offset =
+			typeof startOffset === 'number' && Number.isFinite(startOffset)
+				? Math.max(0, Math.min(1, startOffset))
+				: typeof item.chunkStartOffset === 'number'
+					? Math.max(0, Math.min(1, item.chunkStartOffset))
+					: 0;
 
 		this.playStatus = 'BUFFERING';
 		this.loading = true;
@@ -200,11 +207,16 @@ class PlaybackStore {
 				id: item.id,
 				chunkNum: item.chunkNum,
 				totalChunks: item.totalChunks,
+				startOffset: offset,
 				onPlaying: () => {
 					this.playStatus = 'PLAYING';
 					this.loading = false;
+					this.updateProgress();
 				}
 			});
+			if (this.curItem) {
+				this.curItem = { ...this.curItem, chunkStartOffset: 0 };
+			}
 			return true;
 		} catch (error) {
 			console.error('[playback.playCurrentChunk]', error);
@@ -257,6 +269,34 @@ class PlaybackStore {
 	async resume() {
 		if (!this.curItem) return false;
 		return this.playCurrentChunk();
+	}
+
+	async seekToProgress(percent) {
+		const item = this.curItem;
+		if (!item?.totalChunks || !this.chunks.length) return false;
+
+		const clamped = Math.max(0, Math.min(100, percent));
+		const target = (clamped / 100) * item.totalChunks;
+		const chunkNum = Math.min(item.totalChunks - 1, Math.max(0, Math.floor(target)));
+		const chunkStartOffset = target - chunkNum;
+		const wasPlaying = this.playStatus === 'PLAYING' || this.playStatus === 'BUFFERING';
+
+		await mediaPlayer.stop();
+
+		this.curItem = {
+			...item,
+			chunkNum,
+			chunkStartOffset,
+			progress: clamped
+		};
+
+		if (!wasPlaying) {
+			this.playStatus = 'STOPPED';
+			this.loading = false;
+			return true;
+		}
+
+		return this.playCurrentChunk(chunkStartOffset);
 	}
 
 	updateProgress() {
