@@ -59,6 +59,15 @@ class PlaybackStore {
 		this.loading = false;
 	}
 
+	async dismiss() {
+		if (this.playStatus === 'PLAYING' || this.playStatus === 'BUFFERING') return false;
+		this.prepareAbort?.abort();
+		this.prepareAbort = null;
+		await mediaPlayer.stop();
+		this.finish();
+		return true;
+	}
+
 	finish() {
 		this.playStatus = 'STOPPED';
 		this.curItem = null;

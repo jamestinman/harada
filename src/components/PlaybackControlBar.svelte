@@ -1,6 +1,6 @@
 <script>
 	import { playback } from '$stores/playback.svelte.js';
-	import { Pause, Play } from 'lucide-svelte';
+	import { Pause, Play, X } from 'lucide-svelte';
 
 	let intervalId = null;
 	let progressBarEl = $state(null);
@@ -74,9 +74,23 @@
 		style="padding-bottom: env(safe-area-inset-bottom, 0px);"
 	>
 		<div class="playback-control-bar-inner mx-auto flex max-w-3xl flex-col gap-2 px-4 py-3">
-			<p class="truncate text-center text-sm font-medium" title={title}>
-				{title}
-			</p>
+			<div class="relative flex items-center justify-center">
+				<p class="truncate px-8 text-center text-sm font-medium" title={title}>
+					{title}
+				</p>
+				{#if !isPlaying}
+					<button
+						type="button"
+						class="absolute right-0 rounded-md p-1 text-slate-400 transition hover:bg-slate-200/80 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+						aria-label="Close playback"
+						onclick={() => {
+							void playback.dismiss();
+						}}
+					>
+						<X class="h-5 w-5" />
+					</button>
+				{/if}
+			</div>
 
 			<button
 				bind:this={progressBarEl}

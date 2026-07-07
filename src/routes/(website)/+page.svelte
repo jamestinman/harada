@@ -39,10 +39,10 @@
 					The Harada Method · since 1990s Osaka
 				</p>
 				<h1 class="mt-5 text-balance text-4xl font-bold leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl">
-					The <span class="text-emerald-600 dark:text-emerald-400">legendary goal system</span>, now an app for your whole life.
+					<span class="text-emerald-600 dark:text-emerald-400">Life goals</span> with practical actions.
 				</h1>
 				<p class="mt-6 max-w-xl text-lg leading-relaxed text-slate-600 dark:text-slate-300">
-					Inspired by the Harada Method, Haradato gives you <strong class="font-semibold text-slate-800 dark:text-slate-100">one chart, 8 areas, 64 goals and categories</strong> to map everything in your life onto a single page, with links from each to real tasks and notes.
+					Inspired by the Harada Method, Haradato gives you <strong class="font-semibold text-slate-800 dark:text-slate-100">one chart, 8 areas, 64 goals and categories</strong> to map everything in your life onto a single page, with real to-do lists and markdown notes under each.
 				</p>
 				<div class="mt-8 flex flex-wrap items-center gap-3">
 					<a href="/harada" class="cta-primary">Start your chart - free</a>
