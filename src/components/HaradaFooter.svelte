@@ -5,13 +5,13 @@
   >
   <span class="flex items-center gap-1.5">
       <span
-        class="inline-block h-3 w-3 rounded bg-gradient-to-br from-violet-600 to-fuchsia-600"
+        class="inline-block h-3 w-3 rounded bg-violet-600"
       ></span>
       <span>Main Goal</span>
     </span>
     <span class="flex items-center gap-1.5">
       <span
-        class="inline-block h-3 w-3 rounded bg-gradient-to-br from-violet-800 to-fuchsia-800"
+        class="inline-block h-3 w-3 rounded bg-violet-800"
       ></span>
       <span>8 Sub-Goals</span>
     </span>

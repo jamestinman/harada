@@ -207,6 +207,15 @@ class Store {
 	 * 'all' = All Tasks feed; 'goal' = current /todo/[goal] scope only.
 	 */
 	todoMobileSearchScope = $state(/** @type {'all' | 'goal'} */ ('all'));
+	todoListOrdering = $state(/** @type {'recent' | 'alpha' | 'harada'} */ ('recent'));
+
+	setTodoListOrdering(value) {
+		const next =
+			value === 'alpha' || value === 'harada' || value === 'recent' ? value : 'recent';
+		this.todoListOrdering = next;
+		if (!browser) return;
+		localSet('todo_list_ordering', next);
+	}
 
 	latchTodoMobileSearchScope(showsGoalList, onAllTasksRoute = false) {
 		this.todoMobileSearchScope = showsGoalList || onAllTasksRoute ? 'all' : 'goal';
@@ -326,6 +335,8 @@ class Store {
 		const savedTheme = localGet('theme', 'auto');
 		this.setTheme(savedTheme);
 		this._updateSystemThemePreference();
+		const savedTodoListOrdering = localGet('todo_list_ordering', 'recent');
+		this.setTodoListOrdering(savedTodoListOrdering);
 
 		if (typeof window.matchMedia === 'function') {
 			const media = window.matchMedia('(prefers-color-scheme: dark)');

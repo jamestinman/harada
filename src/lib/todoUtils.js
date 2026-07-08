@@ -1659,12 +1659,50 @@ export function buildAllTasksFeed({
 	}
 
 	const todoGroups = [...groups, ...customGroups];
-	const goalMenuItems = goalGroups.map((group) => ({
-		id: group.id,
-		label: group.label,
-		href: group.href,
-		count: group.todos.length
-	}));
+	const goalGroupByIndex = new Map(goalGroups.map((group) => [group.goalIndex, group]));
+	const chartGoalEntries = [];
+	for (let goalIndex = 0; goalIndex < grid.length; goalIndex++) {
+		const cell = grid[goalIndex];
+		const text = (cell?.text ?? '').trim();
+		if (!text) continue;
+		chartGoalEntries.push({
+			goalIndex,
+			label: text,
+			goalOrdering:
+				typeof cell?.todo_group_ordering === 'number' && Number.isFinite(cell.todo_group_ordering)
+					? cell.todo_group_ordering
+					: (goalIndex + 1) * goalGroupOrderStep
+		});
+	}
+
+	const menuGoalEntries = new Map();
+	for (const entry of chartGoalEntries) {
+		menuGoalEntries.set(entry.goalIndex, entry);
+	}
+	for (const group of goalGroups) {
+		if (!menuGoalEntries.has(group.goalIndex)) {
+			menuGoalEntries.set(group.goalIndex, {
+				goalIndex: group.goalIndex,
+				label: group.label,
+				goalOrdering: group.goalOrdering
+			});
+		}
+	}
+
+	const goalMenuItems = [...menuGoalEntries.values()]
+		.sort((a, b) => {
+			if (a.goalOrdering !== b.goalOrdering) return a.goalOrdering - b.goalOrdering;
+			return a.goalIndex - b.goalIndex;
+		})
+		.map((entry) => {
+			const group = goalGroupByIndex.get(entry.goalIndex);
+			return {
+				id: `goal-${entry.goalIndex}`,
+				label: entry.label,
+				href: `/todo/${indexToNomenclature(entry.goalIndex)}`,
+				count: group ? group.todos.length : 0
+			};
+		});
 	const allTodos = [...active].sort((a, b) => getTodoOrdering(a) - getTodoOrdering(b));
 
 	const groupsByTodoId = new Map();

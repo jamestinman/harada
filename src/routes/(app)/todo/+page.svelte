@@ -8,6 +8,7 @@
 	import {
 		indexToNomenclature,
 		canonicalGoalIndex,
+		getBlockCellIndices,
 		defaultTodo,
 		normalizeTodoListMeta,
 		buildGoalListMeta,
@@ -38,6 +39,7 @@
 	let activeMainFeed = $state('todos');
 	let initialTodoListReady = $state(false);
 	let isNarrowLayout = $state(false);
+	const ordering = $derived(store.todoListOrdering);
 
   // Todos are normalized on load/mutation in the store
 	const grid = $derived(store.harada_chart.grid);
@@ -98,6 +100,30 @@
 		const cell = grid[index];
 		const text = (cell?.text ?? '').trim();
 		return text || indexToNomenclature(index);
+	}
+
+	// Harada traversal for sidebar/order dropdown:
+	// E5 first, then each outer 3x3 block in Harada order where each block is:
+	// block center first, then the other 8 cells in row-major order.
+	const HARADA_OUTER_GOAL_INDICES = [10, 13, 16, 37, 43, 64, 67, 70];
+	const haradaGoalRankByIndex = new Map([[40, 0]]);
+	for (let blockOrder = 0; blockOrder < HARADA_OUTER_GOAL_INDICES.length; blockOrder++) {
+		const blockCenter = HARADA_OUTER_GOAL_INDICES[blockOrder];
+		const base = 1 + blockOrder * 9;
+		haradaGoalRankByIndex.set(blockCenter, base);
+		const rest = getBlockCellIndices(blockCenter)
+			.filter((idx) => idx !== blockCenter)
+			.sort((a, b) => a - b);
+		rest.forEach((idx, offset) => {
+			if (!haradaGoalRankByIndex.has(idx)) {
+				haradaGoalRankByIndex.set(idx, base + 1 + offset);
+			}
+		});
+	}
+
+	function getHaradaGoalRank(goalIndex) {
+		if (typeof goalIndex !== 'number') return Number.POSITIVE_INFINITY;
+		return haradaGoalRankByIndex.get(goalIndex) ?? Number.POSITIVE_INFINITY;
 	}
 
 	const ORDER_STEP = 1024;
@@ -311,18 +337,33 @@
 				updated_at: cell?.updated_at || null
 			};
 		}).sort((a, b) => {
-			// Main goal always first
-			if (a.isMainGoal) return -1;
-			if (b.isMainGoal) return 1;
-			
-			// Sort by updated_at descending (most recently updated first)
-			const aTime = a.updated_at ? new Date(a.updated_at).getTime() : 0;
-			const bTime = b.updated_at ? new Date(b.updated_at).getTime() : 0;
-			if (aTime !== bTime) {
-				return bTime - aTime; // Descending order
+			if (ordering === 'recent') {
+				// Main goal always first
+				if (a.isMainGoal) return -1;
+				if (b.isMainGoal) return 1;
+
+				// Sort by updated_at descending (most recently updated first)
+				const aTime = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+				const bTime = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+				if (aTime !== bTime) return bTime - aTime;
+
+				// Fallback to index order if timestamps are equal or both null
+				return a.index - b.index;
 			}
-			
-			// Fallback to index order if timestamps are equal or both null
+
+			if (ordering === 'alpha') {
+				const byLabel = (a.label ?? '').localeCompare(b.label ?? '', undefined, {
+					sensitivity: 'base',
+					numeric: true
+				});
+				if (byLabel !== 0) return byLabel;
+				return a.index - b.index;
+			}
+
+			// ordering === 'harada'
+			const ra = getHaradaGoalRank(a.index);
+			const rb = getHaradaGoalRank(b.index);
+			if (ra !== rb) return ra - rb;
 			return a.index - b.index;
 		});
 	});
@@ -338,8 +379,105 @@
 			getTodoOrdering
 		})
 	);
-	const todoGroups = $derived(tasksFeed.todoGroups);
-	const goalMenuItems = $derived(tasksFeed.goalMenuItems);
+	const rawTodoGroups = $derived(tasksFeed.todoGroups);
+	const rawGoalMenuItems = $derived(tasksFeed.goalMenuItems);
+	const canonicalGoalMenuItems = $derived.by(() => {
+		const byCanonical = new Map();
+
+		// Start from task-derived menu entries so untitled-but-active goals still appear.
+		for (const item of rawGoalMenuItems ?? []) {
+			const canonical =
+				typeof item?.goalIndex === 'number' ? canonicalGoalIndex(item.goalIndex) : null;
+			if (canonical === null || Number.isNaN(canonical)) continue;
+			const existing = byCanonical.get(canonical);
+			const label = (item?.label ?? '').trim();
+			const count = Number.isFinite(item?.count) ? item.count : 0;
+			if (!existing) {
+				byCanonical.set(canonical, {
+					id: `goal-${canonical}`,
+					goalIndex: canonical,
+					label: label || getGoalLabelFromIndex(canonical),
+					href: `/todo/${indexToNomenclature(canonical)}`,
+					count
+				});
+				continue;
+			}
+			existing.count = Math.max(existing.count, count);
+			if (label) existing.label = label;
+		}
+
+		// Ensure every titled goal appears, even with zero tasks.
+		for (let i = 0; i < grid.length; i++) {
+			const text = (grid[i]?.text ?? '').trim();
+			if (!text) continue;
+			const canonical = canonicalGoalIndex(i);
+			const existing = byCanonical.get(canonical);
+			if (existing) {
+				existing.label = text;
+				continue;
+			}
+			byCanonical.set(canonical, {
+				id: `goal-${canonical}`,
+				goalIndex: canonical,
+				label: text,
+				href: `/todo/${indexToNomenclature(canonical)}`,
+				count: 0
+			});
+		}
+
+		return [...byCanonical.values()];
+	});
+	const todoGroups = $derived.by(() => {
+		const groups = [...(rawTodoGroups ?? [])];
+		if (ordering === 'recent') return groups;
+
+		const noGoalGroup = groups.find((g) => g.id === 'no-goal') ?? null;
+		const goalGroups = groups.filter((g) => g.groupType === 'goal');
+		const customGroups = groups.filter((g) => g.groupType === 'custom');
+		const sortedGoalGroups = goalGroups.slice();
+
+		if (ordering === 'alpha') {
+			sortedGoalGroups.sort((a, b) => {
+				const byLabel = (a.label ?? '').localeCompare(b.label ?? '', undefined, {
+					sensitivity: 'base',
+					numeric: true
+				});
+				if (byLabel !== 0) return byLabel;
+				return a.goalIndex - b.goalIndex;
+			});
+		} else {
+			// ordering === 'harada'
+			sortedGoalGroups.sort((a, b) => {
+				const ra = getHaradaGoalRank(a.goalIndex);
+				const rb = getHaradaGoalRank(b.goalIndex);
+				if (ra !== rb) return ra - rb;
+				return a.goalIndex - b.goalIndex;
+			});
+		}
+
+		if (noGoalGroup) return [noGoalGroup, ...sortedGoalGroups, ...customGroups];
+		return [...sortedGoalGroups, ...customGroups];
+	});
+	const goalMenuItems = $derived.by(() => {
+		const items = [...canonicalGoalMenuItems];
+		if (ordering === 'recent') return items;
+
+		if (ordering === 'alpha') {
+			items.sort((a, b) =>
+				(a.label ?? '').localeCompare(b.label ?? '', undefined, { sensitivity: 'base', numeric: true })
+			);
+			return items;
+		}
+
+		// ordering === 'harada'
+		items.sort((a, b) => {
+			const ra = getHaradaGoalRank(a.goalIndex);
+			const rb = getHaradaGoalRank(b.goalIndex);
+			if (ra !== rb) return ra - rb;
+			return a.goalIndex - b.goalIndex;
+		});
+		return items;
+	});
 	const allTodos = $derived(tasksFeed.allTodos);
 	const groupsByTodoId = $derived(tasksFeed.groupsByTodoId);
 
@@ -818,7 +956,19 @@
 		{#if !isNarrowLayout}
 		<div class="grid gap-8 grid-cols-[18rem_minmax(0,1fr)]">
 			<aside class="h-[calc(100vh-5.5rem)] overflow-y-auto px-2 pt-2 pb-3">
-				<h2 class="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">TASKS</h2>
+				<div class="mb-2 flex items-center justify-between gap-3 px-1">
+					<h2 class="text-xs font-semibold uppercase tracking-wide text-slate-400">TASKS</h2>
+					<select
+						value={ordering}
+						onchange={(event) => store.setTodoListOrdering(event.currentTarget.value)}
+						aria-label="Task ordering"
+						class="h-8 min-w-[7.25rem] rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 shadow-sm outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+					>
+						<option value="recent">Recent</option>
+						<option value="alpha">Alpha</option>
+						<option value="harada">Harada</option>
+					</select>
+				</div>
 				<div class="mb-3 px-1">
 					<WorkspaceToolbar
 						mode="desktop"
@@ -881,7 +1031,7 @@
 							{taskGoalLinks}
 							{taskGoalKeySet}
 							allowCrossListMove={true}
-							enableGroupDrag={true}
+							enableGroupDrag={ordering === 'recent'}
 							onMoveGroup={moveGoalGroup}
 							searchText={viewSearchQuery}
 						{targetTodoId}
@@ -958,7 +1108,7 @@
 						{taskGoalLinks}
 						{taskGoalKeySet}
 						allowCrossListMove={true}
-						enableGroupDrag={true}
+						enableGroupDrag={ordering === 'recent'}
 						onMoveGroup={moveGoalGroup}
 						searchText={viewSearchQuery}
 						{targetTodoId}
@@ -1011,7 +1161,19 @@
 			>
 				<div class="w-1/2 pr-4">
 				<div class="h-[calc(100vh-8rem)] overflow-y-auto px-2 pt-2 pb-3">
-					<h2 class="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">TASKS</h2>
+					<div class="mb-2 flex items-center justify-between gap-3 px-1">
+						<h2 class="text-xs font-semibold uppercase tracking-wide text-slate-400">TASKS</h2>
+						<select
+							value={ordering}
+							onchange={(event) => store.setTodoListOrdering(event.currentTarget.value)}
+							aria-label="Task ordering"
+							class="h-8 min-w-[7.25rem] rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 shadow-sm outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+						>
+							<option value="recent">Recent</option>
+							<option value="alpha">Alpha</option>
+							<option value="harada">Harada</option>
+						</select>
+					</div>
 					<TodoSidebarNav
 						{goalMenuItems}
 						allTasksCount={allTodos.length}
@@ -1058,7 +1220,7 @@
 								{taskGoalLinks}
 								{taskGoalKeySet}
 								allowCrossListMove={true}
-								enableGroupDrag={true}
+								enableGroupDrag={ordering === 'recent'}
 								onMoveGroup={moveGoalGroup}
 								searchText={viewSearchQuery}
 							{targetTodoId}

@@ -130,9 +130,6 @@
 	<!-- HERO -->
 	<header class="relative -mt-4">
 		<div class="dot-grid pointer-events-none absolute inset-x-0 -top-12 -z-10 h-[380px]"></div>
-		<div
-			class="pointer-events-none absolute inset-x-0 -top-24 -z-10 h-[400px] bg-[radial-gradient(ellipse_60%_60%_at_50%_0%,rgba(16,185,129,0.14),transparent)]"
-		></div>
 
 		<div class="grid items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
 			<div>
@@ -361,7 +358,7 @@
 
 	<!-- CLOSING CTA -->
 	<div
-		class="relative overflow-hidden rounded-3xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-8 text-center shadow-sm sm:p-12 dark:border-emerald-900/50 dark:from-emerald-950/40 dark:to-slate-900"
+		class="relative overflow-hidden rounded-3xl border border-emerald-200 bg-emerald-50 p-8 text-center shadow-sm sm:p-12 dark:border-emerald-900/50 dark:bg-emerald-950/40"
 	>
 		<h2 class="text-balance text-3xl font-bold tracking-tight sm:text-4xl">
 			Start free - unlimited tasks, no credit card

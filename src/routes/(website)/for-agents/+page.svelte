@@ -36,7 +36,6 @@
 	<!-- ───────────────────────── HERO ───────────────────────── -->
 	<div class="relative -mt-4">
 		<div class="dot-grid pointer-events-none absolute inset-x-0 -top-12 -z-10 h-[380px]"></div>
-		<div class="pointer-events-none absolute inset-x-0 -top-24 -z-10 h-[400px] bg-[radial-gradient(ellipse_60%_60%_at_50%_0%,rgba(16,185,129,0.14),transparent)]"></div>
 
 		<div class="mx-auto max-w-3xl text-center">
 			<p class="flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-400">
@@ -218,7 +217,7 @@
 	</div>
 
 	<!-- ───────────────────── CTA ───────────────────── -->
-	<div class="relative overflow-hidden rounded-3xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-8 text-center shadow-sm sm:p-12 dark:border-emerald-900/50 dark:from-emerald-950/40 dark:to-slate-900">
+	<div class="relative overflow-hidden rounded-3xl border border-emerald-200 bg-emerald-50 p-8 text-center shadow-sm sm:p-12 dark:border-emerald-900/50 dark:bg-emerald-950/40">
 		<h2 class="text-balance text-3xl font-bold tracking-tight sm:text-4xl">Ready to delegate?</h2>
 		<p class="mx-auto mt-3 max-w-md text-slate-600 dark:text-slate-300">
 			Create your free workspace, then hand the keys to your agent whenever you're ready.

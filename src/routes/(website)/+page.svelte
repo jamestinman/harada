@@ -28,9 +28,8 @@
 <section class="content-page space-y-24 pb-12 sm:space-y-32">
 	<!-- ───────────────────────── HERO ───────────────────────── -->
 	<div class="relative -mt-4">
-		<!-- dotted-grid + glow backdrop -->
+		<!-- dotted-grid backdrop -->
 		<div class="dot-grid pointer-events-none absolute inset-x-0 -top-12 -z-10 h-[420px]"></div>
-		<div class="pointer-events-none absolute inset-x-0 -top-24 -z-10 h-[420px] bg-[radial-gradient(ellipse_60%_60%_at_50%_0%,rgba(16,185,129,0.16),transparent)]"></div>
 
 		<div class="grid items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
 			<div>
@@ -64,7 +63,6 @@
 
 			<!-- product shot -->
 			<div class="relative mx-auto w-full max-w-md">
-				<div class="absolute -inset-4 -z-10 rounded-[2rem] bg-gradient-to-br from-emerald-400/20 via-violet-400/10 to-transparent blur-2xl"></div>
 				<div class="overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-2 shadow-2xl shadow-slate-900/10 ring-1 ring-black/5 dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/40">
 					<img
 						src="/img/screenshot.webp"
@@ -212,7 +210,7 @@
 	</div>
 
 	<!-- ───────────────────── AI AGENTS ───────────────────── -->
-	<div class="relative overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-900 to-slate-950 p-8 text-center text-white shadow-xl sm:p-12 dark:border-slate-800">
+	<div class="relative overflow-hidden rounded-3xl border border-slate-200 bg-slate-950 p-8 text-center text-white shadow-xl sm:p-12 dark:border-slate-800">
 		<div class="dot-grid-dark pointer-events-none absolute inset-0 opacity-50"></div>
 		<div class="relative">
 			<p class="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-400">The world's first agent-native to-do list</p>
@@ -249,7 +247,7 @@
 	</div>
 
 	<!-- ───────────────── FREE + DOWNLOAD CTA ───────────────── -->
-	<div class="relative overflow-hidden rounded-3xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-8 text-center shadow-sm sm:p-12 dark:border-emerald-900/50 dark:from-emerald-950/40 dark:to-slate-900">
+	<div class="relative overflow-hidden rounded-3xl border border-emerald-200 bg-emerald-50 p-8 text-center shadow-sm sm:p-12 dark:border-emerald-900/50 dark:bg-emerald-950/40">
 		<h2 class="text-balance text-3xl font-bold tracking-tight sm:text-4xl">
 			Everything you need, completely free
 		</h2>

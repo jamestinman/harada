@@ -2,7 +2,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 #root-container.dark {
-  @apply bg-gradient-to-br from-slate-950 via-slate-900 to-violet-950 text-slate-100;
+  @apply bg-slate-950 text-slate-100;
 }
 
 #root-container.light {
@@ -1172,7 +1172,7 @@ h4 {
 }
 
 .harada-chart-center-default {
-  @apply bg-gradient-to-br from-slate-700/80 to-slate-800/80 border border-slate-500/50 text-slate-100 font-semibold;
+  @apply bg-slate-800/80 border border-slate-500/50 text-slate-100 font-semibold;
 }
 
 .harada-chart-task-default {

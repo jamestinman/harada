@@ -201,6 +201,36 @@ test('buildAllTasksFeed buckets todos in a single pass', () => {
 	assert.equal(feed.goalMenuItems.length, 1);
 });
 
+test('buildAllTasksFeed menu includes chart goals with zero tasks', () => {
+	const grid = Array.from({ length: 81 }, () => ({
+		text: '',
+		status: 'todo',
+		readme: '',
+		color: 'default',
+		updated_at: null
+	}));
+	grid[10] = { ...grid[10], text: 'Goal A', todo_group_ordering: 1024 };
+	grid[20] = { ...grid[20], text: 'Goal B', todo_group_ordering: 2048 };
+	const todos = [
+		{ id: 't1', title: 'One', listType: 'goal', goalIndex: 10, status: 'todo', ordering: 1 }
+	];
+
+	const feed = buildAllTasksFeed({
+		todos,
+		grid,
+		taskGoalKeySet: new Set(),
+		linkedTaskIdSet: new Set()
+	});
+
+	assert.deepEqual(
+		feed.goalMenuItems.map((item) => [item.id, item.count]),
+		[
+			['goal-10', 1],
+			['goal-20', 0]
+		]
+	);
+});
+
 test('buildTaskNoteIndexMaps provides O(1) task lookups', () => {
 	const notes = [
 		{ id: 'n1', content: 'Primary', updatedAt: 2 },

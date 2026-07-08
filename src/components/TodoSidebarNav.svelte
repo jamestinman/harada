@@ -11,6 +11,13 @@
 
 	const pinnedHref = '/todo/Z1';
 	const isPinnedActive = $derived(activeGoalIndex === -1);
+
+	function isMainGoalIndex(goalIndex) {
+		if (typeof goalIndex !== 'number' || goalIndex < 0 || goalIndex > 80) return false;
+		const row = Math.floor(goalIndex / 9);
+		const col = goalIndex % 9;
+		return row % 3 === 1 && col % 3 === 1;
+	}
 </script>
 
 <div class="relative ml-2 border-l border-slate-200/50 pl-2 dark:border-slate-700/40 space-y-0.5">
@@ -63,7 +70,7 @@
 			}`}
 			aria-current={item.goalIndex === activeGoalIndex ? 'page' : undefined}
 		>
-			<span class="truncate pr-3">{item.label}</span>
+			<span class={`truncate pr-3 ${isMainGoalIndex(item.goalIndex) ? 'font-bold' : ''}`}>{item.label}</span>
 			<span class="text-xs opacity-50">{item.count}</span>
 		</a>
 	{/each}

@@ -11,7 +11,7 @@
 	<div class="flex-1"></div>
 
 	<h1
-		class="bg-gradient-to-r from-violet-400 via-fuchsia-400 to-violet-400 bg-clip-text text-xl font-bold tracking-tight text-transparent md:text-2xl text-center"
+		class="text-violet-400 text-xl font-bold tracking-tight md:text-2xl text-center"
 	>
 		Haradato
 	</h1>

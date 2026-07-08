@@ -12,6 +12,7 @@
 		defaultTodo,
 		canonicalGoalIndex,
 		getLinkedGoalIndex,
+		getBlockCellIndices,
 		getParentGoalIndex,
 		getSubGoalIndices,
 		normalizeTodoListMeta,
@@ -75,6 +76,7 @@
 	let focusTodoId = $state(null);
 	let skipTaskScroll = false;
 	let showRecentlyCompleted = $state(false);
+	const ordering = $derived(store.todoListOrdering);
 	/** Avoid re-enabling "Show recently completed" on unrelated todo updates when `?task=` is stale. */
 	let deepLinkCompletedHandledFor = $state(null);
 
@@ -166,6 +168,26 @@
 
 	const ORDER_STEP = 1024;
 	const GOAL_GROUP_ORDER_STEP = 1024;
+	const HARADA_OUTER_GOAL_INDICES = [10, 13, 16, 37, 43, 64, 67, 70];
+	const haradaGoalRankByIndex = new Map([[40, 0]]);
+	for (let blockOrder = 0; blockOrder < HARADA_OUTER_GOAL_INDICES.length; blockOrder++) {
+		const blockCenter = HARADA_OUTER_GOAL_INDICES[blockOrder];
+		const base = 1 + blockOrder * 9;
+		haradaGoalRankByIndex.set(blockCenter, base);
+		const rest = getBlockCellIndices(blockCenter)
+			.filter((idx) => idx !== blockCenter)
+			.sort((a, b) => a - b);
+		rest.forEach((idx, offset) => {
+			if (!haradaGoalRankByIndex.has(idx)) {
+				haradaGoalRankByIndex.set(idx, base + 1 + offset);
+			}
+		});
+	}
+
+	function getHaradaGoalRank(goalIdx) {
+		if (typeof goalIdx !== 'number') return Number.POSITIVE_INFINITY;
+		return haradaGoalRankByIndex.get(goalIdx) ?? Number.POSITIVE_INFINITY;
+	}
 
 	function getTodoOrdering(todo) {
 		if (typeof todo?.ordering === 'number' && Number.isFinite(todo.ordering)) return todo.ordering;
@@ -389,6 +411,9 @@
 
 	const goalGroups = $derived.by(() => {
 		if (isPinnedGoalView) {
+			const pinnedTodos = getVisibleGoalTodos(PINNED_GOAL_INDEX);
+			if (pinnedTodos.length === 0) return [];
+
 			return [
 				{
 					id: 'goal-pinned',
@@ -397,7 +422,7 @@
 					label: 'Pinned',
 					href: '/todo/Z1',
 					addTitle: 'Add pinned task',
-					todos: getVisibleGoalTodos(PINNED_GOAL_INDEX)
+					todos: pinnedTodos
 				}
 			];
 		}
@@ -441,15 +466,69 @@
 			});
 	}
 
-	const goalMenuItems = $derived.by(() =>
-		getVisibleGoalGroupsByOrdering().map((group) => ({
-			id: group.id,
-			goalIndex: group.goalIndex,
-			label: group.label,
-			href: group.href,
-			count: group.todos.length
-		}))
-	);
+	const goalMenuItems = $derived.by(() => {
+		const visible = getVisibleGoalGroupsByOrdering();
+		const byCanonical = new Map();
+		for (const group of visible) {
+			const canonical = canonicalGoalIndex(group.goalIndex);
+			byCanonical.set(canonical, {
+				id: `goal-${canonical}`,
+				goalIndex: canonical,
+				label: group.label,
+				href: `/todo/${indexToNomenclature(canonical)}`,
+				count: group.todos.length
+			});
+		}
+
+		// Include all titled goals, even if they currently have no tasks.
+		for (let i = 0; i < grid.length; i++) {
+			const text = (grid[i]?.text ?? '').trim();
+			if (!text) continue;
+			const canonical = canonicalGoalIndex(i);
+			if (byCanonical.has(canonical)) {
+				byCanonical.get(canonical).label = text;
+				continue;
+			}
+			byCanonical.set(canonical, {
+				id: `goal-${canonical}`,
+				goalIndex: canonical,
+				label: text,
+				href: `/todo/${indexToNomenclature(canonical)}`,
+				count: 0
+			});
+		}
+
+		const items = [...byCanonical.values()];
+		if (ordering === 'recent') {
+			items.sort((a, b) => {
+				const aTime = grid[a.goalIndex]?.updated_at
+					? new Date(grid[a.goalIndex].updated_at).getTime()
+					: 0;
+				const bTime = grid[b.goalIndex]?.updated_at
+					? new Date(grid[b.goalIndex].updated_at).getTime()
+					: 0;
+				if (aTime !== bTime) return bTime - aTime;
+				return a.goalIndex - b.goalIndex;
+			});
+			return items;
+		}
+		if (ordering === 'alpha') {
+			items.sort((a, b) =>
+				(a.label ?? '').localeCompare(b.label ?? '', undefined, {
+					sensitivity: 'base',
+					numeric: true
+				})
+			);
+			return items;
+		}
+		items.sort((a, b) => {
+			const ra = getHaradaGoalRank(a.goalIndex);
+			const rb = getHaradaGoalRank(b.goalIndex);
+			if (ra !== rb) return ra - rb;
+			return a.goalIndex - b.goalIndex;
+		});
+		return items;
+	});
 
 	const allTasksFeed = $derived.by(() =>
 		buildAllTasksFeed({
@@ -625,20 +704,6 @@
 		}
 		el.scrollIntoView({ behavior: attempt === 0 ? 'smooth' : 'auto', block: 'nearest' });
 	}
-
-	// When this goal has no todos, ensure one blank todo exists so the user can type immediately
-	$effect(() => {
-		if (goalIndex === null || !dataLoaded) return;
-		if (isPinnedGoalView) {
-			if (getVisibleGoalTodos(PINNED_GOAL_INDEX).length === 0) {
-				addTodo(PINNED_GOAL_INDEX, { draft: true });
-			}
-			return;
-		}
-		if (goalGroups.length === 0) {
-			addTodo(goalIndex, { draft: true });
-		}
-	});
 
 	// Todo management functions
 	function addTodo(targetGoalIndex = goalIndex, { draft = false } = {}) {
@@ -1240,7 +1305,19 @@
 
 		<div class="hidden gap-8 md:grid md:grid-cols-[18rem_minmax(0,1fr)]">
 		<aside class="h-[calc(100vh-5.5rem)] overflow-y-auto px-2 pt-2 pb-3">
-			<h2 class="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">TASKS</h2>
+			<div class="mb-2 flex items-center justify-between gap-3 px-1">
+				<h2 class="text-xs font-semibold uppercase tracking-wide text-slate-400">TASKS</h2>
+				<select
+					value={ordering}
+					onchange={(event) => store.setTodoListOrdering(event.currentTarget.value)}
+					aria-label="Task ordering"
+					class="h-8 min-w-[7.25rem] rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 shadow-sm outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+				>
+					<option value="recent">Recent</option>
+					<option value="alpha">Alpha</option>
+					<option value="harada">Harada</option>
+				</select>
+			</div>
 			<div class="mb-3 px-1">
 				<WorkspaceToolbar
 					mode="desktop"
@@ -1385,7 +1462,7 @@
 							{#if !isPinnedGoalView}
 							<div class="flex shrink-0 flex-col items-end gap-2">
 								<div class="flex gap-1">
-									{#each goalColors as color}
+									{#each goalColors as color (color.value)}
 										<button
 											type="button"
 											class="goal-color-button {selectedColor === color.value
@@ -1624,7 +1701,19 @@
 			>
 				<div class="w-1/2 pr-4">
 				<div class="h-[calc(100vh-8rem)] overflow-y-auto px-2 pt-2 pb-3">
-					<h2 class="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">TASKS</h2>
+					<div class="mb-2 flex items-center justify-between gap-3 px-1">
+						<h2 class="text-xs font-semibold uppercase tracking-wide text-slate-400">TASKS</h2>
+						<select
+							value={ordering}
+							onchange={(event) => store.setTodoListOrdering(event.currentTarget.value)}
+							aria-label="Task ordering"
+							class="h-8 min-w-[7.25rem] rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 shadow-sm outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+						>
+							<option value="recent">Recent</option>
+							<option value="alpha">Alpha</option>
+							<option value="harada">Harada</option>
+						</select>
+					</div>
 					<TodoSidebarNav
 						{goalMenuItems}
 						allTasksCount={todos.filter((t) => !t.isDraft && t.status !== 'done').length}
@@ -1714,7 +1803,7 @@
 								{#if !isPinnedGoalView}
 								<div class="flex shrink-0 flex-col items-end gap-2">
 									<div class="flex gap-1">
-										{#each goalColors as color}
+										{#each goalColors as color (color.value)}
 											<button
 												type="button"
 												class="goal-color-button {selectedColor === color.value

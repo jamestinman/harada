@@ -1,4 +1,5 @@
 <script>
+	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
 	import {
 		indexToNomenclature,
@@ -101,7 +102,7 @@
 		} else {
 			if (isMainGoal(row, col)) {
 				classes +=
-					'bg-gradient-to-br from-violet-600 to-fuchsia-600 border-2 border-violet-400 text-white font-bold shadow-lg shadow-violet-500/30 z-10';
+					'bg-violet-600 border-2 border-violet-400 text-white font-bold shadow-lg shadow-violet-500/30 z-10';
 			} else if (isSubGoal(row, col)) {
 				classes += 'harada-chart-center-default';
 			} else if (isBlockCenter(row, col)) {
@@ -136,13 +137,14 @@
 	// Inline edit for blank goal titles
 	let editingGoalIndex = $state(null);
 	let editingDraft = $state('');
-	let editInputEl = $state(null);
 
-	$effect(() => {
-		if (editingGoalIndex !== null && editInputEl) {
-			editInputEl.focus();
-		}
+	// Mobile UX: the inline cell input is too small to type comfortably.
+	// On mobile, float a larger input over the tapped cell.
+	const isMobile = $derived.by(() => {
+		if (!browser) return false;
+		return window.matchMedia('(max-width: 640px)').matches;
 	});
+	let floatingEditPos = $state({ top: 0, left: 0, width: 260 });
 
 	function isGoalCell(row, col) {
 		return isMainGoal(row, col) || isSubGoal(row, col) || isBlockCenter(row, col);
@@ -152,10 +154,31 @@
 		return !(grid[i]?.text ?? '').trim();
 	}
 
-	function startEditingGoal(i) {
+	function startEditingGoal(i, anchorEl = null) {
 		const canonical = canonicalGoalIndex(i);
 		editingGoalIndex = i;
 		editingDraft = (grid[canonical]?.text ?? '').trim();
+
+		const mobile = browser && window.matchMedia('(max-width: 640px)').matches;
+		if (mobile && anchorEl) {
+			const rect = anchorEl.getBoundingClientRect();
+			const width = Math.min(window.innerWidth - 16, Math.max(220, rect.width * 3));
+			floatingEditPos = {
+				top: rect.top + rect.height / 2,
+				left: rect.left + rect.width / 2,
+				width
+			};
+		}
+
+		// Focus after the DOM updates (no `autofocus` for a11y).
+		requestAnimationFrame(() => {
+			const selector =
+				mobile
+					? 'input[data-harada-goal-title-input="floating"]'
+					: 'input[data-harada-goal-title-input="inline"]';
+			const el = document.querySelector(selector);
+			if (el instanceof HTMLInputElement) el.focus();
+		});
 	}
 
 	function saveGoalTitle() {
@@ -622,22 +645,29 @@
 						data-harada-cell-index={i}
 					>
 						<div class="relative flex h-full w-full flex-col items-center justify-center p-0.5 sm:p-1">
-							<input
-								bind:this={editInputEl}
-								bind:value={editingDraft}
-								onkeydown={(e) => {
-									if (e.key === 'Enter') {
-										e.preventDefault();
-										saveGoalTitle();
-									} else if (e.key === 'Escape') {
-										e.preventDefault();
-										cancelGoalEdit();
-									}
-								}}
-								onblur={() => saveGoalTitle()}
-								placeholder="Add title…"
-								class="w-full min-w-0 rounded bg-white/20 px-0.5 py-0 text-center text-[8px] leading-tight text-white placeholder:text-white/70 sm:text-[10px] md:text-xs focus:outline-none focus:ring-1 focus:ring-white/50"
-							/>
+							{#if isMobile}
+								<!-- Keep the cell stable, but typing happens in the floating input. -->
+								<div class="w-full text-center text-[8px] leading-tight sm:text-[10px] md:text-xs">
+									{editingDraft || ''}
+								</div>
+							{:else}
+								<input
+									bind:value={editingDraft}
+									onkeydown={(e) => {
+										if (e.key === 'Enter') {
+											e.preventDefault();
+											saveGoalTitle();
+										} else if (e.key === 'Escape') {
+											e.preventDefault();
+											cancelGoalEdit();
+										}
+									}}
+									onblur={() => saveGoalTitle()}
+									placeholder="Add title…"
+									data-harada-goal-title-input="inline"
+									class="w-full min-w-0 rounded bg-white/20 px-0.5 py-0 text-center text-[8px] leading-tight text-white placeholder:text-white/70 sm:text-[10px] md:text-xs focus:outline-none focus:ring-1 focus:ring-white/50"
+								/>
+							{/if}
 						</div>
 					</div>
 				{:else}
@@ -652,7 +682,7 @@
 								return;
 							}
 							if (isCellBlank(i)) {
-								startEditingGoal(i);
+								startEditingGoal(i, e.currentTarget);
 							} else {
 								goto(`/todo/${indexToNomenclature(i)}`);
 							}
@@ -676,6 +706,35 @@
 		</div>
 	{/each}
 </div>
+
+{#if isMobile && editingGoalIndex !== null}
+	<div
+		class="fixed z-50 px-2"
+		style={`top: ${floatingEditPos.top}px; left: ${floatingEditPos.left}px; transform: translate(-50%, -50%); width: ${floatingEditPos.width}px; max-width: 92vw;`}
+	>
+		<input
+			bind:value={editingDraft}
+			aria-label="Edit goal title"
+			data-harada-goal-title-input="floating"
+			onkeydown={(e) => {
+				if (e.key === 'Enter') {
+					e.preventDefault();
+					saveGoalTitle();
+				} else if (e.key === 'Escape') {
+					e.preventDefault();
+					cancelGoalEdit();
+				}
+			}}
+			onblur={() => saveGoalTitle()}
+			placeholder="Add title…"
+			class={`w-full rounded-lg border px-3 py-2 text-center text-base leading-tight outline-none focus:ring-2 focus:ring-white/50 ${
+				store.activeTheme === 'dark'
+					? 'border-white/10 bg-slate-900/70 text-white placeholder:text-white/50'
+					: 'border-slate-900/10 bg-white/80 text-slate-900 placeholder:text-slate-600'
+			}`}
+		/>
+	</div>
+{/if}
 
 <GoalMergeModal
 	bind:isOpen={mergeModalOpen}
