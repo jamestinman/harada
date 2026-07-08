@@ -1079,8 +1079,19 @@ export function getEffectiveTodoParentId(todo, goalIndex, taskGoalLinks = []) {
 	const canonical = normalizeViewGoalIndex(goalIndex);
 	if (isTaskPrimaryOnGoal(todo, canonical)) return todo.parentId ?? null;
 	const link = getTaskGoalLink(taskGoalLinks, todo.id, canonical);
-	if (link) return link.parentId ?? null;
-	if (isPinnedGoalIndex(canonical)) return todo.parentId ?? null;
+	if (link?.parentId && link.parentId !== todo.id) return link.parentId;
+	if (isPinnedGoalIndex(canonical)) {
+		if (todo.parentId && todo.parentId !== todo.id) return todo.parentId;
+		const linkedParent = (taskGoalLinks ?? []).find(
+			(candidate) =>
+				candidate?.taskId === todo.id &&
+				candidate.parentId &&
+				candidate.parentId !== todo.id &&
+				!isPseudoGoalIndex(candidate.goalIndex)
+		);
+		return linkedParent?.parentId ?? null;
+	}
+	if (link) return null;
 	return null;
 }
 
@@ -1096,6 +1107,7 @@ export function getGoalViewIndentLevel(todoId, goalIndex, todosList, taskGoalLin
 		if (!current) break;
 		const parentId = getEffectiveTodoParentId(current, goalIndex, taskGoalLinks);
 		if (!parentId) break;
+		if (!byId.has(parentId)) break;
 		level++;
 		currentId = parentId;
 	}

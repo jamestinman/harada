@@ -24,7 +24,9 @@ import {
 	filterRetainedTodos,
 	shouldRetainTaskRow,
 	filterRetainedTaskRows,
-	collectDescendantTaskIds
+	collectDescendantTaskIds,
+	organizeTodosWithHierarchy,
+	getGoalViewIndentLevel
 } from './todoUtils.js';
 
 test('collectDescendantTaskIds returns nested descendants via parentId', () => {
@@ -190,6 +192,25 @@ test('buildFeedPinnedRows infers pinned nesting from real goal links', () => {
 			['c', 1]
 		]
 	);
+});
+
+test('Z1 goal hierarchy infers pinned nesting from real goal links', () => {
+	const parent = { id: 'p', pinned: true, status: 'todo', parentId: null, ordering: 1 };
+	const child = { id: 'c', pinned: true, status: 'todo', parentId: null, ordering: 2 };
+	const taskGoalLinks = [
+		{ taskId: 'p', goalIndex: -1, parentId: null, ordering: 1 },
+		{ taskId: 'c', goalIndex: -1, parentId: null, ordering: 2 },
+		{ taskId: 'p', goalIndex: 10, parentId: null, ordering: 1 },
+		{ taskId: 'c', goalIndex: 10, parentId: 'p', ordering: 2 }
+	];
+
+	const organized = organizeTodosWithHierarchy([parent, child], undefined, {
+		goalIndex: -1,
+		taskGoalLinks
+	});
+
+	assert.deepEqual(organized.map((todo) => todo.id), ['p', 'c']);
+	assert.equal(getGoalViewIndentLevel('c', -1, organized, taskGoalLinks), 1);
 });
 
 test('filterFeedPinnedRowsBySearch keeps pinned ancestors of matching descendants', () => {
