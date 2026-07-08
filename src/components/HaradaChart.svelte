@@ -13,10 +13,19 @@
 		resolveGoalDropTargetIndex,
 		updateGoalTimestamp
 	} from '$lib/todoUtils.js';
+	import { persistTodoMobileSidebar } from '$lib/workspaceNavResume.js';
 	import { store } from '$stores/store.svelte.js';
 	import GoalMergeModal from '$components/GoalMergeModal.svelte';
 
 	let { grid, onUpdateGrid = null } = $props();
+
+	function goToGoalTasksFromChart(goalCellIndex) {
+		// Chart taps should always open the goal's task view on mobile, not the
+		// previously persisted goal-list (menu) sidebar state.
+		store.todoMobileShowsGoalList = false;
+		persistTodoMobileSidebar(false);
+		goto(`/todo/${indexToNomenclature(goalCellIndex)}`);
+	}
 
 	// Get the block index (0-8) for a given cell
 	function getBlockIndex(row, col) {
@@ -156,19 +165,35 @@
 
 	function startEditingGoal(i, anchorEl = null) {
 		const canonical = canonicalGoalIndex(i);
-		editingGoalIndex = i;
-		editingDraft = (grid[canonical]?.text ?? '').trim();
-
 		const mobile = browser && window.matchMedia('(max-width: 640px)').matches;
+
+		// Compute floating placement before showing overlay to avoid a brief
+		// "top-left" default render (floatingEditPos starts at 0,0).
 		if (mobile && anchorEl) {
 			const rect = anchorEl.getBoundingClientRect();
-			const width = Math.min(window.innerWidth - 16, Math.max(220, rect.width * 3));
-			floatingEditPos = {
-				top: rect.top + rect.height / 2,
-				left: rect.left + rect.width / 2,
-				width
-			};
+			const viewportW = window.innerWidth;
+			const viewportH = window.innerHeight;
+
+			let width = Math.min(viewportW - 16, Math.max(220, rect.width * 3));
+			width = Math.min(width, viewportW * 0.92);
+
+			const centerLeft = rect.left + rect.width / 2;
+			const centerTop = rect.top + rect.height / 2;
+
+			// We use `transform: translate(-50%, -50%)`, so clamp the CENTER point.
+			const marginX = 16;
+			const marginY = 64;
+			const clampedLeft = Math.max(
+				marginX + width / 2,
+				Math.min(centerLeft, viewportW - marginX - width / 2)
+			);
+			const clampedTop = Math.max(marginY, Math.min(centerTop, viewportH - marginY));
+
+			floatingEditPos = { top: clampedTop, left: clampedLeft, width };
 		}
+
+		editingDraft = (grid[canonical]?.text ?? '').trim();
+		editingGoalIndex = i;
 
 		// Focus after the DOM updates (no `autofocus` for a11y).
 		requestAnimationFrame(() => {
@@ -181,7 +206,7 @@
 		});
 	}
 
-	function saveGoalTitle() {
+	function saveGoalTitle(andNavigate = false) {
 		if (editingGoalIndex == null || !onUpdateGrid) return;
 		const canonical = canonicalGoalIndex(editingGoalIndex);
 		const linkedIndex = getLinkedGoalIndex(canonical);
@@ -194,8 +219,10 @@
 		}
 		updateGoalTimestamp(newGrid, canonical);
 		onUpdateGrid(newGrid);
+		const savedIndex = editingGoalIndex;
 		editingGoalIndex = null;
 		editingDraft = '';
+		if (andNavigate) goToGoalTasksFromChart(savedIndex);
 	}
 
 	function cancelGoalEdit() {
@@ -641,7 +668,7 @@
 
 				{#if editingGoalIndex === i}
 					<div
-						class={`group aspect-square min-h-0 min-w-0 ${cellClasses} rounded-md touch-none ${goalDragClass(i)}`}
+						class={`group aspect-square min-h-0 min-w-0 ${cellClasses} rounded-md touch-none ${goalDragClass(i)} ring-2 ring-amber-300 shadow-md`}
 						data-harada-cell-index={i}
 					>
 						<div class="relative flex h-full w-full flex-col items-center justify-center p-0.5 sm:p-1">
@@ -684,7 +711,7 @@
 							if (isCellBlank(i)) {
 								startEditingGoal(i, e.currentTarget);
 							} else {
-								goto(`/todo/${indexToNomenclature(i)}`);
+								goToGoalTasksFromChart(i);
 							}
 						}}
 						class={`group aspect-square min-h-0 min-w-0 transition-all duration-200 hover:scale-105 hover:z-20 ${cellClasses} rounded-md cursor-pointer touch-none ${goalDragClass(i)}`}
@@ -708,31 +735,64 @@
 </div>
 
 {#if isMobile && editingGoalIndex !== null}
+	<!-- Backdrop -->
 	<div
-		class="fixed z-50 px-2"
-		style={`top: ${floatingEditPos.top}px; left: ${floatingEditPos.left}px; transform: translate(-50%, -50%); width: ${floatingEditPos.width}px; max-width: 92vw;`}
-	>
-		<input
-			bind:value={editingDraft}
-			aria-label="Edit goal title"
-			data-harada-goal-title-input="floating"
-			onkeydown={(e) => {
-				if (e.key === 'Enter') {
-					e.preventDefault();
-					saveGoalTitle();
-				} else if (e.key === 'Escape') {
-					e.preventDefault();
-					cancelGoalEdit();
-				}
-			}}
-			onblur={() => saveGoalTitle()}
-			placeholder="Add title…"
-			class={`w-full rounded-lg border px-3 py-2 text-center text-base leading-tight outline-none focus:ring-2 focus:ring-white/50 ${
-				store.activeTheme === 'dark'
-					? 'border-white/10 bg-slate-900/70 text-white placeholder:text-white/50'
-					: 'border-slate-900/10 bg-white/80 text-slate-900 placeholder:text-slate-600'
+		class="fixed inset-0 z-40 bg-black/50"
+		role="presentation"
+		onclick={(e) => { e.stopPropagation(); saveGoalTitle(); }}
+	></div>
+	<!-- Input card -->
+	<div class="fixed inset-x-4 z-50" style={`top: ${floatingEditPos.top}px; transform: translateY(-50%);`}>
+		<div
+			data-harada-goal-edit-card
+			class={`rounded-2xl p-4 shadow-2xl ${
+				store.activeTheme === 'dark' ? 'bg-slate-900' : 'bg-white'
 			}`}
-		/>
+		>
+			<input
+				bind:value={editingDraft}
+				aria-label="Edit goal title"
+				data-harada-goal-title-input="floating"
+				onkeydown={(e) => {
+					if (e.key === 'Enter') {
+						e.preventDefault();
+						saveGoalTitle(true);
+					} else if (e.key === 'Escape') {
+						e.preventDefault();
+						cancelGoalEdit();
+					}
+				}}
+				onblur={(e) => {
+					// Only save on blur if focus is leaving the whole card (not to our own buttons).
+					const related = e.relatedTarget;
+					if (!(related instanceof Element) || !related.closest('[data-harada-goal-edit-card]')) {
+						saveGoalTitle();
+					}
+				}}
+				placeholder="Goal title…"
+				class={`w-full rounded-lg border px-3 py-3 text-center text-base leading-tight outline-none focus:ring-2 focus:ring-amber-400 ${
+					store.activeTheme === 'dark'
+						? 'border-slate-700 bg-slate-800 text-white placeholder:text-slate-500'
+						: 'border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400'
+				}`}
+			/>
+			<div class="mt-3 flex gap-2">
+				<button
+					type="button"
+					onclick={() => cancelGoalEdit()}
+					class={`flex-1 rounded-lg py-2 text-sm font-medium ${
+						store.activeTheme === 'dark'
+							? 'bg-slate-700 text-slate-200 active:bg-slate-600'
+							: 'bg-slate-100 text-slate-700 active:bg-slate-200'
+					}`}
+				>Cancel</button>
+				<button
+					type="button"
+					onclick={() => saveGoalTitle(true)}
+					class="flex-1 rounded-lg bg-amber-400 py-2 text-sm font-semibold text-slate-900 active:bg-amber-500"
+				>Save</button>
+			</div>
+		</div>
 	</div>
 {/if}
 
