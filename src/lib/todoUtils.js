@@ -1080,6 +1080,7 @@ export function getEffectiveTodoParentId(todo, goalIndex, taskGoalLinks = []) {
 	if (isTaskPrimaryOnGoal(todo, canonical)) return todo.parentId ?? null;
 	const link = getTaskGoalLink(taskGoalLinks, todo.id, canonical);
 	if (link) return link.parentId ?? null;
+	if (isPinnedGoalIndex(canonical)) return todo.parentId ?? null;
 	return null;
 }
 
@@ -1378,6 +1379,59 @@ export function executeTodoMove({
 	});
 }
 
+function buildPinnedGoalViewLinks(pinnedTodos, taskGoalLinks) {
+	const pinnedIds = new Set((pinnedTodos ?? []).map((todo) => todo.id).filter(Boolean));
+	const inferredParentByTaskId = new Map();
+
+	for (const todo of pinnedTodos ?? []) {
+		if (todo?.parentId && pinnedIds.has(todo.parentId) && todo.parentId !== todo.id) {
+			inferredParentByTaskId.set(todo.id, todo.parentId);
+		}
+	}
+
+	for (const link of taskGoalLinks ?? []) {
+		if (!link?.taskId || !link.parentId) continue;
+		if (!pinnedIds.has(link.taskId) || !pinnedIds.has(link.parentId)) continue;
+		if (link.parentId === link.taskId) continue;
+		if (isPseudoGoalIndex(link.goalIndex)) continue;
+		if (!inferredParentByTaskId.has(link.taskId)) {
+			inferredParentByTaskId.set(link.taskId, link.parentId);
+		}
+	}
+
+	const nonPinnedLinks = [];
+	const pinnedLinksByTaskId = new Map();
+
+	for (const link of taskGoalLinks ?? []) {
+		if (link?.goalIndex !== PINNED_GOAL_INDEX || !pinnedIds.has(link.taskId)) {
+			nonPinnedLinks.push(link);
+			continue;
+		}
+
+		const inferredParent = inferredParentByTaskId.get(link.taskId) ?? null;
+		const linkedParent =
+			link.parentId && pinnedIds.has(link.parentId) && link.parentId !== link.taskId
+				? link.parentId
+				: null;
+		pinnedLinksByTaskId.set(link.taskId, {
+			...link,
+			parentId: linkedParent ?? inferredParent
+		});
+	}
+
+	for (const todo of pinnedTodos ?? []) {
+		if (pinnedLinksByTaskId.has(todo.id)) continue;
+		pinnedLinksByTaskId.set(todo.id, {
+			taskId: todo.id,
+			goalIndex: PINNED_GOAL_INDEX,
+			parentId: inferredParentByTaskId.get(todo.id) ?? null,
+			ordering: getTodoOrderingValue(todo)
+		});
+	}
+
+	return [...nonPinnedLinks, ...pinnedLinksByTaskId.values()];
+}
+
 /**
  * Rows for the All Tasks pinned strip: Z1 goal-view hierarchy (task_goal_links goal_index=-1).
  */
@@ -1392,14 +1446,15 @@ export function buildFeedPinnedRows(
 	);
 	if (pinnedTodos.length === 0) return [];
 
+	const pinnedGoalViewLinks = buildPinnedGoalViewLinks(pinnedTodos, taskGoalLinks);
 	const organized = organizeTodosWithHierarchy(pinnedTodos, getTodoOrdering, {
 		goalIndex: PINNED_GOAL_INDEX,
-		taskGoalLinks
+		taskGoalLinks: pinnedGoalViewLinks
 	});
 
 	return organized.map((todo) => ({
 		todo,
-		indentLevel: getGoalViewIndentLevel(todo.id, PINNED_GOAL_INDEX, organized, taskGoalLinks)
+		indentLevel: getGoalViewIndentLevel(todo.id, PINNED_GOAL_INDEX, organized, pinnedGoalViewLinks)
 	}));
 }
 

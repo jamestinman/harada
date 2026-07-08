@@ -149,6 +149,49 @@ test('buildFeedPinnedRows omits pinned child as separate root when parent is pin
 	);
 });
 
+test('buildFeedPinnedRows nests pinned child under parent without pinned goal links', () => {
+	const parent = { id: 'p', pinned: true, status: 'todo', parentId: null, ordering: 1 };
+	const child = { id: 'c', pinned: true, status: 'todo', parentId: 'p', ordering: 2 };
+
+	const rows = buildFeedPinnedRows([parent, child], undefined, {
+		taskGoalKeySet: new Set(),
+		taskGoalLinks: []
+	});
+
+	assert.deepEqual(
+		rows.map((r) => [r.todo.id, r.indentLevel]),
+		[
+			['p', 0],
+			['c', 1]
+		]
+	);
+});
+
+test('buildFeedPinnedRows infers pinned nesting from real goal links', () => {
+	const parent = { id: 'p', pinned: true, status: 'todo', parentId: null, ordering: 1 };
+	const child = { id: 'c', pinned: true, status: 'todo', parentId: null, ordering: 2 };
+	const taskGoalLinks = [
+		{ taskId: 'p', goalIndex: -1, parentId: null, ordering: 1 },
+		{ taskId: 'c', goalIndex: -1, parentId: null, ordering: 2 },
+		{ taskId: 'p', goalIndex: 10, parentId: null, ordering: 1 },
+		{ taskId: 'c', goalIndex: 10, parentId: 'p', ordering: 2 }
+	];
+	const taskGoalKeySet = new Set(['p:-1', 'c:-1', 'p:10', 'c:10']);
+
+	const rows = buildFeedPinnedRows([parent, child], undefined, {
+		taskGoalKeySet,
+		taskGoalLinks
+	});
+
+	assert.deepEqual(
+		rows.map((r) => [r.todo.id, r.indentLevel]),
+		[
+			['p', 0],
+			['c', 1]
+		]
+	);
+});
+
 test('filterFeedPinnedRowsBySearch keeps pinned ancestors of matching descendants', () => {
 	const rows = [
 		{ todo: { id: 'p', title: 'Parent', parentId: null }, indentLevel: 0 },
