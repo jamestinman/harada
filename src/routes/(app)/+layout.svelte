@@ -157,12 +157,18 @@
 		const todo = {
 			...defaultTodo(),
 			title: title || '',
-			markdown: markdown || '',
+			markdown: '',
 			...listMeta,
 			parentId: null,
 			ordering
 		};
 		store.harada_chart.todos = [...store.harada_chart.todos, todo];
+		if (markdown?.trim()) {
+			store.setPrimaryNoteForTask(todo.id, {
+				content: markdown.trim(),
+				goalIndex: normalizedGoalIndex
+			});
+		}
 		if (typeof normalizedGoalIndex === 'number') {
 			store.bumpGoalAfterTodoActivity(normalizedGoalIndex);
 		}

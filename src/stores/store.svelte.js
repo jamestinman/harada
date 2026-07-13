@@ -174,7 +174,7 @@ function normalizeTaskGoalLink(link) {
 }
 
 class Store {
-	version = $state('1.0.26');
+	version = $state('1.0.27');
 	activeTab = $state('harada');
 	selectedGoalFilter = $state('all');
 	selectedGoalForNew = $state('');
@@ -2707,16 +2707,7 @@ class Store {
 					updatedAt: now
 				})
 			);
-			if (typeof legacy.goalIndex === 'number') {
-				newGoalLinks.push(
-					normalizeNoteGoalLink({
-						noteId: note.id,
-						goalIndex: legacy.goalIndex,
-						createdAt: now,
-						updatedAt: now
-					})
-				);
-			}
+			// Primary task notes stay on the task; they are not standalone goal notes.
 			return { ...todo, markdown: '', updatedAt: now };
 		});
 		this.notes = [...newNotes, ...this.notes];
@@ -2755,6 +2746,26 @@ class Store {
 			}
 		}
 		if (changed) this.noteTaskLinks = nextLinks;
+
+		const primaryNoteIds = new Set();
+		for (const link of this.noteTaskLinks) {
+			const noteId = this.getEffectivePrimaryNoteIdForTask(link.taskId);
+			if (noteId) primaryNoteIds.add(noteId);
+		}
+		if (primaryNoteIds.size > 0) {
+			const nextGoalLinks = [];
+			for (const link of this.noteGoalLinks) {
+				if (primaryNoteIds.has(link.noteId)) {
+					this._markNoteGoalLinkDirty(link);
+					changed = true;
+					continue;
+				}
+				nextGoalLinks.push(link);
+			}
+			if (changed) this.noteGoalLinks = nextGoalLinks;
+		}
+
+		if (changed) this.queueSave();
 	}
 
 	_migrateLegacyTaskLinksInMemory() {
@@ -3115,20 +3126,31 @@ class Store {
 			.sort((a, b) => b.updatedAt - a.updatedAt);
 	}
 
-	getPrimaryNoteForTask(taskId) {
+	getEffectivePrimaryNoteIdForTask(taskId) {
 		if (!taskId) return null;
-		const primaryLink = this.noteTaskLinks
-			.filter((link) => link.taskId === taskId && link.isPrimary === true)
-			.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0];
-		if (!primaryLink) return null;
-		return this.notes.find((note) => note.id === primaryLink.noteId) || null;
+		const linksForTask = this.noteTaskLinks
+			.filter((link) => link.taskId === taskId)
+			.sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0));
+		if (linksForTask.length === 0) return null;
+		const explicitPrimary =
+			linksForTask
+				.filter((link) => link.isPrimary === true)
+				.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0] ?? null;
+		return (explicitPrimary ?? linksForTask[0]).noteId;
+	}
+
+	getPrimaryNoteForTask(taskId) {
+		const noteId = this.getEffectivePrimaryNoteIdForTask(taskId);
+		if (!noteId) return null;
+		return this.notes.find((note) => note.id === noteId) || null;
 	}
 
 	getFreeNotesForTask(taskId) {
 		if (!taskId) return [];
+		const primaryNoteId = this.getEffectivePrimaryNoteIdForTask(taskId);
 		const noteIds = new Set(
 			this.noteTaskLinks
-				.filter((link) => link.taskId === taskId && link.isPrimary !== true)
+				.filter((link) => link.taskId === taskId && link.noteId !== primaryNoteId)
 				.map((link) => link.noteId)
 		);
 		return this.notes
@@ -3138,7 +3160,11 @@ class Store {
 
 	isPrimaryTaskNote(noteId) {
 		if (!noteId) return false;
-		return this.noteTaskLinks.some((link) => link.noteId === noteId && link.isPrimary === true);
+		for (const link of this.noteTaskLinks) {
+			if (link.noteId !== noteId) continue;
+			if (this.getEffectivePrimaryNoteIdForTask(link.taskId) === noteId) return true;
+		}
+		return false;
 	}
 
 	getNotesForGoal(goalIndex) {
@@ -3377,7 +3403,8 @@ class Store {
 	createLinkedTaskNote(taskId, { content = '', goalIndex = null, isPrimary = false } = {}) {
 		const note = this.createNote({ content });
 		this.linkNoteToTask(note.id, taskId, { isPrimary });
-		if (typeof goalIndex === 'number') this.linkNoteToGoal(note.id, goalIndex);
+		// Standalone goal notes only — primary task notes live on the task, not in goal Notes tabs.
+		if (!isPrimary && typeof goalIndex === 'number') this.linkNoteToGoal(note.id, goalIndex);
 		return note;
 	}
 

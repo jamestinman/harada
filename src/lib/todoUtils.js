@@ -1562,20 +1562,30 @@ export function buildTaskNoteIndexMaps(notes, noteTaskLinks, taskGoalLinks, todo
 	const notesById = new Map((notes ?? []).map((note) => [note.id, note]));
 	const primaryNoteByTaskId = new Map();
 	const freeNotesByTaskId = new Map();
+	const linksByTaskId = new Map();
 
 	for (const link of noteTaskLinks ?? []) {
-		const note = notesById.get(link.noteId);
-		if (!note) continue;
-		if (link.isPrimary === true) {
-			primaryNoteByTaskId.set(link.taskId, note);
-			continue;
-		}
-		if (!freeNotesByTaskId.has(link.taskId)) freeNotesByTaskId.set(link.taskId, []);
-		freeNotesByTaskId.get(link.taskId).push(note);
+		if (!notesById.has(link.noteId)) continue;
+		if (!linksByTaskId.has(link.taskId)) linksByTaskId.set(link.taskId, []);
+		linksByTaskId.get(link.taskId).push(link);
 	}
 
-	for (const notesList of freeNotesByTaskId.values()) {
-		notesList.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+	for (const [taskId, links] of linksByTaskId) {
+		const sorted = [...links].sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0));
+		const explicitPrimary =
+			links
+				.filter((link) => link.isPrimary === true)
+				.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0] ?? null;
+		const primaryLink = explicitPrimary ?? sorted[0];
+		const primaryNote = notesById.get(primaryLink.noteId);
+		if (primaryNote) primaryNoteByTaskId.set(taskId, primaryNote);
+
+		const freeNotes = links
+			.filter((link) => link !== primaryLink)
+			.map((link) => notesById.get(link.noteId))
+			.filter(Boolean)
+			.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+		if (freeNotes.length > 0) freeNotesByTaskId.set(taskId, freeNotes);
 	}
 
 	const goalIndicesByTaskId = new Map();

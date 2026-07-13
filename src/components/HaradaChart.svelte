@@ -711,7 +711,7 @@
 							if (isCellBlank(i)) {
 								startEditingGoal(i, e.currentTarget);
 							} else {
-								goToGoalTasksFromChart(i);
+								goto(`/todo/${indexToNomenclature(i)}`);
 							}
 						}}
 						class={`group aspect-square min-h-0 min-w-0 transition-all duration-200 hover:scale-105 hover:z-20 ${cellClasses} rounded-md cursor-pointer touch-none ${goalDragClass(i)}`}
