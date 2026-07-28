@@ -481,7 +481,7 @@ const clearAll = () => {
 					onclick={() => { store.composerPanelTab = 'url'; focusTaskTitleInput(); }}
 					class="goal-tab {store.composerPanelTab === 'url' ? 'goal-tab-active' : ''}"
 				>
-					URL
+					Bookmark
 				</button>
 				<button
 					type="button"

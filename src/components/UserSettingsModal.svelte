@@ -266,7 +266,7 @@ function startEditingName() {
 				<div class="flex items-center justify-between">
 					<div>
 						<div class="settings-appearance-label">Appearance</div>
-						<div class="settings-appearance-help">Light, auto, or dark mode for this account</div>
+						<div class="settings-appearance-help">Light, auto, dark modes</div>
 					</div>
 					<div class="settings-appearance-toggle">
 						<button
@@ -304,7 +304,24 @@ function startEditingName() {
 						</button>
 					</div>
 				</div>
+			</div>
 
+			<div class="settings-section-divider">
+				<div class="flex items-center justify-between gap-3">
+					<div>
+						<div class="settings-appearance-label">Recently completed / deleted</div>
+						<div class="settings-appearance-help">
+							Completed tasks and recently deleted items
+						</div>
+					</div>
+					<a
+						href="/trash/deleted"
+						onclick={closeModal}
+						class="shrink-0 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+					>
+						Open trash
+					</a>
+				</div>
 			</div>
 
 			{#if supabase && userId}
@@ -343,8 +360,8 @@ function startEditingName() {
 								<li>
 									Point your AI agent at <a href="https://www.haradato.com/skill.md" target="_blank" rel="noopener noreferrer">haradato.com/skill.md</a>
 								</li>
-                <li>Your agent uses their MLAuth identity and your email to request access (access requests appear here)</li>
-								<li>Works with Cursor, OpenClaw, Claude, etc.</li>
+                <li>Your agent creates an identity tied to your email to request access (access requests appear here)</li>
+								<li>Works with Cursor, Hermes, Claude, etc.</li>
 							</ul>
 						</details>
 					</div>

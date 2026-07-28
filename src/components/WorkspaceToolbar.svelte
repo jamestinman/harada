@@ -23,7 +23,9 @@
 	const hasQuickAddText = $derived((quickAddText ?? '').trim().length > 0);
 
 	function openCompose() {
-		store.openComposerPanel(composeTabDefault === 'note' ? 'note' : 'task');
+		const tab =
+			composeTabDefault === 'note' ? 'note' : composeTabDefault === 'url' ? 'url' : 'task';
+		store.openComposerPanel(tab);
 	}
 
 	function toggleNavMenu() {

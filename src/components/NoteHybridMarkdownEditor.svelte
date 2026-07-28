@@ -1,6 +1,6 @@
 <script>
 	import { onMount } from 'svelte';
-	import { EditorState } from '@codemirror/state';
+	import { EditorState, Transaction } from '@codemirror/state';
 	import { EditorView } from '@codemirror/view';
 	import { Link } from 'lucide-svelte';
 	import { createMarkdownEditorExtensions } from '$lib/markdownEditorExtensions.js';
@@ -19,6 +19,7 @@
 		minHeight = '140px',
 		treatFirstLineAsTitle = false,
 		showFormattingToolbar = false,
+		onsave = undefined,
 		onchange = undefined,
 		class: className = ''
 	} = $props();
@@ -128,7 +129,8 @@
 		const current = view.state.doc.toString();
 		if (current === value) return;
 		view.dispatch({
-			changes: { from: 0, to: current.length, insert: value ?? '' }
+			changes: { from: 0, to: current.length, insert: value ?? '' },
+			annotations: Transaction.addToHistory.of(false)
 		});
 	});
 
@@ -187,6 +189,17 @@
 			>
 				<Link class="h-3.5 w-3.5" strokeWidth={2.25} />
 			</button>
+			{#if onsave}
+				<button
+					type="button"
+					class="note-formatting-toolbar-save ml-auto"
+					aria-label="Save note"
+					title="Save"
+					onclick={onsave}
+				>
+					Save
+				</button>
+			{/if}
 		</div>
 		<div
 			bind:this={container}

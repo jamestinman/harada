@@ -149,7 +149,6 @@
 	let hasPendingNoteLinkSave = $state(false);
 	let editEditorDesktop = $state(null);
 	let editEditorMobile = $state(null);
-	let shouldAutoEdit = $state(false);
 	let lastSavedContent = $state('');
   let previousSelectedNoteId = $state(null);
 
@@ -252,14 +251,17 @@
 			lastSavedContent = content;
 		}
 
-		const noteIsEmpty = (selectedNoteChanged ? content : editContent).trim().length === 0;
+		// Open every selected note in edit mode (Apple Notes style).
+		// Explicit save / navigate / note-switch flush exits to preview for non-empty notes;
+		// tab-hide only persists and keeps editing.
 		if (selectedNoteChanged) {
-			// Default empty notes to editing so users can immediately type.
-			isEditing = shouldAutoEdit || noteIsEmpty;
-		} else if (shouldAutoEdit) {
 			isEditing = true;
+			setTimeout(() => {
+				void tick().then(() => {
+					activeNoteEditorEl()?.focus();
+				});
+			}, 0);
 		}
-		shouldAutoEdit = false;
 	});
 
 	function formatUpdatedAt(ms) {
@@ -371,7 +373,11 @@ $effect(() => {
 
 	function handleVisibilityChange() {
 		if (document.visibilityState === 'hidden') {
-			flushNoteEditsIfNeeded();
+			// Persist without leaving edit mode — tab switches should resume editing on return.
+			if (noteHasUnsavedChanges()) {
+				persistCurrentNoteEdits();
+			}
+			flushPendingNoteLinkSave();
 		}
 	}
 
@@ -395,7 +401,6 @@ $effect(() => {
 		flushNoteEditsIfNeeded();
 		selectedNoteId = noteId;
 		store.recordLastOpenedNote(noteId);
-		shouldAutoEdit = false;
 		mobileMenuOpen = false;
 	}
 
@@ -407,7 +412,6 @@ $effect(() => {
 		}
 		selectedNoteId = note.id;
 		store.recordLastOpenedNote(note.id);
-		shouldAutoEdit = true;
 		mobileMenuOpen = false;
 		setTimeout(() => {
 			void tick().then(() => {
@@ -438,9 +442,7 @@ $effect(() => {
 		isEditing = true;
 		setTimeout(() => {
 			void tick().then(() => {
-				const el = activeNoteEditorEl();
-				el?.focus();
-				el?.selectAll();
+				activeNoteEditorEl()?.focus();
 			});
 		}, 0);
 	}
@@ -670,6 +672,7 @@ $effect(() => {
 								bind:value={editContent}
 								treatFirstLineAsTitle={true}
 								showFormattingToolbar={true}
+								onsave={saveNote}
 								minHeight="22rem"
 								placeholder="Write in markdown. First line becomes the title."
 							/>
@@ -718,20 +721,7 @@ $effect(() => {
 					{/if}
 
 						<div class="mt-4 pt-4">
-							{#if isEditing || isNoteEmpty(selectedNote)}
-								<div class="space-y-3">
-									{@render noteLinkControls()}
-									<button
-										type="button"
-										onclick={saveNote}
-										class="shrink-0 rounded-md border border-violet-600/70 bg-violet-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-violet-500"
-									>
-										Save
-									</button>
-								</div>
-							{:else}
-								{@render noteLinkControls()}
-							{/if}
+							{@render noteLinkControls()}
 							<p class="hidden mt-3 text-xs text-slate-400">
 								Updated {formatUpdatedAt(selectedNote.updatedAt)}
 							</p>
@@ -816,6 +806,7 @@ $effect(() => {
 							bind:value={editContent}
 							treatFirstLineAsTitle={true}
 							showFormattingToolbar={true}
+							onsave={saveNote}
 							minHeight="18rem"
 							placeholder="Write in markdown. First line becomes the title."
 						/>
@@ -862,20 +853,7 @@ $effect(() => {
 					{/if}
 
 						<div class="my-4">
-							{#if isEditing || isNoteEmpty(selectedNote)}
-								<div class="space-y-3">
-									{@render noteLinkControls()}
-									<button
-										type="button"
-										onclick={saveNote}
-										class="shrink-0 rounded-md border border-violet-600/70 bg-violet-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-violet-500"
-									>
-										Save
-									</button>
-								</div>
-							{:else}
-								{@render noteLinkControls()}
-							{/if}
+							{@render noteLinkControls()}
 							<p class="hidden mt-3 text-xs text-slate-400">
 								Updated {formatUpdatedAt(selectedNote.updatedAt)}
 							</p>

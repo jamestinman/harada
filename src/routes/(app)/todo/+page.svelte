@@ -392,10 +392,15 @@
 			const existing = byCanonical.get(canonical);
 			const label = (item?.label ?? '').trim();
 			const count = Number.isFinite(item?.count) ? item.count : 0;
+			const goalOrdering =
+				typeof item?.goalOrdering === 'number' && Number.isFinite(item.goalOrdering)
+					? item.goalOrdering
+					: getGoalGroupOrdering(canonical);
 			if (!existing) {
 				byCanonical.set(canonical, {
 					id: `goal-${canonical}`,
 					goalIndex: canonical,
+					goalOrdering,
 					label: label || getGoalLabelFromIndex(canonical),
 					href: `/todo/${indexToNomenclature(canonical)}`,
 					count
@@ -404,6 +409,13 @@
 			}
 			existing.count = Math.max(existing.count, count);
 			if (label) existing.label = label;
+			if (
+				typeof item?.goalOrdering === 'number' &&
+				Number.isFinite(item.goalOrdering) &&
+				(!Number.isFinite(existing.goalOrdering) || item.goalOrdering < existing.goalOrdering)
+			) {
+				existing.goalOrdering = item.goalOrdering;
+			}
 		}
 
 		// Ensure every titled goal appears, even with zero tasks.
@@ -419,6 +431,7 @@
 			byCanonical.set(canonical, {
 				id: `goal-${canonical}`,
 				goalIndex: canonical,
+				goalOrdering: getGoalGroupOrdering(canonical),
 				label: text,
 				href: `/todo/${indexToNomenclature(canonical)}`,
 				count: 0
@@ -460,7 +473,21 @@
 	});
 	const goalMenuItems = $derived.by(() => {
 		const items = [...canonicalGoalMenuItems];
-		if (ordering === 'recent') return items;
+		if (ordering === 'recent') {
+			items.sort((a, b) => {
+				const ao =
+					typeof a.goalOrdering === 'number' && Number.isFinite(a.goalOrdering)
+						? a.goalOrdering
+						: getGoalGroupOrdering(a.goalIndex);
+				const bo =
+					typeof b.goalOrdering === 'number' && Number.isFinite(b.goalOrdering)
+						? b.goalOrdering
+						: getGoalGroupOrdering(b.goalIndex);
+				if (ao !== bo) return ao - bo;
+				return a.goalIndex - b.goalIndex;
+			});
+			return items;
+		}
 
 		if (ordering === 'alpha') {
 			items.sort((a, b) =>

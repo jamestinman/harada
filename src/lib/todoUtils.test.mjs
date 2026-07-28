@@ -26,7 +26,8 @@ import {
 	filterRetainedTaskRows,
 	collectDescendantTaskIds,
 	organizeTodosWithHierarchy,
-	getGoalViewIndentLevel
+	getGoalViewIndentLevel,
+	renderMarkdown
 } from './todoUtils.js';
 
 test('collectDescendantTaskIds returns nested descendants via parentId', () => {
@@ -263,6 +264,9 @@ test('buildAllTasksFeed buckets todos in a single pass', () => {
 	assert.ok(feed.todoGroups.some((g) => g.id === 'custom:work'));
 	assert.equal(feed.groupsByTodoId.get('t1')?.id, 'goal-10');
 	assert.equal(feed.goalMenuItems.length, 1);
+	assert.equal(feed.goalMenuItems[0].goalIndex, 10);
+	assert.equal(feed.goalMenuItems[0].goalOrdering, 1024);
+	assert.equal(feed.goalMenuItems[0].count, 1);
 });
 
 test('buildAllTasksFeed menu includes chart goals with zero tasks', () => {
@@ -287,12 +291,39 @@ test('buildAllTasksFeed menu includes chart goals with zero tasks', () => {
 	});
 
 	assert.deepEqual(
-		feed.goalMenuItems.map((item) => [item.id, item.count]),
+		feed.goalMenuItems.map((item) => [item.id, item.goalIndex, item.goalOrdering, item.count]),
 		[
-			['goal-10', 1],
-			['goal-20', 0]
+			['goal-10', 10, 1024, 1],
+			['goal-20', 20, 2048, 0]
 		]
 	);
+});
+
+test('buildAllTasksFeed menu includes untitled goals that have tasks', () => {
+	const grid = Array.from({ length: 81 }, () => ({
+		text: '',
+		status: 'todo',
+		readme: '',
+		color: 'default',
+		updated_at: null
+	}));
+	grid[13] = { ...grid[13], todo_group_ordering: 500 };
+	const todos = [
+		{ id: 't1', title: 'CURTXT task', listType: 'goal', goalIndex: 13, status: 'todo', ordering: 1 }
+	];
+
+	const feed = buildAllTasksFeed({
+		todos,
+		grid,
+		taskGoalKeySet: new Set(),
+		linkedTaskIdSet: new Set()
+	});
+
+	assert.equal(feed.goalMenuItems.length, 1);
+	assert.equal(feed.goalMenuItems[0].goalIndex, 13);
+	assert.equal(feed.goalMenuItems[0].goalOrdering, 500);
+	assert.equal(feed.goalMenuItems[0].count, 1);
+	assert.equal(feed.goalMenuItems[0].label, 'E2');
 });
 
 test('buildTaskNoteIndexMaps provides O(1) task lookups', () => {
@@ -494,4 +525,22 @@ test('filterRetainedTaskRows mirrors todo retention using updated_at', () => {
 		['a', 'b']
 	);
 	assert.equal(shouldRetainTaskRow(rows[2], now), false);
+});
+
+test('renderMarkdown renders inline and display KaTeX math', () => {
+	const inline = renderMarkdown('Choose $u = x$, so $du = dx$.');
+	assert.match(inline, /class="katex"/);
+	assert.match(inline, /u = x/);
+	assert.doesNotMatch(inline, /\$u = x\$/);
+
+	const display = renderMarkdown('$$\\int_0^{\\infty} e^{-x}\\,dx$$');
+	assert.match(display, /katex-display/);
+	assert.match(display, /∫|\\int/);
+});
+
+test('renderMarkdown leaves currency-like dollars alone', () => {
+	const html = renderMarkdown('Cost is $5 and also $12.50 total.');
+	assert.doesNotMatch(html, /class="katex"/);
+	assert.match(html, /\$5/);
+	assert.match(html, /\$12\.50/);
 });

@@ -44,6 +44,9 @@ import { authStore } from './auth.svelte.js';
 import { fetchUrlContent } from '$lib/urlContent.mjs';
 import { parseStandaloneUrl } from '$lib/urlUtils.js';
 
+/** Soft-deleted cloud rows kept for this long before a future purge batch (phase 2). */
+export const TRASH_RETENTION_DAYS = 30;
+
 const defaultCells = [
   { text: 'Central Goal', index: 4 * 9 + 4 },
   { text: 'Goal 1', index: 10 },
@@ -3436,9 +3439,632 @@ class Store {
 				.then(({ error }) => {
 					if (error) console.error('Failed to soft-delete note:', error);
 				});
+			supabase
+				.from('note_task_links')
+				.update({ deleted_at: now, updated_at: now })
+				.eq('note_id', id)
+				.eq('user_id', authStore.user.id)
+				.then(({ error }) => {
+					if (error) console.error('Failed to soft-delete note task links:', error);
+				});
+			supabase
+				.from('note_goal_links')
+				.update({ deleted_at: now, updated_at: now })
+				.eq('note_id', id)
+				.eq('user_id', authStore.user.id)
+				.then(({ error }) => {
+					if (error) console.error('Failed to soft-delete note goal links:', error);
+				});
 		}
 
 		this.saveNow();
+	}
+
+	/**
+	 * Soft-deleted items live in Supabase with `deleted_at` set. Local memory/IndexedDB
+	 * drop them immediately on delete, so trash requires a signed-in cloud fetch.
+	 * Phase 2: purge rows older than TRASH_RETENTION_DAYS (batch/cron) + optional local
+	 * tombstones for offline restore.
+	 */
+	async loadTrash() {
+		if (!browser || !authStore.user || !supabase) {
+			return { items: [], error: null, requiresSignIn: !authStore.user };
+		}
+
+		const userId = authStore.user.id;
+		const [tasksRes, notesRes] = await Promise.all([
+			supabase
+				.from('tasks')
+				.select('*')
+				.eq('user_id', userId)
+				.not('deleted_at', 'is', null)
+				.order('deleted_at', { ascending: false }),
+			supabase
+				.from('notes')
+				.select('*')
+				.eq('user_id', userId)
+				.not('deleted_at', 'is', null)
+				.order('deleted_at', { ascending: false })
+		]);
+
+		if (tasksRes.error || notesRes.error) {
+			const message = tasksRes.error?.message || notesRes.error?.message || 'Failed to load trash';
+			return { items: [], error: message, requiresSignIn: false };
+		}
+
+		/** @type {Array<{ id: string; kind: 'task' | 'bookmark' | 'note'; title: string; preview: string; dateAt: string; url?: string }>} */
+		const items = [];
+
+		for (const row of tasksRes.data ?? []) {
+			const item = this._trashItemFromTaskRow(row, row.deleted_at);
+			if (item) items.push(item);
+		}
+
+		for (const row of notesRes.data ?? []) {
+			const note = this._noteRowToNote(row);
+			if (!note) continue;
+			const content = typeof note.content === 'string' ? note.content.trim() : '';
+			const firstLine = content.split(/\r?\n/).find((line) => line.trim()) || '';
+			items.push({
+				id: note.id,
+				kind: 'note',
+				title: firstLine || 'Untitled note',
+				preview: content,
+				dateAt: row.deleted_at
+			});
+		}
+
+		items.sort((a, b) => {
+			const aTime = a.dateAt ? new Date(a.dateAt).getTime() : 0;
+			const bTime = b.dateAt ? new Date(b.dateAt).getTime() : 0;
+			return bTime - aTime;
+		});
+
+		return { items, error: null, requiresSignIn: false };
+	}
+
+	_trashItemFromTaskRow(row, dateIso) {
+		const todo = this._taskRowToTodo(row);
+		if (!todo) return null;
+		const isBookmark =
+			!!(todo.url && String(todo.url).trim()) || !!parseStandaloneUrl(todo.title);
+		const title =
+			(todo.title && todo.title.trim()) ||
+			(isBookmark && todo.url ? todo.url : '') ||
+			'Untitled task';
+		return {
+			id: todo.id,
+			kind: isBookmark ? 'bookmark' : 'task',
+			title,
+			preview: typeof todo.markdown === 'string' ? todo.markdown.trim() : '',
+			dateAt: dateIso || row.updated_at || null,
+			url: todo.url || ''
+		};
+	}
+
+	async loadCompletedTrash() {
+		if (!browser || !authStore.user || !supabase) {
+			return { items: [], error: null, requiresSignIn: !authStore.user };
+		}
+
+		const userId = authStore.user.id;
+		const { data, error } = await supabase
+			.from('tasks')
+			.select('*')
+			.eq('user_id', userId)
+			.eq('status', 'done')
+			.is('deleted_at', null)
+			.order('updated_at', { ascending: false });
+
+		if (error) {
+			return { items: [], error: error.message || 'Failed to load completed', requiresSignIn: false };
+		}
+
+		/** @type {Array<{ id: string; kind: 'task' | 'bookmark' | 'note'; title: string; preview: string; dateAt: string; url?: string }>} */
+		const items = [];
+		for (const row of data ?? []) {
+			const item = this._trashItemFromTaskRow(row, row.updated_at);
+			if (item) items.push(item);
+		}
+
+		return { items, error: null, requiresSignIn: false };
+	}
+
+	async restoreCompletedItem(id) {
+		if (!browser || !authStore.user || !supabase || !id) {
+			return { success: false, error: 'Sign in required to restore' };
+		}
+
+		const userId = authStore.user.id;
+		const now = new Date().toISOString();
+
+		try {
+			const { data: restoredTask, error } = await supabase
+				.from('tasks')
+				.update({ status: 'todo', updated_at: now })
+				.eq('id', id)
+				.eq('user_id', userId)
+				.eq('status', 'done')
+				.is('deleted_at', null)
+				.select('*')
+				.maybeSingle();
+			if (error) throw error;
+			if (!restoredTask) {
+				return { success: false, error: 'Item no longer found in completed' };
+			}
+
+			const [taskGoalRes, noteTaskRes] = await Promise.all([
+				supabase
+					.from('task_goal_links')
+					.select('*')
+					.eq('task_id', id)
+					.eq('user_id', userId)
+					.is('deleted_at', null),
+				supabase
+					.from('note_task_links')
+					.select('*')
+					.eq('task_id', id)
+					.eq('user_id', userId)
+					.is('deleted_at', null)
+			]);
+			if (taskGoalRes.error) throw taskGoalRes.error;
+			if (noteTaskRes.error) throw noteTaskRes.error;
+
+			const todo = this._taskRowToTodo(restoredTask);
+			if (!todo) {
+				return { success: false, error: 'Failed to restore task data' };
+			}
+			const without = (this.harada_chart.todos || []).filter((t) => t.id !== todo.id);
+			this.harada_chart = { ...this.harada_chart, todos: [...without, todo] };
+			this._markTaskDirty(todo.id);
+
+			const taskGoalLinks = (taskGoalRes.data ?? [])
+				.map((row) => this._taskGoalLinkRowToLink(row))
+				.filter(Boolean);
+			const noteTaskLinks = (noteTaskRes.data ?? [])
+				.map((row) => this._noteTaskLinkRowToLink(row))
+				.filter(Boolean);
+			this.taskGoalLinks = this._upsertLinksById(this.taskGoalLinks, taskGoalLinks);
+			this.noteTaskLinks = this._upsertLinksById(this.noteTaskLinks, noteTaskLinks);
+			for (const link of taskGoalLinks) this._markTaskGoalLinkDirty(link);
+			for (const link of noteTaskLinks) this._markNoteTaskLinkDirty(link);
+
+			this.saveNow();
+			return { success: true, error: null };
+		} catch (err) {
+			console.error('Failed to restore completed item:', err);
+			return { success: false, error: err?.message || 'Failed to restore' };
+		}
+	}
+
+	async softDeleteCompletedItem(id) {
+		if (!id) return { success: false, error: 'Missing id' };
+
+		if ((this.harada_chart.todos || []).some((t) => t.id === id)) {
+			this.deleteTodo(id);
+			return { success: true, error: null };
+		}
+
+		if (!browser || !authStore.user || !supabase) {
+			return { success: false, error: 'Sign in required to delete' };
+		}
+
+		const userId = authStore.user.id;
+		const now = new Date().toISOString();
+
+		try {
+			const { data, error } = await supabase
+				.from('tasks')
+				.update({ deleted_at: now, updated_at: now })
+				.eq('id', id)
+				.eq('user_id', userId)
+				.is('deleted_at', null)
+				.select('id')
+				.maybeSingle();
+			if (error) throw error;
+			if (!data) {
+				return { success: false, error: 'Item no longer found in completed' };
+			}
+
+			await Promise.all([
+				supabase
+					.from('note_task_links')
+					.update({ deleted_at: now, updated_at: now })
+					.eq('task_id', id)
+					.eq('user_id', userId),
+				supabase
+					.from('task_goal_links')
+					.update({ deleted_at: now, updated_at: now })
+					.eq('task_id', id)
+					.eq('user_id', userId)
+			]);
+
+			return { success: true, error: null };
+		} catch (err) {
+			console.error('Failed to soft-delete completed item:', err);
+			return { success: false, error: err?.message || 'Failed to delete' };
+		}
+	}
+
+	async emptyCompletedTrash() {
+		if (!browser || !authStore.user || !supabase) {
+			return { success: false, error: 'Sign in required to empty completed' };
+		}
+
+		const userId = authStore.user.id;
+		const now = new Date().toISOString();
+
+		try {
+			const { data, error } = await supabase
+				.from('tasks')
+				.update({ deleted_at: now, updated_at: now })
+				.eq('user_id', userId)
+				.eq('status', 'done')
+				.is('deleted_at', null)
+				.select('id');
+			if (error) throw error;
+
+			const ids = (data ?? []).map((row) => row.id).filter(Boolean);
+			if (ids.length > 0) {
+				await Promise.all([
+					supabase
+						.from('note_task_links')
+						.update({ deleted_at: now, updated_at: now })
+						.in('task_id', ids)
+						.eq('user_id', userId),
+					supabase
+						.from('task_goal_links')
+						.update({ deleted_at: now, updated_at: now })
+						.in('task_id', ids)
+						.eq('user_id', userId)
+				]);
+				const idSet = new Set(ids);
+				this.harada_chart = {
+					...this.harada_chart,
+					todos: (this.harada_chart.todos || []).filter((t) => !idSet.has(t.id))
+				};
+				this.noteTaskLinks = this.noteTaskLinks.filter((link) => !idSet.has(link.taskId));
+				this.taskGoalLinks = this.taskGoalLinks.filter((link) => !idSet.has(link.taskId));
+				this.saveNow();
+			}
+
+			return { success: true, error: null };
+		} catch (err) {
+			console.error('Failed to empty completed trash:', err);
+			return { success: false, error: err?.message || 'Failed to empty completed' };
+		}
+	}
+
+	_upsertLinksById(existing, incoming, idKey = 'id') {
+		const next = [...(existing ?? [])];
+		for (const link of incoming ?? []) {
+			if (!link) continue;
+			const idx = next.findIndex(
+				(row) =>
+					(link[idKey] && row[idKey] === link[idKey]) ||
+					(link.noteId &&
+						link.taskId &&
+						row.noteId === link.noteId &&
+						row.taskId === link.taskId) ||
+					(link.noteId &&
+						typeof link.goalIndex === 'number' &&
+						row.noteId === link.noteId &&
+						row.goalIndex === link.goalIndex) ||
+					(link.taskId &&
+						typeof link.goalIndex === 'number' &&
+						row.taskId === link.taskId &&
+						row.goalIndex === link.goalIndex)
+			);
+			if (idx >= 0) next[idx] = link;
+			else next.push(link);
+		}
+		return next;
+	}
+
+	async _restoreSoftDeletedLinks(table, ids, now) {
+		if (!ids.length) return;
+		const { error } = await supabase
+			.from(table)
+			.update({ deleted_at: null, updated_at: now })
+			.in('id', ids)
+			.eq('user_id', authStore.user.id);
+		if (error) throw error;
+	}
+
+	async _activePeerIds(table, ids) {
+		if (!ids.length) return new Set();
+		const { data, error } = await supabase
+			.from(table)
+			.select('id')
+			.in('id', ids)
+			.eq('user_id', authStore.user.id)
+			.is('deleted_at', null);
+		if (error) throw error;
+		return new Set((data ?? []).map((row) => row.id));
+	}
+
+	async restoreTrashItem(kind, id) {
+		if (!browser || !authStore.user || !supabase || !id) {
+			return { success: false, error: 'Sign in required to restore' };
+		}
+
+		const userId = authStore.user.id;
+		const now = new Date().toISOString();
+		const isNote = kind === 'note';
+
+		try {
+			if (isNote) {
+				const { data: restoredNote, error } = await supabase
+					.from('notes')
+					.update({ deleted_at: null, updated_at: now })
+					.eq('id', id)
+					.eq('user_id', userId)
+					.not('deleted_at', 'is', null)
+					.select('*')
+					.maybeSingle();
+				if (error) throw error;
+				if (!restoredNote) {
+					return { success: false, error: 'Item no longer found in trash' };
+				}
+
+				const { data: softNoteTaskLinks, error: softNoteTaskErr } = await supabase
+					.from('note_task_links')
+					.select('*')
+					.eq('note_id', id)
+					.eq('user_id', userId)
+					.not('deleted_at', 'is', null);
+				if (softNoteTaskErr) throw softNoteTaskErr;
+
+				const taskIds = [...new Set((softNoteTaskLinks ?? []).map((row) => row.task_id).filter(Boolean))];
+				const liveTaskIds = await this._activePeerIds('tasks', taskIds);
+				const noteTaskIdsToRestore = (softNoteTaskLinks ?? [])
+					.filter((row) => liveTaskIds.has(row.task_id))
+					.map((row) => row.id)
+					.filter(Boolean);
+
+				// Avoid unique primary conflicts if the task already has an active primary note
+				const primaryCandidates = (softNoteTaskLinks ?? []).filter(
+					(row) => noteTaskIdsToRestore.includes(row.id) && row.is_primary === true
+				);
+				for (const row of primaryCandidates) {
+					const { data: existingPrimary } = await supabase
+						.from('note_task_links')
+						.select('id')
+						.eq('task_id', row.task_id)
+						.eq('user_id', userId)
+						.eq('is_primary', true)
+						.is('deleted_at', null)
+						.maybeSingle();
+					if (existingPrimary) {
+						await supabase
+							.from('note_task_links')
+							.update({ is_primary: false, updated_at: now })
+							.eq('id', row.id)
+							.eq('user_id', userId);
+					}
+				}
+
+				const { data: softNoteGoalLinks, error: softNoteGoalErr } = await supabase
+					.from('note_goal_links')
+					.select('id')
+					.eq('note_id', id)
+					.eq('user_id', userId)
+					.not('deleted_at', 'is', null);
+				if (softNoteGoalErr) throw softNoteGoalErr;
+
+				await this._restoreSoftDeletedLinks(
+					'note_task_links',
+					noteTaskIdsToRestore,
+					now
+				);
+				await this._restoreSoftDeletedLinks(
+					'note_goal_links',
+					(softNoteGoalLinks ?? []).map((row) => row.id).filter(Boolean),
+					now
+				);
+
+				const [noteTaskRes, noteGoalRes] = await Promise.all([
+					supabase
+						.from('note_task_links')
+						.select('*')
+						.eq('note_id', id)
+						.eq('user_id', userId)
+						.is('deleted_at', null),
+					supabase
+						.from('note_goal_links')
+						.select('*')
+						.eq('note_id', id)
+						.eq('user_id', userId)
+						.is('deleted_at', null)
+				]);
+				if (noteTaskRes.error) throw noteTaskRes.error;
+				if (noteGoalRes.error) throw noteGoalRes.error;
+
+				const note = this._noteRowToNote(restoredNote);
+				if (note) {
+					const without = this.notes.filter((n) => n.id !== note.id);
+					this.notes = [note, ...without];
+					this._markNoteDirty(note.id);
+				}
+
+				const noteTaskLinks = (noteTaskRes.data ?? [])
+					.map((row) => this._noteTaskLinkRowToLink(row))
+					.filter(Boolean);
+				const noteGoalLinks = (noteGoalRes.data ?? [])
+					.map((row) => this._noteGoalLinkRowToLink(row))
+					.filter(Boolean);
+				this.noteTaskLinks = this._upsertLinksById(this.noteTaskLinks, noteTaskLinks);
+				this.noteGoalLinks = this._upsertLinksById(this.noteGoalLinks, noteGoalLinks);
+				for (const link of noteTaskLinks) this._markNoteTaskLinkDirty(link);
+				for (const link of noteGoalLinks) this._markNoteGoalLinkDirty(link);
+			} else {
+				const { data: restoredTask, error } = await supabase
+					.from('tasks')
+					.update({ deleted_at: null, updated_at: now })
+					.eq('id', id)
+					.eq('user_id', userId)
+					.not('deleted_at', 'is', null)
+					.select('*')
+					.maybeSingle();
+				if (error) throw error;
+				if (!restoredTask) {
+					return { success: false, error: 'Item no longer found in trash' };
+				}
+
+				const { data: softTaskGoalLinks, error: softTaskGoalErr } = await supabase
+					.from('task_goal_links')
+					.select('id')
+					.eq('task_id', id)
+					.eq('user_id', userId)
+					.not('deleted_at', 'is', null);
+				if (softTaskGoalErr) throw softTaskGoalErr;
+
+				const { data: softNoteTaskLinks, error: softNoteTaskErr } = await supabase
+					.from('note_task_links')
+					.select('*')
+					.eq('task_id', id)
+					.eq('user_id', userId)
+					.not('deleted_at', 'is', null);
+				if (softNoteTaskErr) throw softNoteTaskErr;
+
+				const noteIds = [
+					...new Set((softNoteTaskLinks ?? []).map((row) => row.note_id).filter(Boolean))
+				];
+				const liveNoteIds = await this._activePeerIds('notes', noteIds);
+				const noteTaskIdsToRestore = (softNoteTaskLinks ?? [])
+					.filter((row) => liveNoteIds.has(row.note_id))
+					.map((row) => row.id)
+					.filter(Boolean);
+
+				const primaryCandidates = (softNoteTaskLinks ?? []).filter(
+					(row) => noteTaskIdsToRestore.includes(row.id) && row.is_primary === true
+				);
+				for (const row of primaryCandidates) {
+					const { data: existingPrimary } = await supabase
+						.from('note_task_links')
+						.select('id')
+						.eq('task_id', id)
+						.eq('user_id', userId)
+						.eq('is_primary', true)
+						.is('deleted_at', null)
+						.maybeSingle();
+					if (existingPrimary) {
+						await supabase
+							.from('note_task_links')
+							.update({ is_primary: false, updated_at: now })
+							.eq('id', row.id)
+							.eq('user_id', userId);
+					}
+				}
+
+				await this._restoreSoftDeletedLinks(
+					'task_goal_links',
+					(softTaskGoalLinks ?? []).map((row) => row.id).filter(Boolean),
+					now
+				);
+				await this._restoreSoftDeletedLinks('note_task_links', noteTaskIdsToRestore, now);
+
+				const [taskGoalRes, noteTaskRes] = await Promise.all([
+					supabase
+						.from('task_goal_links')
+						.select('*')
+						.eq('task_id', id)
+						.eq('user_id', userId)
+						.is('deleted_at', null),
+					supabase
+						.from('note_task_links')
+						.select('*')
+						.eq('task_id', id)
+						.eq('user_id', userId)
+						.is('deleted_at', null)
+				]);
+				if (taskGoalRes.error) throw taskGoalRes.error;
+				if (noteTaskRes.error) throw noteTaskRes.error;
+
+				const todo = this._taskRowToTodo(restoredTask);
+				if (!todo) {
+					return { success: false, error: 'Failed to restore task data' };
+				}
+				if (shouldRetainTodoInStore(todo)) {
+					const without = (this.harada_chart.todos || []).filter((t) => t.id !== todo.id);
+					this.harada_chart = { ...this.harada_chart, todos: [...without, todo] };
+					this._markTaskDirty(todo.id);
+				}
+
+				const taskGoalLinks = (taskGoalRes.data ?? [])
+					.map((row) => this._taskGoalLinkRowToLink(row))
+					.filter(Boolean);
+				const noteTaskLinks = (noteTaskRes.data ?? [])
+					.map((row) => this._noteTaskLinkRowToLink(row))
+					.filter(Boolean);
+				this.taskGoalLinks = this._upsertLinksById(this.taskGoalLinks, taskGoalLinks);
+				this.noteTaskLinks = this._upsertLinksById(this.noteTaskLinks, noteTaskLinks);
+				for (const link of taskGoalLinks) this._markTaskGoalLinkDirty(link);
+				for (const link of noteTaskLinks) this._markNoteTaskLinkDirty(link);
+			}
+
+			this.saveNow();
+			return { success: true, error: null };
+		} catch (err) {
+			console.error('Failed to restore trash item:', err);
+			return { success: false, error: err?.message || 'Failed to restore' };
+		}
+	}
+
+	async permanentlyDeleteTrashItem(kind, id) {
+		if (!browser || !authStore.user || !supabase || !id) {
+			return { success: false, error: 'Sign in required to permanently delete' };
+		}
+
+		const userId = authStore.user.id;
+		const table = kind === 'note' ? 'notes' : 'tasks';
+
+		try {
+			const { error } = await supabase.from(table).delete().eq('id', id).eq('user_id', userId);
+			if (error) throw error;
+
+			if (kind === 'note') {
+				this.notes = this.notes.filter((note) => note.id !== id);
+				this.noteTaskLinks = this.noteTaskLinks.filter((link) => link.noteId !== id);
+				this.noteGoalLinks = this.noteGoalLinks.filter((link) => link.noteId !== id);
+			} else {
+				this.harada_chart = {
+					...this.harada_chart,
+					todos: (this.harada_chart.todos || []).filter((t) => t.id !== id)
+				};
+				this.noteTaskLinks = this.noteTaskLinks.filter((link) => link.taskId !== id);
+				this.taskGoalLinks = this.taskGoalLinks.filter((link) => link.taskId !== id);
+			}
+
+			this.saveNow();
+			return { success: true, error: null };
+		} catch (err) {
+			console.error('Failed to permanently delete trash item:', err);
+			return { success: false, error: err?.message || 'Failed to permanently delete' };
+		}
+	}
+
+	async emptyTrash() {
+		if (!browser || !authStore.user || !supabase) {
+			return { success: false, error: 'Sign in required to empty trash' };
+		}
+
+		const userId = authStore.user.id;
+
+		try {
+			const [tasksRes, notesRes] = await Promise.all([
+				supabase.from('tasks').delete().eq('user_id', userId).not('deleted_at', 'is', null),
+				supabase.from('notes').delete().eq('user_id', userId).not('deleted_at', 'is', null)
+			]);
+			if (tasksRes.error) throw tasksRes.error;
+			if (notesRes.error) throw notesRes.error;
+
+			this.saveNow();
+			return { success: true, error: null };
+		} catch (err) {
+			console.error('Failed to empty trash:', err);
+			return { success: false, error: err?.message || 'Failed to empty trash' };
+		}
 	}
 
 	// --- Auth ---

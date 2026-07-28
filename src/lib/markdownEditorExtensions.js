@@ -1,8 +1,9 @@
+import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { RangeSetBuilder } from '@codemirror/state';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
-import { Decoration, EditorView, ViewPlugin, WidgetType } from '@codemirror/view';
+import { Decoration, EditorView, ViewPlugin, WidgetType, keymap } from '@codemirror/view';
 import { markdownFormattingKeymap, markdownListKeymap } from './markdownEditorKeymaps.js';
 
 class PlaceholderWidget extends WidgetType {
@@ -266,10 +267,14 @@ export function createMarkdownEditorExtensions(placeholderText = '', options = {
 	const { treatFirstLineAsTitle = false } = options;
 	const extensions = [
 		markdown(),
+		history(),
 		EditorView.lineWrapping,
 		editorBaseTheme,
 		syntaxHighlighting(markdownHighlightStyle),
 		markdownFallbackDecorationExtension(),
+		// Later keymaps win — keep defaults first so Mod-i / Enter / Tab stay ours.
+		keymap.of(defaultKeymap),
+		keymap.of(historyKeymap),
 		markdownFormattingKeymap,
 		markdownListKeymap
 	];

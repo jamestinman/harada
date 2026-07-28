@@ -36,7 +36,7 @@
 		taskHasRealGoalMembership,
 		todoBelongsToGoalView
 	} from '$lib/todoUtils.js';
-	import { enqueueTodoUrlEnrichment } from '$lib/urlUtils.js';
+	import { enqueueTodoUrlEnrichment, isTodoBookmark, parseStandaloneUrl } from '$lib/urlUtils.js';
 	import TodoList from '$components/TodoList.svelte';
 	import TodoSidebarNav from '$components/TodoSidebarNav.svelte';
 	import WorkspaceToolbar from '$components/WorkspaceToolbar.svelte';
@@ -71,7 +71,10 @@
 	const dataLoaded = $derived(!store.isBootstrapping);
 	const targetTodoId = $derived(page.url.searchParams.get('task') || null);
 	const targetGoalTab = $derived(page.url.searchParams.get('tab') || null);
-	let activeGoalTab = $state('tasks');
+	let activeGoalTab = $state(/** @type {'tasks' | 'notes' | 'bookmarks'} */ ('tasks'));
+	const goalComposeTabDefault = $derived(
+		activeGoalTab === 'notes' ? 'note' : activeGoalTab === 'bookmarks' ? 'url' : 'task'
+	);
 	let activeTodoId = $state(null);
 	let focusTodoId = $state(null);
 	let skipTaskScroll = false;
@@ -367,8 +370,9 @@
 		return level;
 	}
 
-	function getVisibleGoalTodos(targetGoalIndex) {
+	function getVisibleGoalTodos(targetGoalIndex, { bookmarksOnly = false } = {}) {
 		const filtered = todos.filter((t) => {
+			if (bookmarksOnly ? !isTodoBookmark(t) : isTodoBookmark(t)) return false;
 			const matchesGoal =
 				(t.listType === 'goal' || !t.listType) &&
 				todoBelongsToGoalView(t, targetGoalIndex, taskGoalKeySet);
@@ -444,6 +448,40 @@
 
 	const goalTasksCount = $derived.by(() =>
 		goalGroups.reduce((sum, g) => sum + (g.todos?.filter((t) => !t.isDraft).length ?? 0), 0)
+	);
+
+	const goalBookmarkGroups = $derived.by(() => {
+		if (isPinnedGoalView) {
+			const pinnedBookmarks = getVisibleGoalTodos(PINNED_GOAL_INDEX, { bookmarksOnly: true });
+			if (pinnedBookmarks.length === 0) return [];
+			return [
+				{
+					id: 'goal-pinned-bookmarks',
+					groupType: 'goal',
+					goalIndex: PINNED_GOAL_INDEX,
+					label: 'Pinned',
+					href: '/todo/Z1',
+					addTitle: 'Add bookmark',
+					todos: pinnedBookmarks
+				}
+			];
+		}
+
+		const indices = getGoalScopeIndices();
+		return indices
+			.map((idx) => ({
+				id: `goal-bookmarks-${idx}`,
+				goalIndex: idx,
+				label: getGoalLabelFromIndex(idx, grid),
+				href: `/todo/${indexToNomenclature(idx)}`,
+				addTitle: 'Add bookmark',
+				todos: getVisibleGoalTodos(idx, { bookmarksOnly: true })
+			}))
+			.filter((group) => group.todos.length > 0);
+	});
+
+	const goalBookmarksCount = $derived.by(() =>
+		goalBookmarkGroups.reduce((sum, g) => sum + (g.todos?.filter((t) => !t.isDraft).length ?? 0), 0)
 	);
 
 	function getVisibleGoalGroupsByOrdering() {
@@ -649,21 +687,27 @@
 
 	$effect(() => {
 		if (!browser || !dataLoaded || !targetTodoId) return;
-		activeGoalTab = 'tasks';
 		mobileMenuOpen = false;
 		activeTodoId = targetTodoId;
 		if (deepLinkCompletedHandledFor === targetTodoId) return;
 		const todo = todos.find((t) => t.id === targetTodoId);
 		if (!todo) return;
 		deepLinkCompletedHandledFor = targetTodoId;
+		activeGoalTab = isTodoBookmark(todo) ? 'bookmarks' : 'tasks';
 		if (todo.status === 'done') {
 			showRecentlyCompleted = true;
 		}
 	});
 
 	$effect(() => {
-		if (!browser || !dataLoaded || targetGoalTab !== 'notes' || targetTodoId) return;
-		activeGoalTab = 'notes';
+		if (!browser || !dataLoaded || !targetGoalTab || targetTodoId) return;
+		if (targetGoalTab === 'notes') {
+			activeGoalTab = 'notes';
+		} else if (targetGoalTab === 'bookmarks') {
+			activeGoalTab = 'bookmarks';
+		} else {
+			return;
+		}
 		mobileMenuOpen = false;
 		const params = new URLSearchParams(page.url.search);
 		params.delete('tab');
@@ -778,6 +822,7 @@
 	}
 
 	function createTodoFromComposer({ title, markdown, goalIndex: selectedGoalIndex, listType, listName, shouldNavigate = true } = {}) {
+		const switchToBookmarks = !!parseStandaloneUrl(title);
 		// Handle case when called without parameters (from "+ New Task" button)
 		// Add to current goal when on a goal page
 		if (!title && !markdown && selectedGoalIndex === undefined && !listType && !listName) {
@@ -818,6 +863,7 @@
 			}
 			enqueueTodoUrlEnrichment(store, todo.id, title);
 			store.registerTodoMutation(todo.id, { immediate: true });
+			if (switchToBookmarks) activeGoalTab = 'bookmarks';
 			if (shouldNavigate) navigateToNewTask(todo);
 			return;
 		}
@@ -851,6 +897,7 @@
 			activeTodoId = todo.id;
 			enqueueTodoUrlEnrichment(store, todo.id, title);
 			store.registerTodoMutation(todo.id, { immediate: true });
+			if (switchToBookmarks) activeGoalTab = 'bookmarks';
 			if (shouldNavigate) navigateToNewTask(todo);
 			return;
 		}
@@ -876,6 +923,7 @@
 
 		activeTodoId = todo.id;
 		store.registerTodoMutation(todo.id, { immediate: true });
+		if (switchToBookmarks) activeGoalTab = 'bookmarks';
 		if (shouldNavigate) navigateToNewTask(todo);
 	}
 
@@ -1298,7 +1346,7 @@
 				showSidebarToggle={!mobileMenuOpen && !mobileTodoSearchActive}
 				onSidebarToggle={() => (mobileMenuOpen = true)}
 				showHamburger={false}
-				composeTabDefault={activeGoalTab === 'notes' ? 'note' : 'task'}
+				composeTabDefault={goalComposeTabDefault}
 				onNew={activeGoalTab === 'notes' ? createNoteFromComposer : null}
 			/>
 		</div>
@@ -1389,7 +1437,7 @@
 							inputMode="quickAdd"
 							bind:quickAddText={goalSearchQuery}
 							onQuickAdd={submitQuickAddGoalTask}
-							composeTabDefault={activeGoalTab === 'notes' ? 'note' : 'task'}
+							composeTabDefault={goalComposeTabDefault}
 							onNew={activeGoalTab === 'notes' ? createNoteFromComposer : null}
 						/>
 					</div>
@@ -1530,6 +1578,14 @@
 							<span>Notes</span>
 							<span class="goal-tab-count">{associatedGoalNotes.length}</span>
 						</button>
+						<button
+							type="button"
+							onclick={() => (activeGoalTab = 'bookmarks')}
+							class={`goal-tab ${activeGoalTab === 'bookmarks' ? 'goal-tab-active' : ''}`}
+						>
+							<span>Bookmarks</span>
+							<span class="goal-tab-count">{goalBookmarksCount}</span>
+						</button>
 					</div>
 				</div>
 					{#if activeGoalTab === 'tasks'}
@@ -1570,6 +1626,67 @@
 						onUpsertPrimaryNote={upsertPrimaryNoteForTodo}
 						onClearHighlight={clearHighlight}
 					/>
+				{:else if activeGoalTab === 'bookmarks'}
+					{#if goalBookmarkGroups.length === 0}
+						<div class="todo-empty-section-card">
+							<p class="todo-empty-section-text">No bookmarks linked to this goal yet.</p>
+						</div>
+						<div class="mt-4 hidden lg:block">
+							<button
+								type="button"
+								onclick={() => store.openComposerPanel('url')}
+								class="rounded-btn"
+							>
+								+ New bookmark
+							</button>
+						</div>
+					{:else}
+						<div class="mb-6 hidden lg:block">
+							<button
+								type="button"
+								onclick={() => store.openComposerPanel('url')}
+								class="rounded-btn"
+							>
+								+ New bookmark
+							</button>
+						</div>
+						<TodoList
+							groups={goalBookmarkGroups}
+							pinnedGoalView={isPinnedGoalView}
+							{allGoals}
+							onUpdate={updateTodo}
+							onDelete={deleteTodo}
+							onToggleStatus={cycleTodoStatus}
+							onCreateNext={(todoId, group, instanceContext) =>
+								createNextTodo(todoId, group.goalIndex, instanceContext)}
+							onDeletePrevious={(todoId, group) => deleteAndFocusPrevious(todoId, group.goalIndex)}
+							onMakeSubtask={(todoId, group) => makeSubtask(todoId, group.goalIndex)}
+							onOutdent={(todoId) => outdentTodo(todoId)}
+							onTitleFocus={setHighlightedTaskId}
+							getIndentLevel={(todoId, group) =>
+								getGoalViewIndentLevel(todoId, group.goalIndex, group.todos, taskGoalLinks)}
+							canIndent={(todoId, group) => canIndentTodo(todoId, group.goalIndex)}
+							canOutdent={(todoId) => canOutdentTodo(todoId)}
+							disableAutoFocus={true}
+							onCreateTodo={createTodoFromComposer}
+							onMoveTodo={moveTodo}
+							useGoalViewOrdering={true}
+							{taskGoalLinks}
+							{taskGoalKeySet}
+							allowCrossListMove={false}
+							enableGroupDrag={false}
+							searchText={goalSearchQuery}
+							{targetTodoId}
+							activeTodoId={activeTodoId}
+							{focusTodoId}
+							onFocusTitleHandled={handleFocusTitleHandled}
+							{getPrimaryNoteForTodo}
+							{getLinkedNotesForTodo}
+							{getLinkedGoalIndicesForTodo}
+							onUpsertPrimaryNote={upsertPrimaryNoteForTodo}
+							onClearHighlight={clearHighlight}
+						/>
+					{/if}
 				{:else}
 					<div class="space-y-3">
 						<div class="mb-6 hidden lg:block">
@@ -1870,6 +1987,14 @@
 								<span>Notes</span>
 								<span class="goal-tab-count">{associatedGoalNotes.length}</span>
 							</button>
+							<button
+								type="button"
+								onclick={() => (activeGoalTab = 'bookmarks')}
+								class={`goal-tab ${activeGoalTab === 'bookmarks' ? 'goal-tab-active' : ''}`}
+							>
+								<span>Bookmarks</span>
+								<span class="goal-tab-count">{goalBookmarksCount}</span>
+							</button>
 						</div>
 					</div>
 						{#if activeGoalTab === 'tasks'}
@@ -1910,6 +2035,67 @@
 							onUpsertPrimaryNote={upsertPrimaryNoteForTodo}
 							onClearHighlight={clearHighlight}
 						/>
+					{:else if activeGoalTab === 'bookmarks'}
+						{#if goalBookmarkGroups.length === 0}
+							<div class="todo-empty-section-card">
+								<p class="todo-empty-section-text">No bookmarks linked to this goal yet.</p>
+							</div>
+							<div class="mt-4">
+								<button
+									type="button"
+									onclick={() => store.openComposerPanel('url')}
+									class="rounded-btn w-full"
+								>
+									+ New bookmark
+								</button>
+							</div>
+						{:else}
+							<div class="mb-4">
+								<button
+									type="button"
+									onclick={() => store.openComposerPanel('url')}
+									class="rounded-btn w-full"
+								>
+									+ New bookmark
+								</button>
+							</div>
+							<TodoList
+								groups={goalBookmarkGroups}
+								pinnedGoalView={isPinnedGoalView}
+								{allGoals}
+								onUpdate={updateTodo}
+								onDelete={deleteTodo}
+								onToggleStatus={cycleTodoStatus}
+								onCreateNext={(todoId, group, instanceContext) =>
+									createNextTodo(todoId, group.goalIndex, instanceContext)}
+								onDeletePrevious={(todoId, group) => deleteAndFocusPrevious(todoId, group.goalIndex)}
+								onMakeSubtask={(todoId, group) => makeSubtask(todoId, group.goalIndex)}
+								onOutdent={(todoId) => outdentTodo(todoId)}
+								onTitleFocus={setHighlightedTaskId}
+								getIndentLevel={(todoId, group) =>
+									getGoalViewIndentLevel(todoId, group.goalIndex, group.todos, taskGoalLinks)}
+								canIndent={(todoId, group) => canIndentTodo(todoId, group.goalIndex)}
+								canOutdent={(todoId) => canOutdentTodo(todoId)}
+								disableAutoFocus={true}
+								onCreateTodo={createTodoFromComposer}
+								onMoveTodo={moveTodo}
+								useGoalViewOrdering={true}
+								{taskGoalLinks}
+								{taskGoalKeySet}
+								allowCrossListMove={false}
+								enableGroupDrag={false}
+								searchText={store.todoWorkspaceQuery}
+								{targetTodoId}
+								activeTodoId={activeTodoId}
+								{focusTodoId}
+								onFocusTitleHandled={handleFocusTitleHandled}
+								{getPrimaryNoteForTodo}
+								{getLinkedNotesForTodo}
+								{getLinkedGoalIndicesForTodo}
+								onUpsertPrimaryNote={upsertPrimaryNoteForTodo}
+								onClearHighlight={clearHighlight}
+							/>
+						{/if}
 					{:else}
 						<div class="space-y-3">
 							<div class="mb-4">

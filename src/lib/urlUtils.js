@@ -48,3 +48,10 @@ export function enqueueTodoUrlEnrichment(store, todoId, title) {
 	if (!todoId || !parseStandaloneUrl(title)) return;
 	void store.enrichTodoFromUrl(todoId, title);
 }
+
+/** Todos with a linked URL (TTS / Bookmark tab) — including a title that is still a bare URL pre-enrichment. */
+export function isTodoBookmark(todo) {
+	if (!todo) return false;
+	if (typeof todo.url === 'string' && todo.url.trim()) return true;
+	return !!parseStandaloneUrl(todo.title);
+}

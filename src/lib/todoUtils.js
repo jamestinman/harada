@@ -1,5 +1,6 @@
 // Utility functions for todo management
 import { marked } from 'marked';
+import markedKatex from 'marked-katex-extension';
 
 export function createTodoId() {
 	return `todo_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -359,6 +360,12 @@ class CustomRenderer extends marked.Renderer {
 		return `<a href="${href}" target="_blank" rel="noopener noreferrer"${titleAttr}>${text}</a>`;
 	}
 }
+
+marked.use(
+	markedKatex({
+		throwOnError: false
+	})
+);
 
 marked.use({
 	gfm: true,
@@ -1775,6 +1782,8 @@ export function buildAllTasksFeed({
 			const group = goalGroupByIndex.get(entry.goalIndex);
 			return {
 				id: `goal-${entry.goalIndex}`,
+				goalIndex: entry.goalIndex,
+				goalOrdering: entry.goalOrdering,
 				label: entry.label,
 				href: `/todo/${indexToNomenclature(entry.goalIndex)}`,
 				count: group ? group.todos.length : 0

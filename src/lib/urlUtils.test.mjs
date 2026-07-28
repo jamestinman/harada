@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {
 	sanitizeUrlInput,
 	normalizeUrl,
-	parseStandaloneUrl
+	parseStandaloneUrl,
+	isTodoBookmark
 } from './urlUtils.js';
 
 test('sanitizeUrlInput strips characters that are not URL-safe', () => {
@@ -27,4 +28,11 @@ test('parseStandaloneUrl only accepts a single URL token', () => {
 	assert.equal(parseStandaloneUrl('Read https://example.com'), null);
 	assert.equal(parseStandaloneUrl('https://example.com extra'), null);
 	assert.equal(parseStandaloneUrl('POSSIBILITIES'), null);
+});
+
+test('isTodoBookmark detects linked urls and bare-url titles', () => {
+	assert.equal(isTodoBookmark({ title: 'Read this', url: 'https://example.com' }), true);
+	assert.equal(isTodoBookmark({ title: 'https://example.com/a', url: '' }), true);
+	assert.equal(isTodoBookmark({ title: 'Buy milk', url: '' }), false);
+	assert.equal(isTodoBookmark(null), false);
 });

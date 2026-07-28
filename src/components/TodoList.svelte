@@ -338,6 +338,11 @@
 	function quickAddToGroup(group, event) {
 		event?.stopPropagation?.();
 		if (!onCreateTodo || group?.groupType !== 'goal') return;
+		if (collapsedGroups.has(group.id)) {
+			const next = new Set(collapsedGroups);
+			next.delete(group.id);
+			collapsedGroups = next;
+		}
 		onCreateTodo({ goalIndex: group.goalIndex, listType: 'goal', title: '', shouldNavigate: false });
 	}
 
