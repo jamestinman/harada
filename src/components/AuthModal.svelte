@@ -5,7 +5,7 @@
 	let { isOpen = $bindable(false), redirectOnSignIn = null } = $props();
 
 	let mode = $state('signin'); // 'signin' | 'signup' | 'reset'
-	let email = $state('');
+	let email = $state(authStore.lastKnownUser?.email ?? '');
 	let password = $state('');
 	let confirmPassword = $state('');
 	let message = $state('');
@@ -83,7 +83,7 @@
 	}
 
 	function resetForm() {
-		email = '';
+		email = authStore.lastKnownUser?.email ?? '';
 		password = '';
 		confirmPassword = '';
 		message = '';

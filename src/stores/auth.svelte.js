@@ -84,7 +84,8 @@ class AuthStore {
 		// If we have a cached user but no live session, try refreshing with Supabase.
 		// This succeeds when the refresh token is still valid (up to 60 days by default).
 		try {
-			const { data } = await supabase.auth.getSession();
+			const { data, error } = await supabase.auth.refreshSession();
+			if (error) throw error;
 			if (data.session) {
 				this._applySession(data.session);
 				this._persistLastKnownUser(data.session.user);
@@ -161,6 +162,17 @@ class AuthStore {
 
 			if (!supabase) {
 				throw new Error('Supabase is not configured. Please set up your .env file.');
+			}
+
+			// Expired refresh tokens left in storage can make a fresh password
+			// sign-in fail. Clear the local session only — lastKnownUser stays
+			// so the UI still knows who was signed in.
+			if (!this.user) {
+				try {
+					await supabase.auth.signOut({ scope: 'local' });
+				} catch {
+					// Continue with password sign-in even if local sign-out fails.
+				}
 			}
 
 			const { data, error } = await supabase.auth.signInWithPassword({ email, password });

@@ -177,16 +177,33 @@
 				>
 					{userName}
 				</button>
-			{:else if !isOnline || needsSignIn}
+			{:else if needsSignIn}
+				<button
+					type="button"
+					onclick={() => onSignIn()}
+					class="flex flex-col items-end gap-0 text-right"
+					title={userName ? `Session expired — sign in as ${userName}` : 'Session expired — sign in to sync'}
+				>
+					<span class="text-xs font-bold tracking-wide text-red-500">NOT SIGNED IN</span>
+					{#if userName}
+						<span class="max-w-[8rem] truncate text-xs {isLight ? 'text-slate-500' : 'text-slate-400'}"
+							>{userName}</span
+						>
+					{/if}
+				</button>
+				<button
+					type="button"
+					onclick={() => onSignIn()}
+					class="rounded-lg border px-3 py-2 text-sm font-medium transition-colors {signInClass}"
+				>
+					Sign In
+				</button>
+			{:else if !isOnline}
 				<div
 					class="flex flex-col items-end gap-0 text-right"
-					title={userName ? (needsSignIn ? `Signed out - was ${userName}` : `Offline - signed in as ${userName}`) : needsSignIn ? 'Session expired' : 'Offline'}
+					title={userName ? `Offline - signed in as ${userName}` : 'Offline'}
 				>
-					{#if needsSignIn}
-						<span class="text-xs font-bold tracking-wide text-red-500">NOT SIGNED IN</span>
-					{:else}
-						<span class="text-xs font-bold tracking-wide text-amber-500">OFFLINE</span>
-					{/if}
+					<span class="text-xs font-bold tracking-wide text-amber-500">OFFLINE</span>
 					{#if userName}
 						<span class="max-w-[8rem] truncate text-xs {isLight ? 'text-slate-500' : 'text-slate-400'}"
 							>{userName}</span
