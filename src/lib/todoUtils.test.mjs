@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { JSDOM } from 'jsdom';
 import {
 	mergeTodoLists,
 	buildFeedPinnedRows,
@@ -29,6 +30,11 @@ import {
 	getGoalViewIndentLevel,
 	renderMarkdown
 } from './todoUtils.js';
+
+// renderMarkdown sanitizes via DOMPurify, which needs a DOM. The app only ever
+// renders markdown in the browser; supply a DOM here so the tests exercise the
+// real sanitizer instead of the server's empty-string path.
+globalThis.window = new JSDOM('').window;
 
 test('collectDescendantTaskIds returns nested descendants via parentId', () => {
 	const todos = [

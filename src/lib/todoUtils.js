@@ -1,7 +1,7 @@
 // Utility functions for todo management
 import { marked } from 'marked';
 import markedKatex from 'marked-katex-extension';
-import DOMPurify from 'isomorphic-dompurify';
+import createDOMPurify from 'dompurify';
 
 /**
  * marked does not sanitize, and note content can be written by third parties
@@ -18,9 +18,27 @@ const SANITIZE_CONFIG = {
 	FORBID_ATTR: ['formaction', 'srcdoc', 'ping']
 };
 
+/**
+ * DOMPurify needs a real DOM. Built lazily and only in the browser: pulling in a
+ * server-side DOM (jsdom) would break the Vercel build, because jsdom's
+ * html-encoding-sniffer require()s an ESM-only module that its runtime rejects.
+ * Retries until a DOM exists rather than caching a negative result.
+ */
+let purifier = null;
+function getPurifier() {
+	if (purifier) return purifier;
+	if (typeof window === 'undefined' || !window.document) return null;
+	purifier = createDOMPurify(window);
+	return purifier;
+}
+
 export function sanitizeHtml(html) {
 	if (typeof html !== 'string' || html.length === 0) return '';
-	return DOMPurify.sanitize(html, SANITIZE_CONFIG);
+	const dompurify = getPurifier();
+	// No DOM means we're rendering on the server, where note content is never
+	// available anyway. Drop the HTML rather than emit it unsanitized.
+	if (!dompurify) return '';
+	return dompurify.sanitize(html, SANITIZE_CONFIG);
 }
 
 export function createTodoId() {
