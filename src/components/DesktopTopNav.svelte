@@ -80,7 +80,7 @@
 		isLight ? 'text-orange-600 font-semibold' : 'text-orange-400 font-semibold'
 	);
 
-	const brandHref = $derived(isApp ? '/harada' : '/');
+	const brandHref = $derived(isApp || authStore.user ? '/harada' : '/');
 </script>
 
 <header

@@ -1,7 +1,10 @@
 <script>
 	import { browser } from '$app/environment';
+	import { goto } from '$app/navigation';
 	import AppleStoreBtn from '$components/AppleStoreBtn.svelte';
 	import GooglePlayBtn from '$components/GooglePlayBtn.svelte';
+	import HaradaExplainerAnimation from '$components/HaradaExplainerAnimation.svelte';
+	import { authStore } from '$stores/auth.svelte.js';
 
 	const haradaAgentPrompt = `Read https://haradato.com/skill.md and follow it to work with my Harada workspace to create and manage my to-do list.`;
 
@@ -15,6 +18,11 @@
 			copiedPrompt = false;
 		}, 2000);
 	}
+
+	$effect(() => {
+		if (!browser || authStore.loading) return;
+		if (authStore.user) goto('/harada', { replaceState: true });
+	});
 </script>
 
 <svelte:head>
@@ -25,6 +33,7 @@
 	/>
 </svelte:head>
 
+{#if !authStore.user}
 <section class="content-page space-y-24 pb-12 sm:space-y-32">
 	<!-- ───────────────────────── HERO ───────────────────────── -->
 	<div class="relative -mt-4">
@@ -64,13 +73,7 @@
 			<!-- product shot -->
 			<div class="relative mx-auto w-full max-w-md">
 				<div class="overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-2 shadow-2xl shadow-slate-900/10 ring-1 ring-black/5 dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/40">
-					<img
-						src="/img/screenshot.webp"
-						alt="A Haradato life-goal chart - one central goal surrounded by eight colour-coded pillars"
-						class="h-auto w-full rounded-2xl"
-						width="960"
-						height="960"
-					/>
+					<HaradaExplainerAnimation />
 				</div>
 				<div class="absolute -bottom-4 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-slate-200 bg-white/90 px-4 py-1.5 text-xs font-medium text-slate-600 shadow-lg backdrop-blur dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-300">
 					Your life, on one page
@@ -264,6 +267,7 @@
 		</div>
 	</div>
 </section>
+{/if}
 
 <style>
 	.dot-grid {

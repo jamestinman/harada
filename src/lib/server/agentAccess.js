@@ -77,3 +77,30 @@ export async function assertAgentCanAccessHuman(admin, humanEmail, agentDumbname
 export function adminOrThrow() {
 	return getSupabaseAdmin();
 }
+
+/**
+ * Guard an upsert that accepts a caller-supplied row id.
+ *
+ * The admin client bypasses RLS, so without this an agent approved for one user
+ * could pass another user's row id and overwrite it (reassigning user_id in the
+ * process). Rejects when the id already exists under a different owner.
+ *
+ * @param {import('@supabase/supabase-js').SupabaseClient} admin
+ * @param {'tasks' | 'notes'} table
+ * @param {string} id
+ * @param {string} userId
+ * @returns {Promise<boolean>} true when the row already exists and is owned by userId
+ */
+export async function assertRowOwnedOrNew(admin, table, id, userId) {
+	const { data, error } = await admin
+		.from(table)
+		.select('user_id')
+		.eq('id', id)
+		.maybeSingle();
+	if (error) throw error;
+	if (!data) return false;
+	if (data.user_id !== userId) {
+		throw Object.assign(new Error('row_not_owned'), { code: 'row_not_owned', status: 403 });
+	}
+	return true;
+}

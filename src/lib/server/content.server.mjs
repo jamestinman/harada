@@ -3,6 +3,11 @@ import { JSDOM } from 'jsdom';
 import { extractText as extractPdfText, getDocumentProxy, getMeta } from 'unpdf';
 import { GOOGLE_API_KEY } from '$env/static/private';
 import { doFetchRaw } from '$lib/server/fetch.server.mjs';
+import {
+	BlockedUrlError,
+	fetchGuardedRedirects,
+	readCappedBytes
+} from '$lib/server/urlGuard.server.mjs';
 
 const knownNonContentTags = [
 	'header',
@@ -194,13 +199,18 @@ async function extractHtmlText(url) {
 	let response;
 
 	try {
-		response = await doFetchRaw(url);
+		response = await fetchGuardedRedirects(url, (target) =>
+			doFetchRaw(target, { followRedirects: false })
+		);
 		if (!response.ok) {
 			const status = response?.status ?? 502;
 			const msg = response?.statusText ?? 'Bad Gateway';
 			return { ok: 0, status, message: msg };
 		}
 	} catch (e) {
+		if (e instanceof BlockedUrlError) {
+			return { ok: 0, status: e.status, message: e.message };
+		}
 		const msg = e.message || e?.body?.message || e.statusText || 'Network error';
 		return { ok: 0, status: 500, message: msg };
 	}
@@ -212,8 +222,15 @@ async function extractHtmlText(url) {
 		contentType.includes('application/pdf') ||
 		contentType.includes('application/x-pdf');
 
-	const dataBuffer = await response.arrayBuffer();
-	const dataBytes = new Uint8Array(dataBuffer);
+	let dataBytes;
+	try {
+		dataBytes = await readCappedBytes(response);
+	} catch (e) {
+		if (e instanceof BlockedUrlError) {
+			return { ok: 0, status: e.status, message: e.message };
+		}
+		return { ok: 0, status: 500, message: e?.message || 'Could not read remote content' };
+	}
 	const isPdfSignature =
 		dataBytes.length >= 4 &&
 		dataBytes[0] === 0x25 &&

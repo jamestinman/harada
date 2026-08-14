@@ -544,3 +544,49 @@ test('renderMarkdown leaves currency-like dollars alone', () => {
 	assert.match(html, /\$5/);
 	assert.match(html, /\$12\.50/);
 });
+
+test('renderMarkdown strips script tags and inline event handlers', () => {
+	const html = renderMarkdown('Hello\n\n<script>alert(1)</script><img src=x onerror="alert(1)">');
+	assert.doesNotMatch(html, /<script/i);
+	assert.doesNotMatch(html, /onerror/i);
+	assert.match(html, /Hello/);
+});
+
+test('renderMarkdown defuses javascript: and data: hrefs', () => {
+	// normalizeNoteLinkHref rewrites unknown schemes to https://, leaving an
+	// inert link rather than an executable one.
+	assert.doesNotMatch(renderMarkdown('[x](javascript:alert(1))'), /href="javascript:/i);
+	assert.doesNotMatch(
+		renderMarkdown('<a href="data:text/html,<script>alert(1)</script>">x</a>'),
+		/href="data:/i
+	);
+});
+
+test('renderMarkdown strips svg, iframe and form vectors', () => {
+	const html = renderMarkdown(
+		'<svg onload="alert(1)"></svg><iframe src="https://evil.test"></iframe>' +
+			'<form action="https://evil.test"><input name="a"></form>'
+	);
+	assert.doesNotMatch(html, /onload/i);
+	assert.doesNotMatch(html, /<iframe/i);
+	assert.doesNotMatch(html, /<form|<input/i);
+});
+
+test('renderMarkdown neutralises MathML annotation mXSS but keeps KaTeX markup', () => {
+	const attack = renderMarkdown(
+		'<math><semantics><annotation encoding="text/html"><script>alert(1)</script></annotation></semantics></math>'
+	);
+	assert.doesNotMatch(attack, /<script/i);
+
+	// KaTeX's own <semantics>/<annotation> wrapper must survive.
+	const math = renderMarkdown('$x = 1$');
+	assert.match(math, /<semantics>/);
+	assert.match(math, /<annotation encoding="application\/x-tex">/);
+});
+
+test('renderMarkdown keeps safe links and external link attributes', () => {
+	const html = renderMarkdown('[site](https://example.com)');
+	assert.match(html, /href="https:\/\/example\.com"/);
+	assert.match(html, /target="_blank"/);
+	assert.match(html, /rel="noopener noreferrer"/);
+});

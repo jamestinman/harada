@@ -14,7 +14,11 @@ import {
 	jsonFromAgentError,
 	readMlAuth
 } from '$lib/server/agentRoutes.js';
-import { adminOrThrow, normalizeHumanEmail } from '$lib/server/agentAccess.js';
+import {
+	adminOrThrow,
+	assertRowOwnedOrNew,
+	normalizeHumanEmail
+} from '$lib/server/agentAccess.js';
 
 function taskSignPayload(body) {
 	return {
@@ -134,6 +138,11 @@ export async function POST({ request }) {
 		const { userId } = await authorizeAgentForHuman(humanEmail, agentDumbname);
 		const row = rowFromBody(body, userId);
 		const admin = adminOrThrow();
+
+		// Reject a caller-supplied id that belongs to a different user, and keep
+		// the original created_at when updating an existing row.
+		const existed = await assertRowOwnedOrNew(admin, 'tasks', row.id, userId);
+		if (existed) delete row.created_at;
 
 		const { error: upErr } = await admin.from('tasks').upsert(row, { onConflict: 'id' });
 		if (upErr) throw upErr;

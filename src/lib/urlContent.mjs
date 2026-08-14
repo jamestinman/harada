@@ -1,3 +1,5 @@
+import { supabase } from '$lib/supabaseClient.js';
+
 const HOSTED_RETRIEVE_ENDPOINT = 'https://haradato.com/api/retrieve';
 
 function retrieveEndpoint() {
@@ -9,16 +11,30 @@ function retrieveEndpoint() {
 	return '/api/retrieve';
 }
 
+/** /api/retrieve fetches on the user's behalf, so it requires a signed-in session. */
+async function accessToken() {
+	if (!supabase) return null;
+	try {
+		const {
+			data: { session }
+		} = await supabase.auth.getSession();
+		return session?.access_token ?? null;
+	} catch {
+		return null;
+	}
+}
+
 export async function fetchUrlContent(url) {
-	const response = await fetch(
-		`${retrieveEndpoint()}?url=${encodeURIComponent(url)}`,
-		{
-			headers: {
-				'User-Agent':
-					'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36'
-			}
+	const token = await accessToken();
+	if (!token) {
+		return { ok: 0, status: 401, message: 'Sign in to load content from a URL' };
+	}
+
+	const response = await fetch(`${retrieveEndpoint()}?url=${encodeURIComponent(url)}`, {
+		headers: {
+			Authorization: `Bearer ${token}`
 		}
-	);
+	});
 
 	if (!response.ok) {
 		let message = 'Unable to load URL';

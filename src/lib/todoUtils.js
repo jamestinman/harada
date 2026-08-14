@@ -1,6 +1,27 @@
 // Utility functions for todo management
 import { marked } from 'marked';
 import markedKatex from 'marked-katex-extension';
+import DOMPurify from 'isomorphic-dompurify';
+
+/**
+ * marked does not sanitize, and note content can be written by third parties
+ * through the agent API, so every string we hand to {@html} goes through here.
+ * KaTeX output (MathML + annotated spans) must survive intact.
+ */
+const SANITIZE_CONFIG = {
+	USE_PROFILES: { html: true, mathMl: true, svg: true },
+	// KaTeX wraps its MathML in <semantics>/<annotation>; DOMPurify's mathMl
+	// profile drops both, which would leak the raw TeX into the rendered output.
+	ADD_TAGS: ['semantics', 'annotation'],
+	ADD_ATTR: ['target', 'rel', 'align', 'colspan', 'rowspan', 'encoding'],
+	FORBID_TAGS: ['style', 'form', 'input', 'button', 'textarea', 'select'],
+	FORBID_ATTR: ['formaction', 'srcdoc', 'ping']
+};
+
+export function sanitizeHtml(html) {
+	if (typeof html !== 'string' || html.length === 0) return '';
+	return DOMPurify.sanitize(html, SANITIZE_CONFIG);
+}
 
 export function createTodoId() {
 	return `todo_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -375,7 +396,7 @@ marked.use({
 
 export function renderMarkdown(md) {
 	if (!md) return '';
-	return rewriteRenderedAnchors(marked.parse(md));
+	return sanitizeHtml(rewriteRenderedAnchors(marked.parse(md)));
 }
 
 function nextOrderedMarker(marker) {
