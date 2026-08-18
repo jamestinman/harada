@@ -3,7 +3,7 @@ import { Capacitor } from '@capacitor/core';
 import { localGet, localSet, prefGet, prefSet } from '$lib/PersistentStorage.mjs';
 import { loadLocalHaradaSnapshot, saveLocalHaradaSnapshot } from '$lib/LocalHaradaDb.js';
 import { supabase } from '$lib/supabaseClient.js';
-import { isChartUnset } from '$lib/haradaGridUtils.js';
+import { clearedCell, isChartUnset, resolveGridCell } from '$lib/haradaGridUtils.js';
 import { synthStore } from './synth.svelte.js';
 import {
 	buildGoalListMeta,
@@ -177,7 +177,7 @@ function normalizeTaskGoalLink(link) {
 }
 
 class Store {
-	version = $state('1.0.27');
+	version = $state('1.0.28');
 	activeTab = $state('harada');
 	selectedGoalFilter = $state('all');
 	selectedGoalForNew = $state('');
@@ -314,6 +314,7 @@ class Store {
   }
 
 	_isInitialized = false;
+	_isInitializing = false;
 	_realtimeChannel = null;
 	_pendingCloudSync = false;
 	_refreshPromise = null;
@@ -401,7 +402,14 @@ class Store {
 				[this._localSavingPromise, this._cloudSavingPromise].filter(Boolean)
 			);
 		}
-		if (this._hasPendingDirty()) return;
+		if (this._hasPendingDirty()) {
+			// Offline edits queue up as dirty state. Native webviews don't reliably
+			// fire 'online' after airplane mode ends, so also push on foreground.
+			if (this.isOnline && authStore.user && supabase) {
+				await this.saveNow();
+			}
+			return;
+		}
 		await this.refreshFromSupabase();
 	}
 
@@ -708,33 +716,53 @@ class Store {
 	}
 
 	async initialize() {
-		if (!browser || this._isInitialized) return;
+		// _isInitializing: boot now stays in-flight for a while offline (the auth
+		// wait below), and the 'online' listener may call initialize() again in
+		// that window - don't let two boots interleave.
+		if (!browser || this._isInitialized || this._isInitializing) return;
+		this._isInitializing = true;
 
 		this._setBootstrapping(true);
-		const shouldHydrateFromCloud = !!(authStore.user && supabase);
-		if (shouldHydrateFromCloud) {
-			this.initialCloudHydrationStatus = 'loading';
-			this.remoteAccountHasData = false;
-		} else {
-			this._resetInitialCloudHydration();
-		}
+		this._resetInitialCloudHydration();
 
 		try {
-			// Wait for auth before choosing the IndexedDB owner or hitting Supabase.
-			if (supabase) {
-				await authStore.whenReady();
-			}
-
-			// 1) Bootstrap from local persistent storage so the app works offline
+			// 1) Bootstrap from local persistent storage FIRST so the app works
+			// offline. The IndexedDB owner comes from the cached last-known user,
+			// which is available synchronously. This must not wait on auth: offline
+			// with an expired token, supabase-js retries the refresh for ~30-60s,
+			// and launching in airplane mode used to sit on a placeholder chart
+			// for that whole window.
+			const assumedOwnerId = this._localOwnerUserId();
 			const local = await this._loadLocalSnapshot();
 			if (local) {
 				this._applyLocalSnapshot(local);
 				this._migrateLegacyTaskMarkdownInMemory();
 				this._migratePrimaryTaskNotesInMemory();
 				this._migrateLegacyTaskLinksInMemory();
+				// Local data is enough to use the app - don't hold the UI while
+				// auth and cloud hydration catch up below.
+				this._setBootstrapping(false);
 			}
 
-			// 2) If not authenticated or Supabase is unavailable, we stay in offline/local-only mode
+			// 2) Wait for the initial session check before touching Supabase.
+			if (supabase) {
+				await authStore.whenReady();
+			}
+
+			// Auth may have resolved to a different owner than the cached one
+			// (e.g. lastKnownUser was cleared but a session survived). Reload the
+			// mirror for the right owner in that rare case.
+			if (this._localOwnerUserId() !== assumedOwnerId) {
+				const owned = await this._loadLocalSnapshot();
+				if (owned) {
+					this._applyLocalSnapshot(owned);
+					this._migrateLegacyTaskMarkdownInMemory();
+					this._migratePrimaryTaskNotesInMemory();
+					this._migrateLegacyTaskLinksInMemory();
+				}
+			}
+
+			// 3) If not authenticated or Supabase is unavailable, we stay in offline/local-only mode
 			// but still want to provide a helpful seeded board if the grid is blank.
 			if (!authStore.user || !supabase) {
 				if (isGridBlank(this.harada_chart.grid)) {
@@ -748,7 +776,9 @@ class Store {
 				return;
 			}
 
-			// 3) If online and authenticated, hydrate from Supabase and overwrite local snapshot
+			// 4) If online and authenticated, hydrate from Supabase and overwrite local snapshot
+			this.initialCloudHydrationStatus = 'loading';
+			this.remoteAccountHasData = false;
 			const data = await this.loadFromSupabase();
 			if (this.syncError) {
 				this.initialCloudHydrationStatus = 'error';
@@ -765,7 +795,7 @@ class Store {
 		} catch (err) {
 			console.error('Failed to initialize from Supabase:', err);
 			this.syncError = err.message;
-			if (shouldHydrateFromCloud) {
+			if (this.initialCloudHydrationStatus === 'loading') {
 				this.initialCloudHydrationStatus = 'error';
 			}
 		} finally {
@@ -774,6 +804,7 @@ class Store {
 			}
 			this._setBootstrapping(false);
 			this._isInitialized = true;
+			this._isInitializing = false;
 		}
 
 		// Only attempt realtime subscription when Supabase and auth are available
@@ -838,30 +869,9 @@ class Store {
 		const remoteGrid = this._normalizeGridSnapshot(remoteGridSnapshot);
 		let changed = false;
 		const merged = localGrid.map((localCell, i) => {
-			const remoteCell = remoteGrid[i];
-			const localTime = localCell?.updated_at ? new Date(localCell.updated_at).getTime() : 0;
-			const remoteTime = remoteCell?.updated_at ? new Date(remoteCell.updated_at).getTime() : 0;
-			const localText = (localCell?.text ?? '').trim();
-			const remoteText = (remoteCell?.text ?? '').trim();
-
-			// Never let a freshly-seeded blank remote cell (no updated_at, no text) wipe
-			// a populated local title just because local also lacks updated_at.
-			// Background tab-focus refresh used to clobber goal titles via this branch.
-			if (localText && !remoteText && remoteTime === 0) {
-				return localCell;
-			}
-
-			if (remoteTime > localTime) {
-				changed = true;
-				return remoteCell;
-			}
-			if (remoteTime === localTime && JSON.stringify(remoteCell) !== JSON.stringify(localCell)) {
-				// Tie on timestamp: prefer the cell that actually holds content over a blank one.
-				if (localText && !remoteText) return localCell;
-				changed = true;
-				return remoteCell;
-			}
-			return localCell;
+			const resolved = resolveGridCell(localCell, remoteGrid[i]);
+			if (resolved.changed) changed = true;
+			return resolved.cell;
 		});
 		return { merged, changed };
 	}
@@ -1160,22 +1170,11 @@ class Store {
 			const remoteCell = remoteGrid[i];
 			if (!remoteCell) return localCell;
 
-			const localTime = localCell?.updated_at ? new Date(localCell.updated_at).getTime() : 0;
-			const remoteTime = remoteCell?.updated_at ? new Date(remoteCell.updated_at).getTime() : 0;
-
-			// Mirror mergeGridByUpdatedAt: don't let a blank remote cell wipe a populated
-			// local title when the remote has no timestamp.
-			const localText = (localCell?.text ?? '').trim();
-			const remoteText = (remoteCell?.text ?? '').trim();
-			if (localText && !remoteText && remoteTime === 0) {
-				return localCell;
-			}
-
-			if (remoteTime > localTime) {
-				changed = true;
-				return { ...defaultCell(), ...remoteCell };
-			}
-			return localCell;
+			// Same resolution as the snapshot merge, so the two paths cannot drift.
+			const resolved = resolveGridCell(localCell, remoteCell);
+			if (!resolved.changed) return localCell;
+			changed = true;
+			return { ...defaultCell(), ...resolved.cell };
 		});
 
 		if (changed) {
@@ -1761,8 +1760,10 @@ class Store {
 			grid[targetLinked] = { ...nextTargetCell };
 		}
 
+		// clearedCell, not defaultCell: the clear must carry a timestamp or sync
+		// resurrects the old text, and it must not re-seed placeholder titles.
 		for (const index of sourceBlock) {
-			grid[index] = defaultCell(index);
+			grid[index] = clearedCell(timestamp);
 		}
 
 		this.harada_chart = {
@@ -1893,9 +1894,11 @@ class Store {
 		const targetLinked = getLinkedGoalIndex(targetIndex);
 		if (targetLinked !== null) grid[targetLinked] = { ...nextTargetCell };
 
-		grid[sourceIndex] = defaultCell(sourceIndex);
+		// clearedCell, not defaultCell: the clear must carry a timestamp or sync
+		// resurrects the old text, and it must not re-seed placeholder titles.
+		grid[sourceIndex] = clearedCell(timestamp);
 		const sourceLinked = getLinkedGoalIndex(sourceIndex);
-		if (sourceLinked !== null) grid[sourceLinked] = defaultCell(sourceLinked);
+		if (sourceLinked !== null) grid[sourceLinked] = clearedCell(timestamp);
 
 		this.harada_chart = {
 			...this.harada_chart,

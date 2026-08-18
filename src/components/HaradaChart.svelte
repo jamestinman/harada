@@ -511,14 +511,20 @@
 		if (sourceCanonical === 40 || targetCanonical === 40) return;
 		if (sourceCanonical === targetCanonical) return;
 
+		// Every cell we move must be re-stamped, not just the two canonical ones.
+		// A moved cell keeps the timestamp it had in its old square, so without this
+		// a stale remote copy can out-date it and drag the old contents back.
+		const swappedAt = new Date().toISOString();
+		const moved = (cell) => (cell ? { ...cell, updated_at: swappedAt } : cell);
+
 		// Swap all 9 cells of each outer block pairwise (preserves relative task positions)
 		const sourceCells = getBlockCellIndices(sourceCanonical);
 		const targetCells = getBlockCellIndices(targetCanonical);
 		for (let i = 0; i < sourceCells.length; i++) {
 			const s = newGrid[sourceCells[i]] ? { ...newGrid[sourceCells[i]] } : undefined;
 			const t = newGrid[targetCells[i]] ? { ...newGrid[targetCells[i]] } : undefined;
-			newGrid[sourceCells[i]] = t;
-			newGrid[targetCells[i]] = s;
+			newGrid[sourceCells[i]] = moved(t);
+			newGrid[targetCells[i]] = moved(s);
 		}
 
 		// Swap the linked center-block cells (the "shadow" sub-goal in the center 3×3)
@@ -527,8 +533,8 @@
 		if (sourceLinked !== null && targetLinked !== null) {
 			const sL = newGrid[sourceLinked] ? { ...newGrid[sourceLinked] } : undefined;
 			const tL = newGrid[targetLinked] ? { ...newGrid[targetLinked] } : undefined;
-			newGrid[sourceLinked] = tL;
-			newGrid[targetLinked] = sL;
+			newGrid[sourceLinked] = moved(tL);
+			newGrid[targetLinked] = moved(sL);
 		}
 
 		updateGoalTimestamp(newGrid, sourceCanonical);

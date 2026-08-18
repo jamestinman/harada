@@ -18,6 +18,11 @@
 		if (!browser || store.isBootstrapping || wizardOfferedThisVisit) return;
 		if (!chartUnset) return;
 
+		// Boot no longer waits for the session check (it can take ~30s offline),
+		// so hold the wizard until auth settles. For fresh visitors with no stored
+		// session this resolves near-instantly.
+		if (authStore.loading) return;
+
 		// Signed-out users keep local/offline behavior.
 		if (!authStore.user) {
 			store.showOnboardingWizard = true;

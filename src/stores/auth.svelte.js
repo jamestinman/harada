@@ -35,8 +35,13 @@ class AuthStore {
 
 			this.initialize();
 
-			// When coming back online, try to silently refresh an expired session
+			// When coming back online, try to silently refresh an expired session.
+			// Native webviews don't reliably fire 'online' after airplane mode ends,
+			// so also try whenever the app returns to the foreground.
 			window.addEventListener('online', () => this._tryRefreshSession());
+			document.addEventListener('visibilitychange', () => {
+				if (document.visibilityState === 'visible') this._tryRefreshSession();
+			});
 		}
 	}
 
@@ -80,7 +85,9 @@ class AuthStore {
 	}
 
 	async _tryRefreshSession() {
-		if (!supabase || this.user) return;
+		// Only useful when someone was signed in here before - otherwise there is
+		// no refresh token to use and the call just logs noise.
+		if (!supabase || this.user || !this.lastKnownUser) return;
 		// If we have a cached user but no live session, try refreshing with Supabase.
 		// This succeeds when the refresh token is still valid (up to 60 days by default).
 		try {
