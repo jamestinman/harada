@@ -45,6 +45,13 @@ This will create:
 - Row Level Security (RLS) policies so users can only access their own data
 - Real-time subscriptions for live updates
 - Automatic `updated_at` timestamp trigger
+- `chart_events` table: append-only log of structural operations (goal moves,
+  merges, clears) that devices replay in order, so a stale device cannot
+  resurrect a goal that was reorganized elsewhere
+
+**Existing projects**: run `docs/patches/add-chart-events.sql` in the SQL
+Editor to add the events table to an already-set-up database. Until it is
+applied, the app logs one console warning and falls back to state-only sync.
 
 ## 5. Enable Email Authentication
 

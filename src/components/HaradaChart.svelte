@@ -5,9 +5,6 @@
 		indexToNomenclature,
 		canonicalGoalIndex,
 		getLinkedGoalIndex,
-		getBlockCellIndices,
-		buildGoalBlockSwapMap,
-		buildPairSwapMap,
 		getGoalLabelFromIndex,
 		defaultMergedGoalTitle,
 		resolveGoalDropTargetIndex,
@@ -489,60 +486,15 @@
 		if (!onUpdateGrid) return;
 		if (sourceIndex === targetIndex) return;
 
-		const newGrid = [...grid];
-
+		// The store owns the whole operation (grid + todos + links) so it can
+		// record it as a chart event for other devices to replay.
 		if (dragType === 'task') {
-			// Swap the two grid cells
-			const s = newGrid[sourceIndex] ? { ...newGrid[sourceIndex] } : undefined;
-			const t = newGrid[targetIndex] ? { ...newGrid[targetIndex] } : undefined;
-			newGrid[sourceIndex] = t;
-			newGrid[targetIndex] = s;
-
-			await store.applyGoalIndexSwapMap(buildPairSwapMap(sourceIndex, targetIndex));
-
-			onUpdateGrid(newGrid);
+			await store.swapGoalPair(sourceIndex, targetIndex);
 			return;
 		}
 
 		// Goal drag: swap entire outer blocks + linked center cells + todos
-		const sourceCanonical = canonicalGoalIndex(sourceIndex);
-		const targetCanonical = canonicalGoalIndex(targetIndex);
-
-		if (sourceCanonical === 40 || targetCanonical === 40) return;
-		if (sourceCanonical === targetCanonical) return;
-
-		// Every cell we move must be re-stamped, not just the two canonical ones.
-		// A moved cell keeps the timestamp it had in its old square, so without this
-		// a stale remote copy can out-date it and drag the old contents back.
-		const swappedAt = new Date().toISOString();
-		const moved = (cell) => (cell ? { ...cell, updated_at: swappedAt } : cell);
-
-		// Swap all 9 cells of each outer block pairwise (preserves relative task positions)
-		const sourceCells = getBlockCellIndices(sourceCanonical);
-		const targetCells = getBlockCellIndices(targetCanonical);
-		for (let i = 0; i < sourceCells.length; i++) {
-			const s = newGrid[sourceCells[i]] ? { ...newGrid[sourceCells[i]] } : undefined;
-			const t = newGrid[targetCells[i]] ? { ...newGrid[targetCells[i]] } : undefined;
-			newGrid[sourceCells[i]] = moved(t);
-			newGrid[targetCells[i]] = moved(s);
-		}
-
-		// Swap the linked center-block cells (the "shadow" sub-goal in the center 3×3)
-		const sourceLinked = getLinkedGoalIndex(sourceCanonical);
-		const targetLinked = getLinkedGoalIndex(targetCanonical);
-		if (sourceLinked !== null && targetLinked !== null) {
-			const sL = newGrid[sourceLinked] ? { ...newGrid[sourceLinked] } : undefined;
-			const tL = newGrid[targetLinked] ? { ...newGrid[targetLinked] } : undefined;
-			newGrid[sourceLinked] = moved(tL);
-			newGrid[targetLinked] = moved(sL);
-		}
-
-		updateGoalTimestamp(newGrid, sourceCanonical);
-		updateGoalTimestamp(newGrid, targetCanonical);
-
-		await store.applyGoalIndexSwapMap(buildGoalBlockSwapMap(sourceCanonical, targetCanonical));
-
-		onUpdateGrid(newGrid);
+		await store.swapGoalBlocks(sourceIndex, targetIndex);
 	}
 
 	function normalizeReleaseIntent(dragState, releaseRawIndex, clientX, clientY) {

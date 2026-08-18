@@ -682,3 +682,90 @@ END $$;
 
 -- Optional cleanup after app code no longer reads harada_charts.todos:
 -- ALTER TABLE harada_charts DROP COLUMN IF EXISTS todos;
+
+-- ---------------------------------------------------------------------------
+-- Chart events: append-only log of structural chart operations
+-- (goal moves, merges, clears). See docs/patches/add-chart-events.sql for the
+-- standalone patch and the full rationale. seq gives all devices one canonical
+-- order; devices replay unseen events before the snapshot merge so structural
+-- changes cannot be resurrected by stale copies. inverse feeds a future undo.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS chart_events (
+  seq BIGSERIAL PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  device_id TEXT NOT NULL,
+  batch_id TEXT NOT NULL,
+  client_event_id TEXT NOT NULL,
+  op TEXT NOT NULL,
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  inverse JSONB NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, client_event_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_chart_events_user_seq ON chart_events(user_id, seq);
+
+ALTER TABLE chart_events ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+  BEGIN
+    CREATE POLICY chart_events_select_own ON chart_events
+      FOR SELECT USING (auth.uid() = user_id);
+  EXCEPTION WHEN duplicate_object THEN
+    NULL;
+  END;
+END $$;
+
+CREATE OR REPLACE FUNCTION append_chart_events(in_rows jsonb)
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  row_data jsonb;
+  inserted_count INTEGER := 0;
+BEGIN
+  IF in_rows IS NULL OR jsonb_typeof(in_rows) <> 'array' THEN
+    RETURN 0;
+  END IF;
+
+  IF auth.uid() IS NULL THEN
+    RETURN 0;
+  END IF;
+
+  FOR row_data IN SELECT value FROM jsonb_array_elements(in_rows) AS t(value)
+  LOOP
+    INSERT INTO chart_events (user_id, device_id, batch_id, client_event_id, op, payload, inverse)
+    VALUES (
+      auth.uid(),
+      COALESCE(row_data->>'device_id', 'unknown'),
+      COALESCE(row_data->>'batch_id', ''),
+      row_data->>'client_event_id',
+      row_data->>'op',
+      COALESCE(row_data->'payload', '{}'::jsonb),
+      row_data->'inverse'
+    )
+    ON CONFLICT (user_id, client_event_id) DO NOTHING;
+
+    IF FOUND THEN
+      inserted_count := inserted_count + 1;
+    END IF;
+  END LOOP;
+
+  RETURN inserted_count;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION append_chart_events(jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION append_chart_events(jsonb) TO authenticated;
+
+DO $$
+BEGIN
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE chart_events;
+  EXCEPTION WHEN duplicate_object THEN
+    NULL;
+  END;
+END $$;

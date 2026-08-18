@@ -93,6 +93,19 @@ Use this checklist to verify the Supabase integration is working correctly.
 - [ ] Edit a cell on Device B
 - [ ] Cell updates on Device A automatically
 - [ ] No infinite loops or flickering
+
+### Structural Ops Across Devices (chart_events)
+Requires docs/patches/add-chart-events.sql applied to the Supabase project.
+- [ ] Device A and B signed in, both showing the same chart
+- [ ] Move a goal (drag to empty cell) on A → B shows the move, todos/notes follow
+- [ ] Merge two goals on A → B shows the merged goal; source stays gone on both
+- [ ] Clear a goal on A → B clears it; its tasks land in Z2 on both
+- [ ] Stale device: put B offline BEFORE a merge on A, edit a todo under the
+      source goal on B, bring B online → todo ends up under the merged target
+      goal, the old goal does NOT resurrect
+- [ ] chart_events rows appear in Supabase (one per op, batch/device ids set)
+- [ ] With the patch NOT applied, ops still work locally and a single console
+      warning appears (no errors, no broken sync)
 - [ ] Console shows "Realtime update received"
 
 ### Todos Sync

@@ -1287,29 +1287,15 @@
 	function clearGoal() {
 		if (goalIndex === null) return;
 
+		// The store clears the grid cells too, and records a chart event so
+		// other devices replay the clear instead of resurrecting the goal.
 		store.clearGoalBlock(goalIndex);
-
-		const grid = [...store.harada_chart.grid];
-		const emptyCell = { text: '', status: 'todo', readme: '', color: 'default', updated_at: null };
-
-		if (!grid[goalIndex]) grid[goalIndex] = { ...emptyCell };
-		grid[goalIndex] = { ...grid[goalIndex], text: '', readme: '', color: 'default' };
-
-		const linkedGoalIndex = getLinkedGoalIndex(goalIndex);
-		if (linkedGoalIndex !== null) {
-			if (!grid[linkedGoalIndex]) grid[linkedGoalIndex] = { ...emptyCell };
-			grid[linkedGoalIndex] = { ...grid[linkedGoalIndex], text: '', readme: '', color: 'default' };
-		}
-
-		updateGoalTimestamp(grid, goalIndex);
-		store.harada_chart = { ...store.harada_chart, grid };
 
 		editedGoalTitle = '';
 		editedGoalDescription = '';
 		selectedColor = 'default';
 		isEditingGoal = false;
 
-		store.registerGridMutation({ immediate: true });
 		goto('/todo', { replaceState: true });
 	}
 

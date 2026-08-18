@@ -4,7 +4,8 @@ import {
 } from '$lib/todoUtils.js';
 
 const DB_NAME = 'harada_local_mirror';
-const DB_VERSION = 1;
+// v2: events_outbox store for pending chart_events (structural op log)
+const DB_VERSION = 2;
 const DEFAULT_OWNER = 'local';
 
 const TABLES = [
@@ -69,6 +70,7 @@ function openDb() {
 			createStore(db, 'charts');
 			for (const table of TABLES) createStore(db, table);
 			createStore(db, 'sync_meta');
+			createStore(db, 'events_outbox');
 		};
 
 		request.onsuccess = () => resolve(request.result);
@@ -295,6 +297,77 @@ export async function saveLocalHaradaSnapshot({
 		value: new Date().toISOString()
 	});
 
+	await txDone(tx);
+	return true;
+}
+
+// ---------------------------------------------------------------------------
+// Chart events: outbox of structural ops awaiting push, plus the per-owner
+// cursor of the last server seq applied locally. Both survive offline periods.
+// ---------------------------------------------------------------------------
+
+export async function enqueueChartEventLocal(userId, event) {
+	const db = await openDb();
+	if (!db || !event?.client_event_id) return false;
+
+	const owner = ownerKey(userId);
+	const tx = db.transaction(['events_outbox'], 'readwrite');
+	tx.objectStore('events_outbox').put(withOwner(event, owner, event.client_event_id));
+	await txDone(tx);
+	return true;
+}
+
+export async function getPendingChartEventsLocal(userId) {
+	const db = await openDb();
+	if (!db) return [];
+
+	const owner = ownerKey(userId);
+	const tx = db.transaction(['events_outbox'], 'readonly');
+	const rows = await getAllForOwner(tx.objectStore('events_outbox'), owner);
+	await txDone(tx);
+	return rows
+		.map(stripLocalFields)
+		.sort((a, b) => (a.recorded_at || '').localeCompare(b.recorded_at || ''));
+}
+
+export async function removeChartEventsLocal(userId, clientEventIds = []) {
+	if (!clientEventIds.length) return true;
+	const db = await openDb();
+	if (!db) return false;
+
+	const owner = ownerKey(userId);
+	const tx = db.transaction(['events_outbox'], 'readwrite');
+	const store = tx.objectStore('events_outbox');
+	for (const id of clientEventIds) store.delete(rowKey(owner, id));
+	await txDone(tx);
+	return true;
+}
+
+export async function getChartEventCursor(userId) {
+	const db = await openDb();
+	if (!db) return null;
+
+	const owner = ownerKey(userId);
+	const tx = db.transaction(['sync_meta'], 'readonly');
+	const row = await requestToPromise(
+		tx.objectStore('sync_meta').get(rowKey(owner, 'chart_events_cursor'))
+	);
+	await txDone(tx);
+	const value = Number(row?.value);
+	return Number.isFinite(value) ? value : null;
+}
+
+export async function setChartEventCursor(userId, seq) {
+	const db = await openDb();
+	if (!db || !Number.isFinite(Number(seq))) return false;
+
+	const owner = ownerKey(userId);
+	const tx = db.transaction(['sync_meta'], 'readwrite');
+	tx.objectStore('sync_meta').put({
+		_key: rowKey(owner, 'chart_events_cursor'),
+		_owner: owner,
+		value: Number(seq)
+	});
 	await txDone(tx);
 	return true;
 }

@@ -1,7 +1,23 @@
-import { browser } from '$app/environment';
+import { browser, dev } from '$app/environment';
 import { Capacitor } from '@capacitor/core';
 import { localGet, localSet, prefGet, prefSet } from '$lib/PersistentStorage.mjs';
-import { loadLocalHaradaSnapshot, saveLocalHaradaSnapshot } from '$lib/LocalHaradaDb.js';
+import {
+	loadLocalHaradaSnapshot,
+	saveLocalHaradaSnapshot,
+	enqueueChartEventLocal,
+	getPendingChartEventsLocal,
+	removeChartEventsLocal,
+	getChartEventCursor,
+	setChartEventCursor
+} from '$lib/LocalHaradaDb.js';
+import {
+	CHART_EVENT_OPS,
+	createChartEvent,
+	getDeviceId,
+	bumpIsoTimestamp,
+	bumpMsTimestamp,
+	isMissingChartEventsSchemaError
+} from '$lib/chartEvents.js';
 import { supabase } from '$lib/supabaseClient.js';
 import { clearedCell, isChartUnset, resolveGridCell } from '$lib/haradaGridUtils.js';
 import { synthStore } from './synth.svelte.js';
@@ -21,6 +37,9 @@ import {
 	getTaskGoalIndicesForTodo,
 	collectDescendantTaskIds,
 	buildGoalBlockRelocateMap,
+	buildGoalBlockSwapMap,
+	buildPairSwapMap,
+	getBlockCellIndices,
 	getGoalBlockIndexSet,
 	getLinkedGoalIndex,
 	goalIndexMatchesCanonical,
@@ -315,6 +334,11 @@ class Store {
 
 	_isInitialized = false;
 	_isInitializing = false;
+	/** Structural-op event log (chart_events): see $lib/chartEvents.js */
+	_deviceId = null;
+	_chartEventsEnabled = true;
+	_chartEventCursor = null;
+	_chartEventsSyncing = null;
 	_realtimeChannel = null;
 	_pendingCloudSync = false;
 	_refreshPromise = null;
@@ -406,10 +430,12 @@ class Store {
 			// Offline edits queue up as dirty state. Native webviews don't reliably
 			// fire 'online' after airplane mode ends, so also push on foreground.
 			if (this.isOnline && authStore.user && supabase) {
+				void this._pushChartEvents();
 				await this.saveNow();
 			}
 			return;
 		}
+		void this._pushChartEvents();
 		await this.refreshFromSupabase();
 	}
 
@@ -776,7 +802,12 @@ class Store {
 				return;
 			}
 
-			// 4) If online and authenticated, hydrate from Supabase and overwrite local snapshot
+			// 4) Replay structural ops (goal moves/merges/clears) recorded by other
+			// devices BEFORE the snapshot merge, so stale local state cannot
+			// resurrect a goal that was moved/merged/deleted elsewhere.
+			await this._syncChartEvents();
+
+			// 5) Online + authenticated: hydrate from Supabase and merge over local
 			this.initialCloudHydrationStatus = 'loading';
 			this.remoteAccountHasData = false;
 			const data = await this.loadFromSupabase();
@@ -792,6 +823,9 @@ class Store {
 				this._migrateLegacyTaskLinksInMemory();
 			}
 			this.initialCloudHydrationStatus = 'ready';
+			// First event sync on this device: the snapshot above already includes
+			// all history, so baseline the cursor at the latest seq (replay nothing).
+			await this._baselineChartEventCursor();
 		} catch (err) {
 			console.error('Failed to initialize from Supabase:', err);
 			this.syncError = err.message;
@@ -833,10 +867,13 @@ class Store {
 		this.isRefreshing = true;
 		this._refreshPromise = (async () => {
 			try {
+				// Structural ops replay first - see _syncChartEvents.
+				await this._syncChartEvents();
 				const data = await this.loadFromSupabase();
 				if (!data) return false;
 				this._lastRefreshAt = Date.now();
 				const applied = await this._mergeAndApplyRemoteSnapshot(data, { persistLocal: true });
+				await this._baselineChartEventCursor();
 				if (this._applyRetainedTaskScope()) {
 					await this._saveLocally();
 				}
@@ -852,6 +889,240 @@ class Store {
 		})();
 
 		return this._refreshPromise;
+	}
+
+	// --- Structural-op event log (chart_events) ---
+	// Content edits sync as state (last-write-wins). Structural operations -
+	// goal moves, merges, clears - sync as EVENTS replayed in server seq order
+	// before the snapshot merge, so a stale device cannot resurrect a goal that
+	// was moved/merged/deleted elsewhere.
+
+	_getDeviceId() {
+		if (!this._deviceId) this._deviceId = getDeviceId();
+		return this._deviceId;
+	}
+
+	/**
+	 * Queue a structural op for other devices and push it best-effort.
+	 * Skipped for anonymous local-only use - there is nothing to reconcile.
+	 */
+	_recordChartEvent(op, payload, inverse = null) {
+		const owner = this._localOwnerUserId();
+		if (!owner || !supabase) return;
+		const event = createChartEvent({
+			op,
+			payload,
+			inverse,
+			deviceId: this._getDeviceId(),
+			occurredAt: payload?.occurred_at ?? null
+		});
+		if (!event) return;
+		void enqueueChartEventLocal(owner, event)
+			.then(() => this._pushChartEvents())
+			.catch((err) => console.warn('Failed to queue chart event:', err));
+	}
+
+	/** Replay one foreign event. Never records; stamps with the op's own time. */
+	async _applyChartEvent(event) {
+		const payload = event?.payload || {};
+		const opts = {
+			record: false,
+			timestamp: payload.occurred_at || event?.created_at || null
+		};
+		switch (event?.op) {
+			case CHART_EVENT_OPS.SWAP_GOAL_PAIR:
+				await this.swapGoalPair(payload.source, payload.target, opts);
+				break;
+			case CHART_EVENT_OPS.SWAP_GOAL_BLOCKS:
+				await this.swapGoalBlocks(payload.source, payload.target, opts);
+				break;
+			case CHART_EVENT_OPS.MERGE_GOAL_CELLS:
+				await this.mergeGoalCells(payload.source, payload.target, {
+					mergedTitle: payload.mergedTitle ?? null,
+					...opts
+				});
+				break;
+			case CHART_EVENT_OPS.MERGE_GOAL_BLOCKS:
+				await this.mergeGoalBlocks(payload.source, payload.target, {
+					mergedTitle: payload.mergedTitle ?? '',
+					...opts
+				});
+				break;
+			case CHART_EVENT_OPS.CLEAR_GOAL:
+				this.clearGoalBlock(payload.goalIndex, opts);
+				break;
+			default:
+				// Op from a newer app version: skip it (cursor still advances) and
+				// let the snapshot merge deliver the resulting state instead.
+				console.warn('Skipping unknown chart event op:', event?.op);
+		}
+	}
+
+	_disableChartEvents(err) {
+		this._chartEventsEnabled = false;
+		console.warn(
+			'chart_events schema not deployed - structural ops sync as state only. Run docs/patches/add-chart-events.sql.',
+			err?.message || ''
+		);
+	}
+
+	/**
+	 * Pull events newer than our cursor, replay foreign ones, then push our
+	 * outbox. Runs BEFORE snapshot merges. First sync on a device sets no
+	 * cursor and applies nothing - the snapshot already includes all history;
+	 * the baseline cursor is set after that snapshot lands (see
+	 * _baselineChartEventCursor).
+	 */
+	async _syncChartEvents() {
+		if (!browser || !supabase || !authStore.user || !this._chartEventsEnabled) return;
+		if (this._chartEventsSyncing) return this._chartEventsSyncing;
+
+		this._chartEventsSyncing = (async () => {
+			try {
+				const owner = authStore.user.id;
+				let cursor = this._chartEventCursor;
+				if (cursor == null) {
+					cursor = await getChartEventCursor(owner);
+					this._chartEventCursor = cursor;
+				}
+				if (cursor == null) {
+					// New device (or pre-events install): nothing to replay yet.
+					await this._pushChartEvents();
+					return;
+				}
+
+				const PAGE = 200;
+				for (;;) {
+					const { data, error } = await supabase
+						.from('chart_events')
+						.select('*')
+						.gt('seq', cursor)
+						.order('seq', { ascending: true })
+						.limit(PAGE);
+					if (error) throw error;
+					if (!data?.length) break;
+
+					for (const event of data) {
+						if (event.device_id !== this._getDeviceId()) {
+							try {
+								await this._applyChartEvent(event);
+							} catch (err) {
+								console.error('Failed to apply chart event', event.seq, err);
+							}
+						}
+						// Persist progress per event: swaps are not idempotent, so a
+						// crash must never cause a second application.
+						cursor = event.seq;
+						this._chartEventCursor = cursor;
+						await setChartEventCursor(owner, cursor);
+					}
+					if (data.length < PAGE) break;
+				}
+
+				await this._pushChartEvents();
+			} catch (err) {
+				if (isMissingChartEventsSchemaError(err)) {
+					this._disableChartEvents(err);
+				} else {
+					console.error('Chart event sync failed:', err);
+				}
+			} finally {
+				this._chartEventsSyncing = null;
+			}
+		})();
+
+		return this._chartEventsSyncing;
+	}
+
+	/**
+	 * Set the cursor to the latest server seq. Called right AFTER the first
+	 * full snapshot hydration on this device: that snapshot already reflects
+	 * every past op, so replaying history would double-apply it.
+	 */
+	async _baselineChartEventCursor() {
+		if (!browser || !supabase || !authStore.user || !this._chartEventsEnabled) return;
+		if (this._chartEventCursor != null) return;
+		try {
+			const owner = authStore.user.id;
+			const stored = await getChartEventCursor(owner);
+			if (stored != null) {
+				this._chartEventCursor = stored;
+				return;
+			}
+			const { data, error } = await supabase
+				.from('chart_events')
+				.select('seq')
+				.order('seq', { ascending: false })
+				.limit(1);
+			if (error) throw error;
+			const latest = data?.[0]?.seq ?? 0;
+			this._chartEventCursor = latest;
+			await setChartEventCursor(owner, latest);
+		} catch (err) {
+			if (isMissingChartEventsSchemaError(err)) {
+				this._disableChartEvents(err);
+			} else {
+				console.warn('Failed to baseline chart event cursor:', err);
+			}
+		}
+	}
+
+	/** Push queued events. Retries stay in the outbox; the RPC dedupes. */
+	async _pushChartEvents() {
+		if (!browser || !supabase || !authStore.user || !this._chartEventsEnabled) return false;
+		if (!this.isOnline) return false;
+		const owner = authStore.user.id;
+		try {
+			const pending = await getPendingChartEventsLocal(owner);
+			if (!pending.length) return true;
+			const { error } = await supabase.rpc('append_chart_events', { in_rows: pending });
+			if (error) throw error;
+			await removeChartEventsLocal(
+				owner,
+				pending.map((event) => event.client_event_id)
+			);
+			return true;
+		} catch (err) {
+			if (isMissingChartEventsSchemaError(err)) {
+				this._disableChartEvents(err);
+			} else {
+				console.warn('Failed to push chart events:', err);
+			}
+			return false;
+		}
+	}
+
+	/**
+	 * Minimal snapshot of everything a structural op is about to touch -
+	 * stored on the event as `inverse` so a future undo can restore it.
+	 */
+	_captureStructuralInverse(goalIndexSet, cellIndices) {
+		const cells = {};
+		for (const index of cellIndices) {
+			const cell = this.harada_chart.grid?.[index];
+			if (cell) cells[index] = { ...cell };
+		}
+		const todos = (this.harada_chart.todos || [])
+			.filter(
+				(todo) =>
+					(!todo?.listType || todo.listType === 'goal') &&
+					typeof todo?.goalIndex === 'number' &&
+					goalIndexSet.has(todo.goalIndex)
+			)
+			.map((todo) => ({
+				id: todo.id,
+				goalIndex: todo.goalIndex,
+				listType: todo.listType ?? 'goal',
+				listId: todo.listId ?? `goal:${todo.goalIndex}`,
+				updatedAt: todo.updatedAt ?? null
+			}));
+		const noteGoalLinks = (this.noteGoalLinks || [])
+			.filter((link) => goalIndexSet.has(link.goalIndex))
+			.map((link) => ({ ...link }));
+		const taskGoalLinks = (this.taskGoalLinks || [])
+			.filter((link) => goalIndexSet.has(link.goalIndex))
+			.map((link) => ({ ...link }));
+		return { op: 'restore_snapshot', payload: { cells, todos, noteGoalLinks, taskGoalLinks } };
 	}
 
 	_normalizeGridSnapshot(gridSnapshot) {
@@ -1146,6 +1417,22 @@ class Store {
 					this._applyRealtimeTaskGoalLinkChange(payload);
 				}
 			)
+			.on(
+				'postgres_changes',
+				{
+					event: 'INSERT',
+					schema: 'public',
+					table: 'chart_events',
+					filter: `user_id=eq.${userId}`
+				},
+				(payload) => {
+					// Another device recorded a structural op: pull and replay it in
+					// seq order (the sync loop skips our own events).
+					if (payload.new?.device_id !== this._getDeviceId()) {
+						void this._syncChartEvents();
+					}
+				}
+			)
 			.subscribe((status) => {
 				if (status === 'SUBSCRIBED') {
 					this.syncError = null;
@@ -1431,10 +1718,13 @@ class Store {
 	 * Awaits cloud soft-deletes for old link rows before applying in-memory remaps
 	 * (goal_index is part of the unique key, so deletes must land before upserts).
 	 */
-	async applyGoalIndexSwapMap(swapMap) {
+	async applyGoalIndexSwapMap(swapMap, { timestamp = null } = {}) {
 		if (!swapMap || swapMap.size === 0) return;
 
-		const now = Date.now();
+		// Replays pass the op's original time; bump so a locally-newer edit never
+		// loses its timestamp (and with it the snapshot merge) to an older op.
+		const opIso = timestamp || new Date().toISOString();
+		const stampMs = (existing) => bumpMsTimestamp(existing, opIso);
 		const noteGoalRemaps = [];
 		const taskGoalRemaps = [];
 
@@ -1465,7 +1755,7 @@ class Store {
 				goalIndex: mapped,
 				listType: 'goal',
 				listId: `goal:${mapped}`,
-				updatedAt: now
+				updatedAt: stampMs(todo.updatedAt)
 			};
 		});
 
@@ -1480,7 +1770,7 @@ class Store {
 					noteId: link.noteId,
 					goalIndex: mapped,
 					createdAt: link.createdAt,
-					updatedAt: now
+					updatedAt: stampMs(link.updatedAt)
 				});
 				this._markNoteGoalLinkDirty(remapped);
 				return remapped;
@@ -1500,11 +1790,111 @@ class Store {
 					ordering: link.ordering,
 					parentId: link.parentId ?? null,
 					createdAt: link.createdAt,
-					updatedAt: now
+					updatedAt: stampMs(link.updatedAt)
 				});
 				this._markTaskGoalLinkDirty(remapped);
 				return remapped;
 			});
+		}
+	}
+
+	/**
+	 * Move/swap two individual goal cells (drag of a single goal square).
+	 * Swaps the cells' contents and remaps todos/notes/links. Records a
+	 * chart event so other devices replay the move instead of re-deriving it
+	 * from (possibly stale) state.
+	 */
+	async swapGoalPair(sourceIndex, targetIndex, { record = true, timestamp = null } = {}) {
+		if (typeof sourceIndex !== 'number' || typeof targetIndex !== 'number') return;
+		if (sourceIndex === targetIndex) return;
+
+		const opIso = timestamp || new Date().toISOString();
+		// Every moved cell is re-stamped: a moved cell keeps its old timestamp
+		// otherwise, and a stale remote copy can out-date it and drag the old
+		// contents back. bump keeps a locally-newer edit's stamp during replays.
+		const moved = (cell) =>
+			cell ? { ...cell, updated_at: bumpIsoTimestamp(cell.updated_at, opIso) } : cell;
+
+		const grid = [...this.harada_chart.grid];
+		const sourceCell = grid[sourceIndex] ? { ...grid[sourceIndex] } : undefined;
+		const targetCell = grid[targetIndex] ? { ...grid[targetIndex] } : undefined;
+		grid[sourceIndex] = moved(targetCell);
+		grid[targetIndex] = moved(sourceCell);
+
+		await this.applyGoalIndexSwapMap(buildPairSwapMap(sourceIndex, targetIndex), {
+			timestamp: opIso
+		});
+
+		this.harada_chart = { ...this.harada_chart, grid };
+		this.registerGridMutation({ immediate: true });
+
+		if (record) {
+			this._recordChartEvent(
+				CHART_EVENT_OPS.SWAP_GOAL_PAIR,
+				{ source: sourceIndex, target: targetIndex, occurred_at: opIso },
+				// A swap is its own inverse.
+				{ op: CHART_EVENT_OPS.SWAP_GOAL_PAIR, payload: { source: sourceIndex, target: targetIndex } }
+			);
+		}
+	}
+
+	/**
+	 * Move/swap two whole goal blocks (drag of a central goal square): the 9
+	 * outer cells pairwise, the linked center-block cells, and all todo/note
+	 * links. Records a chart event for other devices.
+	 */
+	async swapGoalBlocks(sourceIndex, targetIndex, { record = true, timestamp = null } = {}) {
+		const sourceCanonical = canonicalGoalIndex(sourceIndex);
+		const targetCanonical = canonicalGoalIndex(targetIndex);
+		if (sourceCanonical === 40 || targetCanonical === 40) return;
+		if (sourceCanonical === targetCanonical) return;
+		if (typeof sourceCanonical !== 'number' || typeof targetCanonical !== 'number') return;
+
+		const opIso = timestamp || new Date().toISOString();
+		const moved = (cell) =>
+			cell ? { ...cell, updated_at: bumpIsoTimestamp(cell.updated_at, opIso) } : cell;
+
+		const grid = [...this.harada_chart.grid];
+
+		// Swap all 9 cells of each outer block pairwise (preserves relative task positions)
+		const sourceCells = getBlockCellIndices(sourceCanonical);
+		const targetCells = getBlockCellIndices(targetCanonical);
+		for (let i = 0; i < sourceCells.length; i++) {
+			const s = grid[sourceCells[i]] ? { ...grid[sourceCells[i]] } : undefined;
+			const t = grid[targetCells[i]] ? { ...grid[targetCells[i]] } : undefined;
+			grid[sourceCells[i]] = moved(t);
+			grid[targetCells[i]] = moved(s);
+		}
+
+		// Swap the linked center-block cells (the "shadow" sub-goal in the center 3×3)
+		const sourceLinked = getLinkedGoalIndex(sourceCanonical);
+		const targetLinked = getLinkedGoalIndex(targetCanonical);
+		if (sourceLinked !== null && targetLinked !== null) {
+			const sL = grid[sourceLinked] ? { ...grid[sourceLinked] } : undefined;
+			const tL = grid[targetLinked] ? { ...grid[targetLinked] } : undefined;
+			grid[sourceLinked] = moved(tL);
+			grid[targetLinked] = moved(sL);
+		}
+
+		updateGoalTimestamp(grid, sourceCanonical);
+		updateGoalTimestamp(grid, targetCanonical);
+
+		await this.applyGoalIndexSwapMap(buildGoalBlockSwapMap(sourceCanonical, targetCanonical), {
+			timestamp: opIso
+		});
+
+		this.harada_chart = { ...this.harada_chart, grid };
+		this.registerGridMutation({ immediate: true });
+
+		if (record) {
+			this._recordChartEvent(
+				CHART_EVENT_OPS.SWAP_GOAL_BLOCKS,
+				{ source: sourceCanonical, target: targetCanonical, occurred_at: opIso },
+				{
+					op: CHART_EVENT_OPS.SWAP_GOAL_BLOCKS,
+					payload: { source: sourceCanonical, target: targetCanonical }
+				}
+			);
 		}
 	}
 
@@ -1528,13 +1918,23 @@ class Store {
 	}
 
 	/**
-	 * Drop all task/note links to a single goal. Tasks with no remaining real goals move to Z2.
+	 * Clear a goal: empty its title/readme/color and drop all task/note links.
+	 * Tasks with no remaining real goals move to Z2. Records a chart event so
+	 * other devices replay the clear instead of resurrecting the goal.
 	 */
-	clearGoalBlock(canonicalIndex) {
+	clearGoalBlock(canonicalIndex, { record = true, timestamp = null } = {}) {
 		if (typeof canonicalIndex !== 'number') return;
 
 		const canonical = canonicalGoalIndex(canonicalIndex);
 		const matchesClearedGoal = (goalIndex) => goalIndexMatchesCanonical(goalIndex, canonical);
+		const opIso = timestamp || new Date().toISOString();
+		const linkedIndex = getLinkedGoalIndex(canonical);
+		const affectedGoalIndices = new Set(
+			linkedIndex === null ? [canonical] : [canonical, linkedIndex]
+		);
+		const inverse = record
+			? this._captureStructuralInverse(affectedGoalIndices, affectedGoalIndices)
+			: null;
 
 		const cloudDeletes = [];
 		const noteLinksToDrop = new Set();
@@ -1595,27 +1995,64 @@ class Store {
 			this.updateTodo(taskId, buildGoalListMeta(remainingGoals[0] ?? null));
 		}
 
-		if (noteLinksToDrop.size > 0 || taskLinksToDrop.size > 0 || affectedTaskIds.size > 0) {
-			if (cloudDeletes.length > 0) {
-				void Promise.all(cloudDeletes).catch((err) => {
-					console.error('Failed to soft-delete goal links:', err);
-				});
-			}
-			this.saveNow();
+		if (cloudDeletes.length > 0) {
+			void Promise.all(cloudDeletes).catch((err) => {
+				console.error('Failed to soft-delete goal links:', err);
+			});
 		}
+
+		// Clear the goal cell itself (title, readme, color - status is kept),
+		// plus its linked shadow cell in the center block. Previously done by
+		// the goal page; owned here so replays clear the grid too.
+		const grid = [...this.harada_chart.grid];
+		const emptyCell = { text: '', status: 'todo', readme: '', color: 'default', updated_at: null };
+		for (const index of affectedGoalIndices) {
+			const base = grid[index] ? { ...grid[index] } : { ...emptyCell };
+			grid[index] = {
+				...base,
+				text: '',
+				readme: '',
+				color: 'default',
+				updated_at: bumpIsoTimestamp(base.updated_at, opIso)
+			};
+		}
+		updateGoalTimestamp(grid, canonical);
+		this.harada_chart = { ...this.harada_chart, grid };
+		this.registerGridMutation({ immediate: true });
+
+		if (record) {
+			this._recordChartEvent(
+				CHART_EVENT_OPS.CLEAR_GOAL,
+				{ goalIndex: canonical, occurred_at: opIso },
+				inverse
+			);
+		}
+
+		this.saveNow();
 	}
 
 	/**
 	 * Merge source goal block into target: relocate tasks/notes, dedupe links, clear source.
 	 */
-	async mergeGoalBlocks(sourceCanonical, targetCanonical, { mergedTitle = '' } = {}) {
+	async mergeGoalBlocks(
+		sourceCanonical,
+		targetCanonical,
+		{ mergedTitle = '', record = true, timestamp = null } = {}
+	) {
 		if (sourceCanonical === targetCanonical) return;
 		if (sourceCanonical === 40 || targetCanonical === 40) return;
 
 		const relocateMap = buildGoalBlockRelocateMap(sourceCanonical, targetCanonical);
 		const sourceBlock = getGoalBlockIndexSet(sourceCanonical);
 		const targetBlock = getGoalBlockIndexSet(targetCanonical);
-		const now = Date.now();
+		const opIso = timestamp || new Date().toISOString();
+		const stampMs = (existing) => bumpMsTimestamp(existing, opIso);
+		const inverse = record
+			? this._captureStructuralInverse(
+					new Set([...sourceBlock, ...targetBlock]),
+					new Set([...sourceBlock, ...targetBlock])
+				)
+			: null;
 
 		const cloudDeletes = [];
 		const noteLinksToDrop = new Set();
@@ -1683,7 +2120,7 @@ class Store {
 					goalIndex: onTarget.goalIndex,
 					listType: 'goal',
 					listId: `goal:${onTarget.goalIndex}`,
-					updatedAt: now
+					updatedAt: stampMs(todo.updatedAt)
 				};
 			}
 
@@ -1695,7 +2132,7 @@ class Store {
 				goalIndex: mapped,
 				listType: 'goal',
 				listId: `goal:${mapped}`,
-				updatedAt: now
+				updatedAt: stampMs(todo.updatedAt)
 			};
 		});
 
@@ -1712,7 +2149,7 @@ class Store {
 						noteId: link.noteId,
 						goalIndex: mapped,
 						createdAt: link.createdAt,
-						updatedAt: now
+						updatedAt: stampMs(link.updatedAt)
 					});
 					this._markNoteGoalLinkDirty(remapped);
 					return remapped;
@@ -1734,7 +2171,7 @@ class Store {
 						ordering: link.ordering,
 						parentId: link.parentId ?? null,
 						createdAt: link.createdAt,
-						updatedAt: now
+						updatedAt: stampMs(link.updatedAt)
 					});
 					this._markTaskGoalLinkDirty(remapped);
 					return remapped;
@@ -1746,13 +2183,12 @@ class Store {
 		const targetCell = grid[targetCanonical] ?? {};
 		const mergedReadme = appendGoalReadmes(targetCell.readme, sourceCell.readme);
 		const title = (mergedTitle ?? '').trim();
-		const timestamp = new Date().toISOString();
 
 		const nextTargetCell = {
 			...targetCell,
 			text: title,
 			readme: mergedReadme,
-			updated_at: timestamp
+			updated_at: bumpIsoTimestamp(targetCell.updated_at, opIso)
 		};
 		grid[targetCanonical] = nextTargetCell;
 		const targetLinked = getLinkedGoalIndex(targetCanonical);
@@ -1763,7 +2199,7 @@ class Store {
 		// clearedCell, not defaultCell: the clear must carry a timestamp or sync
 		// resurrects the old text, and it must not re-seed placeholder titles.
 		for (const index of sourceBlock) {
-			grid[index] = clearedCell(timestamp);
+			grid[index] = clearedCell(opIso);
 		}
 
 		this.harada_chart = {
@@ -1773,6 +2209,19 @@ class Store {
 		};
 		updateGoalTimestamp(this.harada_chart.grid, targetCanonical);
 		this.registerGridMutation({ immediate: true });
+
+		if (record) {
+			this._recordChartEvent(
+				CHART_EVENT_OPS.MERGE_GOAL_BLOCKS,
+				{
+					source: sourceCanonical,
+					target: targetCanonical,
+					mergedTitle: title,
+					occurred_at: opIso
+				},
+				inverse
+			);
+		}
 	}
 
 	/**
@@ -1785,11 +2234,27 @@ class Store {
 	 * @param {{ mergedTitle?: string | null }} [options] When mergedTitle is null the
 	 *   target's existing title is kept (absorption); otherwise it is replaced.
 	 */
-	async mergeGoalCells(sourceIndex, targetIndex, { mergedTitle = null } = {}) {
+	async mergeGoalCells(
+		sourceIndex,
+		targetIndex,
+		{ mergedTitle = null, record = true, timestamp = null } = {}
+	) {
 		if (typeof sourceIndex !== 'number' || typeof targetIndex !== 'number') return;
 		if (sourceIndex === targetIndex) return;
 
-		const now = Date.now();
+		const opIso = timestamp || new Date().toISOString();
+		const stampMs = (existing) => bumpMsTimestamp(existing, opIso);
+		const inverseIndices = new Set(
+			[
+				sourceIndex,
+				targetIndex,
+				getLinkedGoalIndex(sourceIndex),
+				getLinkedGoalIndex(targetIndex)
+			].filter((idx) => typeof idx === 'number')
+		);
+		const inverse = record
+			? this._captureStructuralInverse(inverseIndices, inverseIndices)
+			: null;
 
 		const noteOnTarget = (noteId) =>
 			(this.noteGoalLinks || []).some(
@@ -1842,7 +2307,7 @@ class Store {
 				goalIndex: targetIndex,
 				listType: 'goal',
 				listId: `goal:${targetIndex}`,
-				updatedAt: now
+				updatedAt: stampMs(todo.updatedAt)
 			};
 		});
 
@@ -1854,7 +2319,7 @@ class Store {
 					noteId: l.noteId,
 					goalIndex: targetIndex,
 					createdAt: l.createdAt,
-					updatedAt: now
+					updatedAt: stampMs(l.updatedAt)
 				});
 				this._markNoteGoalLinkDirty(remapped);
 				return remapped;
@@ -1870,7 +2335,7 @@ class Store {
 					ordering: l.ordering,
 					parentId: l.parentId ?? null,
 					createdAt: l.createdAt,
-					updatedAt: now
+					updatedAt: stampMs(l.updatedAt)
 				});
 				this._markTaskGoalLinkDirty(remapped);
 				return remapped;
@@ -1880,7 +2345,6 @@ class Store {
 		const sourceCell = grid[sourceIndex] ?? {};
 		const targetCell = grid[targetIndex] ?? {};
 		const mergedReadme = appendGoalReadmes(targetCell.readme, sourceCell.readme);
-		const timestamp = new Date().toISOString();
 		const title =
 			mergedTitle == null ? (targetCell.text ?? '') : (mergedTitle ?? '').trim();
 
@@ -1888,7 +2352,7 @@ class Store {
 			...targetCell,
 			text: title,
 			readme: mergedReadme,
-			updated_at: timestamp
+			updated_at: bumpIsoTimestamp(targetCell.updated_at, opIso)
 		};
 		grid[targetIndex] = nextTargetCell;
 		const targetLinked = getLinkedGoalIndex(targetIndex);
@@ -1896,9 +2360,9 @@ class Store {
 
 		// clearedCell, not defaultCell: the clear must carry a timestamp or sync
 		// resurrects the old text, and it must not re-seed placeholder titles.
-		grid[sourceIndex] = clearedCell(timestamp);
+		grid[sourceIndex] = clearedCell(opIso);
 		const sourceLinked = getLinkedGoalIndex(sourceIndex);
-		if (sourceLinked !== null) grid[sourceLinked] = clearedCell(timestamp);
+		if (sourceLinked !== null) grid[sourceLinked] = clearedCell(opIso);
 
 		this.harada_chart = {
 			...this.harada_chart,
@@ -1907,6 +2371,20 @@ class Store {
 		};
 		updateGoalTimestamp(this.harada_chart.grid, targetIndex);
 		this.registerGridMutation({ immediate: true });
+
+		if (record) {
+			this._recordChartEvent(
+				CHART_EVENT_OPS.MERGE_GOAL_CELLS,
+				{
+					source: sourceIndex,
+					target: targetIndex,
+					// null keeps the target's existing title on replay (absorption)
+					mergedTitle: mergedTitle == null ? null : title,
+					occurred_at: opIso
+				},
+				inverse
+			);
+		}
 	}
 
 	// --- Save ---
@@ -4078,6 +4556,10 @@ class Store {
 		this._isInitialized = false;
 		this._unsubscribeRealtime();
 		this._resetInitialCloudHydration();
+		// Cursor is per-owner (persisted per owner in IndexedDB) - drop the
+		// in-memory copy so the next initialize loads the right one.
+		this._chartEventCursor = null;
+		this._chartEventsSyncing = null;
 
 		if (!authStore.user) {
 			// If we're offline, the session may have expired and Supabase fired SIGNED_OUT
@@ -4166,3 +4648,9 @@ class Store {
 }
 
 export const store = new Store();
+
+// Dev-only hook so tests and debugging sessions can drive store operations
+// from the browser console. Absent from production builds (dev === false).
+if (browser && dev) {
+	globalThis.__haradaStore = store;
+}
