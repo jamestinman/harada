@@ -16,10 +16,31 @@ export const CHART_EVENT_OPS = Object.freeze({
 	SWAP_GOAL_BLOCKS: 'swap_goal_blocks',
 	MERGE_GOAL_CELLS: 'merge_goal_cells',
 	MERGE_GOAL_BLOCKS: 'merge_goal_blocks',
-	CLEAR_GOAL: 'clear_goal'
+	CLEAR_GOAL: 'clear_goal',
+	/** Undo of a merge/clear: re-imposes the captured pre-op state. */
+	RESTORE_SNAPSHOT: 'restore_snapshot'
 });
 
 const KNOWN_OPS = new Set(Object.values(CHART_EVENT_OPS));
+
+/** Short human labels for the undo toast ("Goals merged - Undo"). */
+export function chartEventOpLabel(op) {
+	switch (op) {
+		case CHART_EVENT_OPS.SWAP_GOAL_PAIR:
+			return 'Goal moved';
+		case CHART_EVENT_OPS.SWAP_GOAL_BLOCKS:
+			return 'Goals swapped';
+		case CHART_EVENT_OPS.MERGE_GOAL_CELLS:
+		case CHART_EVENT_OPS.MERGE_GOAL_BLOCKS:
+			return 'Goals merged';
+		case CHART_EVENT_OPS.CLEAR_GOAL:
+			return 'Goal cleared';
+		case CHART_EVENT_OPS.RESTORE_SNAPSHOT:
+			return 'Change restored';
+		default:
+			return 'Chart changed';
+	}
+}
 
 function randomSuffix() {
 	return Math.random().toString(36).slice(2, 10);

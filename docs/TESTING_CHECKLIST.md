@@ -106,6 +106,19 @@ Requires docs/patches/add-chart-events.sql applied to the Supabase project.
 - [ ] chart_events rows appear in Supabase (one per op, batch/device ids set)
 - [ ] With the patch NOT applied, ops still work locally and a single console
       warning appears (no errors, no broken sync)
+
+### Undo (structural ops)
+- [ ] Move/merge/clear a goal → toast appears ("Goal moved" / "Goals merged" /
+      "Goal cleared") with an Undo button, auto-hides after ~8s
+- [ ] Undo a merge → titles, readmes, todos and links return to their goals;
+      anything added to the target AFTER the merge stays where it is
+- [ ] Undo a clear → goal title/description and its task/note links return
+- [ ] Cmd/Ctrl+Z triggers undo while the toast is visible; does nothing after
+      it hides; never fires while typing in an input, note, or editor
+- [ ] Undo works signed OUT (anonymous local mode)
+- [ ] Two devices: undo on Device A → Device B reverts too (restore_snapshot
+      event); an old app version on B still converges via normal sync
+- [ ] Undo survives an app restart (journal persists; toast does not)
 - [ ] Console shows "Realtime update received"
 
 ### Todos Sync

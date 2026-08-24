@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
 	CHART_EVENT_OPS,
+	chartEventOpLabel,
 	createChartEvent,
 	createBatchId,
 	isKnownChartEventOp,
@@ -44,7 +45,16 @@ test('createChartEvent rejects unknown ops and missing device id', () => {
 
 test('isKnownChartEventOp matches the op set', () => {
 	assert.equal(isKnownChartEventOp('merge_goal_cells'), true);
-	assert.equal(isKnownChartEventOp('restore_snapshot'), false);
+	assert.equal(isKnownChartEventOp('restore_snapshot'), true);
+	assert.equal(isKnownChartEventOp('rm_rf'), false);
+});
+
+test('chartEventOpLabel gives a short label for every op', () => {
+	for (const op of Object.values(CHART_EVENT_OPS)) {
+		const label = chartEventOpLabel(op);
+		assert.ok(label && label !== 'Chart changed', `label for ${op}`);
+	}
+	assert.equal(chartEventOpLabel('mystery_op'), 'Chart changed');
 });
 
 test('createBatchId is unique-ish', () => {

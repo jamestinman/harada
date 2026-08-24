@@ -5,7 +5,8 @@ import {
 
 const DB_NAME = 'harada_local_mirror';
 // v2: events_outbox store for pending chart_events (structural op log)
-const DB_VERSION = 2;
+// v3: events_journal store - this device's own ops, feeds undo
+const DB_VERSION = 3;
 const DEFAULT_OWNER = 'local';
 
 const TABLES = [
@@ -71,6 +72,7 @@ function openDb() {
 			for (const table of TABLES) createStore(db, table);
 			createStore(db, 'sync_meta');
 			createStore(db, 'events_outbox');
+			createStore(db, 'events_journal');
 		};
 
 		request.onsuccess = () => resolve(request.result);
@@ -339,6 +341,61 @@ export async function removeChartEventsLocal(userId, clientEventIds = []) {
 	const tx = db.transaction(['events_outbox'], 'readwrite');
 	const store = tx.objectStore('events_outbox');
 	for (const id of clientEventIds) store.delete(rowKey(owner, id));
+	await txDone(tx);
+	return true;
+}
+
+// ---------------------------------------------------------------------------
+// Chart event journal: ops THIS device performed, newest last. Feeds the undo
+// stack (undo pops the newest entry and applies its stored inverse). Kept
+// separate from the outbox, which empties as soon as events are pushed.
+// ---------------------------------------------------------------------------
+
+const JOURNAL_MAX_ENTRIES = 50;
+
+export async function appendChartEventJournal(userId, event) {
+	const db = await openDb();
+	if (!db || !event?.client_event_id) return false;
+
+	const owner = ownerKey(userId);
+	const tx = db.transaction(['events_journal'], 'readwrite');
+	const store = tx.objectStore('events_journal');
+	store.put(withOwner(event, owner, event.client_event_id));
+
+	// Cap the journal so decades of ops don't accumulate.
+	const rows = await getAllForOwner(store, owner);
+	if (rows.length > JOURNAL_MAX_ENTRIES) {
+		rows.sort((a, b) => (a.recorded_at || '').localeCompare(b.recorded_at || ''));
+		for (const row of rows.slice(0, rows.length - JOURNAL_MAX_ENTRIES)) {
+			store.delete(row._key);
+		}
+	}
+
+	await txDone(tx);
+	return true;
+}
+
+export async function getLatestChartEventJournalEntry(userId) {
+	const db = await openDb();
+	if (!db) return null;
+
+	const owner = ownerKey(userId);
+	const tx = db.transaction(['events_journal'], 'readonly');
+	const rows = await getAllForOwner(tx.objectStore('events_journal'), owner);
+	await txDone(tx);
+	if (!rows.length) return null;
+	rows.sort((a, b) => (b.recorded_at || '').localeCompare(a.recorded_at || ''));
+	return stripLocalFields(rows[0]);
+}
+
+export async function removeChartEventJournalEntry(userId, clientEventId) {
+	if (!clientEventId) return false;
+	const db = await openDb();
+	if (!db) return false;
+
+	const owner = ownerKey(userId);
+	const tx = db.transaction(['events_journal'], 'readwrite');
+	tx.objectStore('events_journal').delete(rowKey(owner, clientEventId));
 	await txDone(tx);
 	return true;
 }

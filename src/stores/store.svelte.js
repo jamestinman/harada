@@ -8,10 +8,14 @@ import {
 	getPendingChartEventsLocal,
 	removeChartEventsLocal,
 	getChartEventCursor,
-	setChartEventCursor
+	setChartEventCursor,
+	appendChartEventJournal,
+	getLatestChartEventJournalEntry,
+	removeChartEventJournalEntry
 } from '$lib/LocalHaradaDb.js';
 import {
 	CHART_EVENT_OPS,
+	chartEventOpLabel,
 	createChartEvent,
 	getDeviceId,
 	bumpIsoTimestamp,
@@ -196,7 +200,7 @@ function normalizeTaskGoalLink(link) {
 }
 
 class Store {
-	version = $state('1.0.28');
+	version = $state('1.0.29');
 	activeTab = $state('harada');
 	selectedGoalFilter = $state('all');
 	selectedGoalForNew = $state('');
@@ -212,6 +216,8 @@ class Store {
 	remoteAccountHasData = $state(false);
 	isOnline = $state(browser ? navigator.onLine : true);
 	syncError = $state(null);
+	/** Set after each structural op this device performs: {op, label, at}. Feeds the undo toast. */
+	undoToast = $state(/** @type {{op: string, label: string, at: number} | null} */ (null));
   showHowItWorksModal = $state(false);
   showOnboardingWizard = $state(false);
 
@@ -339,6 +345,7 @@ class Store {
 	_chartEventsEnabled = true;
 	_chartEventCursor = null;
 	_chartEventsSyncing = null;
+	_undoInFlight = false;
 	_realtimeChannel = null;
 	_pendingCloudSync = false;
 	_refreshPromise = null;
@@ -903,12 +910,12 @@ class Store {
 	}
 
 	/**
-	 * Queue a structural op for other devices and push it best-effort.
-	 * Skipped for anonymous local-only use - there is nothing to reconcile.
+	 * Record a structural op: journal it locally (feeds undo - all users,
+	 * anonymous included) and queue it for other devices (signed-in only).
+	 * Undo-originated events pass journal:false so undoing never stacks on
+	 * itself - the journal holds user-performed ops only.
 	 */
-	_recordChartEvent(op, payload, inverse = null) {
-		const owner = this._localOwnerUserId();
-		if (!owner || !supabase) return;
+	_recordChartEvent(op, payload, inverse = null, { journal = true } = {}) {
 		const event = createChartEvent({
 			op,
 			payload,
@@ -917,9 +924,23 @@ class Store {
 			occurredAt: payload?.occurred_at ?? null
 		});
 		if (!event) return;
+
+		if (journal && inverse) {
+			void appendChartEventJournal(this._localOwnerUserId(), event).catch((err) =>
+				console.warn('Failed to journal chart event:', err)
+			);
+			this.undoToast = { op, label: chartEventOpLabel(op), at: Date.now() };
+		}
+
+		const owner = this._localOwnerUserId();
+		if (!owner || !supabase) return;
 		void enqueueChartEventLocal(owner, event)
 			.then(() => this._pushChartEvents())
 			.catch((err) => console.warn('Failed to queue chart event:', err));
+	}
+
+	dismissUndoToast() {
+		this.undoToast = null;
 	}
 
 	/** Replay one foreign event. Never records; stamps with the op's own time. */
@@ -951,10 +972,185 @@ class Store {
 			case CHART_EVENT_OPS.CLEAR_GOAL:
 				this.clearGoalBlock(payload.goalIndex, opts);
 				break;
+			case CHART_EVENT_OPS.RESTORE_SNAPSHOT:
+				this._applyRestoreSnapshot(payload, { timestamp: opts.timestamp });
+				break;
 			default:
 				// Op from a newer app version: skip it (cursor still advances) and
 				// let the snapshot merge deliver the resulting state instead.
 				console.warn('Skipping unknown chart event op:', event?.op);
+		}
+	}
+
+	/**
+	 * Re-impose a captured pre-op snapshot (the inverse of a merge/clear).
+	 * Cells revert wholesale; todos revert by id; links inside the affected
+	 * goal indices revert EXCEPT rows stamped after the original op - those
+	 * were added since and survive the undo.
+	 */
+	_applyRestoreSnapshot(payload, { timestamp = null } = {}) {
+		if (!payload || typeof payload !== 'object') return;
+		const undoIso = timestamp || new Date().toISOString();
+		const undoMs = new Date(undoIso).getTime();
+		const cells = payload.cells && typeof payload.cells === 'object' ? payload.cells : {};
+		const cellIndices = Object.keys(cells)
+			.map(Number)
+			.filter((idx) => Number.isFinite(idx) && idx >= 0 && idx < 81);
+		const scope = new Set(cellIndices);
+		const opMs = payload.occurred_at ? new Date(payload.occurred_at).getTime() : 0;
+
+		// 1) Grid: captured cells win, stamped at undo time so sync propagates them
+		const grid = [...this.harada_chart.grid];
+		for (const index of cellIndices) {
+			const snapshotCell = cells[index] ?? cells[String(index)];
+			if (!snapshotCell || typeof snapshotCell !== 'object') continue;
+			grid[index] = { ...snapshotCell, updated_at: undoIso };
+		}
+
+		// 2) Todos: restore captured placements by id (todos created since are untouched)
+		const snapshotTodos = Array.isArray(payload.todos) ? payload.todos : [];
+		if (snapshotTodos.length > 0) {
+			const capturedById = new Map(snapshotTodos.map((todo) => [todo.id, todo]));
+			this.harada_chart.todos = (this.harada_chart.todos || []).map((todo) => {
+				const captured = capturedById.get(todo.id);
+				if (!captured) return todo;
+				if (todo.goalIndex === captured.goalIndex && todo.listId === captured.listId) {
+					return todo;
+				}
+				this._markTaskDirty(todo.id);
+				return {
+					...todo,
+					goalIndex: captured.goalIndex ?? null,
+					listType: captured.listType ?? 'goal',
+					listId:
+						captured.listId ??
+						(typeof captured.goalIndex === 'number' ? `goal:${captured.goalIndex}` : 'goal:none'),
+					updatedAt: bumpMsTimestamp(todo.updatedAt, undoIso)
+				};
+			});
+		}
+
+		// 3) Links: rows the op created carry exactly the op's timestamp; rows
+		// added afterwards are newer and survive. Everything else in scope
+		// reverts to the captured set.
+		const droppedInScope = (link) =>
+			scope.has(link.goalIndex) && (!opMs || !(Number(link.updatedAt) > opMs));
+		const cloudDeletes = [];
+
+		const keptNoteLinks = [];
+		for (const link of this.noteGoalLinks || []) {
+			if (droppedInScope(link)) {
+				cloudDeletes.push(this._softDeleteNoteGoalLinkInCloud(link));
+				continue;
+			}
+			keptNoteLinks.push(link);
+		}
+		const noteKeys = new Set(keptNoteLinks.map((link) => `${link.noteId}:${link.goalIndex}`));
+		for (const raw of Array.isArray(payload.noteGoalLinks) ? payload.noteGoalLinks : []) {
+			const link = normalizeNoteGoalLink({ ...raw, updatedAt: undoMs });
+			if (!link || noteKeys.has(`${link.noteId}:${link.goalIndex}`)) continue;
+			this._markNoteGoalLinkDirty(link);
+			keptNoteLinks.push(link);
+			noteKeys.add(`${link.noteId}:${link.goalIndex}`);
+		}
+		this.noteGoalLinks = keptNoteLinks;
+
+		const keptTaskLinks = [];
+		for (const link of this.taskGoalLinks || []) {
+			if (droppedInScope(link)) {
+				cloudDeletes.push(this._softDeleteTaskGoalLinkInCloud(link));
+				continue;
+			}
+			keptTaskLinks.push(link);
+		}
+		const taskKeys = new Set(keptTaskLinks.map((link) => `${link.taskId}:${link.goalIndex}`));
+		for (const raw of Array.isArray(payload.taskGoalLinks) ? payload.taskGoalLinks : []) {
+			const link = normalizeTaskGoalLink({ ...raw, updatedAt: undoMs });
+			if (!link || taskKeys.has(`${link.taskId}:${link.goalIndex}`)) continue;
+			this._markTaskGoalLinkDirty(link);
+			keptTaskLinks.push(link);
+			taskKeys.add(`${link.taskId}:${link.goalIndex}`);
+		}
+		this.taskGoalLinks = keptTaskLinks;
+
+		if (cloudDeletes.length > 0) {
+			void Promise.all(cloudDeletes).catch((err) => {
+				console.error('Failed to soft-delete links during restore:', err);
+			});
+		}
+
+		this.harada_chart = {
+			...this.harada_chart,
+			grid,
+			todos: this.harada_chart.todos
+		};
+		this.registerGridMutation({ immediate: true });
+		this.saveNow();
+	}
+
+	/**
+	 * Undo the most recent structural op THIS device performed. The undo is
+	 * itself appended as a new event (swap ops are self-inverse; merge/clear
+	 * revert via restore_snapshot), so other devices replay it like any op.
+	 * History is never rewritten.
+	 */
+	async undoLastChartOp() {
+		if (!browser || this._undoInFlight) return { success: false, reason: 'busy' };
+		this._undoInFlight = true;
+		try {
+			const owner = this._localOwnerUserId();
+			const entry = await getLatestChartEventJournalEntry(owner);
+			if (!entry?.inverse?.op) {
+				this.undoToast = null;
+				return { success: false, reason: 'empty' };
+			}
+
+			const inverse = entry.inverse;
+			const inversePayload = inverse.payload || {};
+			const undoIso = new Date().toISOString();
+			const opts = { record: false, timestamp: undoIso };
+
+			switch (inverse.op) {
+				case CHART_EVENT_OPS.SWAP_GOAL_PAIR:
+					await this.swapGoalPair(inversePayload.source, inversePayload.target, opts);
+					this._recordChartEvent(
+						CHART_EVENT_OPS.SWAP_GOAL_PAIR,
+						{ source: inversePayload.source, target: inversePayload.target, occurred_at: undoIso },
+						null,
+						{ journal: false }
+					);
+					break;
+				case CHART_EVENT_OPS.SWAP_GOAL_BLOCKS:
+					await this.swapGoalBlocks(inversePayload.source, inversePayload.target, opts);
+					this._recordChartEvent(
+						CHART_EVENT_OPS.SWAP_GOAL_BLOCKS,
+						{ source: inversePayload.source, target: inversePayload.target, occurred_at: undoIso },
+						null,
+						{ journal: false }
+					);
+					break;
+				case CHART_EVENT_OPS.RESTORE_SNAPSHOT:
+					this._applyRestoreSnapshot(inversePayload, { timestamp: undoIso });
+					this._recordChartEvent(
+						CHART_EVENT_OPS.RESTORE_SNAPSHOT,
+						{ ...inversePayload, occurred_at: undoIso },
+						null,
+						{ journal: false }
+					);
+					break;
+				default:
+					console.warn('Cannot undo chart op with inverse:', inverse.op);
+					return { success: false, reason: 'unsupported' };
+			}
+
+			await removeChartEventJournalEntry(owner, entry.client_event_id);
+			this.undoToast = null;
+			return { success: true, label: chartEventOpLabel(entry.op) };
+		} catch (err) {
+			console.error('Undo failed:', err);
+			return { success: false, reason: err?.message || 'error' };
+		} finally {
+			this._undoInFlight = false;
 		}
 	}
 
@@ -1094,9 +1290,11 @@ class Store {
 
 	/**
 	 * Minimal snapshot of everything a structural op is about to touch -
-	 * stored on the event as `inverse` so a future undo can restore it.
+	 * stored on the event as `inverse` so undo can restore it. `opIso` is the
+	 * op's own timestamp: on restore, rows stamped after it are recognized as
+	 * post-op additions and survive.
 	 */
-	_captureStructuralInverse(goalIndexSet, cellIndices) {
+	_captureStructuralInverse(goalIndexSet, cellIndices, opIso = null) {
 		const cells = {};
 		for (const index of cellIndices) {
 			const cell = this.harada_chart.grid?.[index];
@@ -1122,7 +1320,10 @@ class Store {
 		const taskGoalLinks = (this.taskGoalLinks || [])
 			.filter((link) => goalIndexSet.has(link.goalIndex))
 			.map((link) => ({ ...link }));
-		return { op: 'restore_snapshot', payload: { cells, todos, noteGoalLinks, taskGoalLinks } };
+		return {
+			op: CHART_EVENT_OPS.RESTORE_SNAPSHOT,
+			payload: { cells, todos, noteGoalLinks, taskGoalLinks, occurred_at: opIso }
+		};
 	}
 
 	_normalizeGridSnapshot(gridSnapshot) {
@@ -1933,7 +2134,7 @@ class Store {
 			linkedIndex === null ? [canonical] : [canonical, linkedIndex]
 		);
 		const inverse = record
-			? this._captureStructuralInverse(affectedGoalIndices, affectedGoalIndices)
+			? this._captureStructuralInverse(affectedGoalIndices, affectedGoalIndices, opIso)
 			: null;
 
 		const cloudDeletes = [];
@@ -2050,7 +2251,8 @@ class Store {
 		const inverse = record
 			? this._captureStructuralInverse(
 					new Set([...sourceBlock, ...targetBlock]),
-					new Set([...sourceBlock, ...targetBlock])
+					new Set([...sourceBlock, ...targetBlock]),
+					opIso
 				)
 			: null;
 
@@ -2253,7 +2455,7 @@ class Store {
 			].filter((idx) => typeof idx === 'number')
 		);
 		const inverse = record
-			? this._captureStructuralInverse(inverseIndices, inverseIndices)
+			? this._captureStructuralInverse(inverseIndices, inverseIndices, opIso)
 			: null;
 
 		const noteOnTarget = (noteId) =>

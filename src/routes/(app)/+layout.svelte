@@ -15,6 +15,7 @@
 	import Nav from '$components/Nav.svelte';
 	import SignInBanner from '$components/SignInBanner.svelte';
 	import PlaybackControlBar from '$components/PlaybackControlBar.svelte';
+	import UndoToast from '$components/UndoToast.svelte';
 	import { playback } from '$stores/playback.svelte.js';
 	import { persistWorkspacePath } from '$lib/workspaceNavResume.js';
 	import '../layout.css';
@@ -245,6 +246,8 @@
   />
 
   <PlaybackControlBar />
+
+  <UndoToast />
 
 </div>
 
