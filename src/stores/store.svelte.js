@@ -59,6 +59,9 @@ import {
 	filterRetainedTodos,
 	filterRetainedTaskRows,
 	filterLinksForRetainedTasks,
+	completionUndoLabel,
+	archiveRangeSinceMs,
+	DEFAULT_ARCHIVE_RANGE_ID,
 	getRecentlyCompletedCutoffIso,
 	shouldRetainTodoInStore,
 	todoBelongsToGoalView
@@ -69,6 +72,9 @@ import { parseStandaloneUrl } from '$lib/urlUtils.js';
 
 /** Soft-deleted cloud rows kept for this long before a future purge batch (phase 2). */
 export const TRASH_RETENTION_DAYS = 30;
+
+/** Rows per archive query. Caps 'Everything' on accounts with years of history. */
+const ARCHIVE_PAGE_LIMIT = 300;
 
 const defaultCells = [
   { text: 'Central Goal', index: 4 * 9 + 4 },
@@ -216,8 +222,14 @@ class Store {
 	remoteAccountHasData = $state(false);
 	isOnline = $state(browser ? navigator.onLine : true);
 	syncError = $state(null);
-	/** Set after each structural op this device performs: {op, label, at}. Feeds the undo toast. */
-	undoToast = $state(/** @type {{op: string, label: string, at: number} | null} */ (null));
+	/**
+	 * Undo prompt for the last reversible action this device performed.
+	 * `undo` performs the reversal - chart ops route through the event journal,
+	 * lighter actions (task completion) pass a plain local closure.
+	 */
+	undoToast = $state(
+		/** @type {{op: string | null, label: string, at: number, undo: () => any} | null} */ (null)
+	);
   showHowItWorksModal = $state(false);
   showOnboardingWizard = $state(false);
 
@@ -929,7 +941,12 @@ class Store {
 			void appendChartEventJournal(this._localOwnerUserId(), event).catch((err) =>
 				console.warn('Failed to journal chart event:', err)
 			);
-			this.undoToast = { op, label: chartEventOpLabel(op), at: Date.now() };
+			this.undoToast = {
+				op,
+				label: chartEventOpLabel(op),
+				at: Date.now(),
+				undo: () => this.undoLastChartOp()
+			};
 		}
 
 		const owner = this._localOwnerUserId();
@@ -941,6 +958,16 @@ class Store {
 
 	dismissUndoToast() {
 		this.undoToast = null;
+	}
+
+	/**
+	 * Offer an undo for a non-chart action. Used where the action is cheap to
+	 * reverse locally (task completion) and needs no event-log round trip -
+	 * the toast is the only affordance, so it must never throw on undo.
+	 */
+	showUndoToast(label, undo, key = null) {
+		if (!label || typeof undo !== 'function') return;
+		this.undoToast = { op: null, key, label, at: Date.now(), undo };
 	}
 
 	/** Replay one foreign event. Never records; stamps with the op's own time. */
@@ -3767,6 +3794,20 @@ class Store {
 		this.harada_chart = { ...this.harada_chart, todos: nextTodos };
 		this._markTaskDirty(id);
 
+		// A completed task leaves the list immediately, so offer the way back.
+		// Un-completing is silent - it puts the task back where you can see it -
+		// and retires this task's own prompt, leaving any other toast alone.
+		const undoKey = `complete:${id}`;
+		if (nextStatus === 'done') {
+			this.showUndoToast(
+				completionUndoLabel(todo.title),
+				() => this.updateTodo(id, { status: 'todo' }),
+				undoKey
+			);
+		} else if (this.undoToast?.key === undoKey) {
+			this.dismissUndoToast();
+		}
+
 		if (typeof todo.goalIndex === 'number') {
 			const nextGrid = [...this.harada_chart.grid];
 			updateGoalTimestamp(nextGrid, todo.goalIndex);
@@ -4149,31 +4190,46 @@ class Store {
 	 * Phase 2: purge rows older than TRASH_RETENTION_DAYS (batch/cron) + optional local
 	 * tombstones for offline restore.
 	 */
-	async loadTrash() {
+	async loadTrash({ rangeId = DEFAULT_ARCHIVE_RANGE_ID } = {}) {
 		if (!browser || !authStore.user || !supabase) {
-			return { items: [], error: null, requiresSignIn: !authStore.user };
+			return { items: [], error: null, requiresSignIn: !authStore.user, truncated: false };
 		}
 
 		const userId = authStore.user.id;
+		const sinceMs = archiveRangeSinceMs(rangeId);
+		const sinceIso = sinceMs === null ? null : new Date(sinceMs).toISOString();
+		const withWindow = (query) =>
+			sinceIso ? query.gte('deleted_at', sinceIso) : query;
+
 		const [tasksRes, notesRes] = await Promise.all([
-			supabase
-				.from('tasks')
-				.select('*')
-				.eq('user_id', userId)
-				.not('deleted_at', 'is', null)
-				.order('deleted_at', { ascending: false }),
-			supabase
-				.from('notes')
-				.select('*')
-				.eq('user_id', userId)
-				.not('deleted_at', 'is', null)
+			withWindow(
+				supabase
+					.from('tasks')
+					.select('*')
+					.eq('user_id', userId)
+					.not('deleted_at', 'is', null)
+			)
 				.order('deleted_at', { ascending: false })
+				.limit(ARCHIVE_PAGE_LIMIT),
+			withWindow(
+				supabase
+					.from('notes')
+					.select('*')
+					.eq('user_id', userId)
+					.not('deleted_at', 'is', null)
+			)
+				.order('deleted_at', { ascending: false })
+				.limit(ARCHIVE_PAGE_LIMIT)
 		]);
 
 		if (tasksRes.error || notesRes.error) {
 			const message = tasksRes.error?.message || notesRes.error?.message || 'Failed to load trash';
-			return { items: [], error: message, requiresSignIn: false };
+			return { items: [], error: message, requiresSignIn: false, truncated: false };
 		}
+
+		const truncated =
+			(tasksRes.data ?? []).length >= ARCHIVE_PAGE_LIMIT ||
+			(notesRes.data ?? []).length >= ARCHIVE_PAGE_LIMIT;
 
 		/** @type {Array<{ id: string; kind: 'task' | 'bookmark' | 'note'; title: string; preview: string; dateAt: string; url?: string }>} */
 		const items = [];
@@ -4203,7 +4259,7 @@ class Store {
 			return bTime - aTime;
 		});
 
-		return { items, error: null, requiresSignIn: false };
+		return { items, error: null, requiresSignIn: false, truncated };
 	}
 
 	_trashItemFromTaskRow(row, dateIso) {
@@ -4225,22 +4281,81 @@ class Store {
 		};
 	}
 
-	async loadCompletedTrash() {
+	/**
+	 * Completed tasks still in memory. Local retention only keeps the last
+	 * RECENTLY_COMPLETED_MS worth, so this covers the default week window and
+	 * is what signed-out or offline users see instead of an empty page.
+	 */
+	_localCompletedItems(sinceMs) {
+		const items = [];
+		for (const todo of this.harada_chart.todos || []) {
+			if (!todo || todo.status !== 'done' || todo.isDraft) continue;
+			const updatedAt =
+				typeof todo.updatedAt === 'number' && Number.isFinite(todo.updatedAt)
+					? todo.updatedAt
+					: 0;
+			if (sinceMs !== null && updatedAt < sinceMs) continue;
+			const isBookmark = !!(todo.url && String(todo.url).trim()) || !!parseStandaloneUrl(todo.title);
+			const title =
+				(todo.title && todo.title.trim()) || (isBookmark && todo.url ? todo.url : '') || 'Untitled task';
+			items.push({
+				id: todo.id,
+				kind: isBookmark ? 'bookmark' : 'task',
+				title,
+				preview: typeof todo.markdown === 'string' ? todo.markdown.trim() : '',
+				dateAt: updatedAt ? new Date(updatedAt).toISOString() : null,
+				url: todo.url || ''
+			});
+		}
+		items.sort((a, b) => {
+			const aTime = a.dateAt ? new Date(a.dateAt).getTime() : 0;
+			const bTime = b.dateAt ? new Date(b.dateAt).getTime() : 0;
+			return bTime - aTime;
+		});
+		return items;
+	}
+
+	async loadCompletedTrash({ rangeId = DEFAULT_ARCHIVE_RANGE_ID } = {}) {
+		const sinceMs = archiveRangeSinceMs(rangeId);
+
 		if (!browser || !authStore.user || !supabase) {
-			return { items: [], error: null, requiresSignIn: !authStore.user };
+			return {
+				items: browser ? this._localCompletedItems(sinceMs) : [],
+				error: null,
+				requiresSignIn: false,
+				source: 'local',
+				truncated: false
+			};
 		}
 
 		const userId = authStore.user.id;
-		const { data, error } = await supabase
+		const sinceIso = sinceMs === null ? null : new Date(sinceMs).toISOString();
+		let query = supabase
 			.from('tasks')
 			.select('*')
 			.eq('user_id', userId)
 			.eq('status', 'done')
-			.is('deleted_at', null)
-			.order('updated_at', { ascending: false });
+			.is('deleted_at', null);
+		if (sinceIso) query = query.gte('updated_at', sinceIso);
+
+		const { data, error } = await query
+			.order('updated_at', { ascending: false })
+			.limit(ARCHIVE_PAGE_LIMIT);
 
 		if (error) {
-			return { items: [], error: error.message || 'Failed to load completed', requiresSignIn: false };
+			// Offline or a failed round trip: memory still holds the recent
+			// completions, which is the window that matters for an accidental tap.
+			const local = this._localCompletedItems(sinceMs);
+			if (local.length > 0) {
+				return { items: local, error: null, requiresSignIn: false, source: 'local', truncated: false };
+			}
+			return {
+				items: [],
+				error: error.message || 'Failed to load completed',
+				requiresSignIn: false,
+				source: 'cloud',
+				truncated: false
+			};
 		}
 
 		/** @type {Array<{ id: string; kind: 'task' | 'bookmark' | 'note'; title: string; preview: string; dateAt: string; url?: string }>} */
@@ -4250,11 +4365,39 @@ class Store {
 			if (item) items.push(item);
 		}
 
-		return { items, error: null, requiresSignIn: false };
+		// A completion made seconds ago may not have flushed to the cloud yet -
+		// that is exactly the item someone opens this view to recover, so fold
+		// in anything local the query did not return.
+		const seen = new Set(items.map((item) => item.id));
+		for (const local of this._localCompletedItems(sinceMs)) {
+			if (!seen.has(local.id)) items.push(local);
+		}
+		items.sort((a, b) => {
+			const aTime = a.dateAt ? new Date(a.dateAt).getTime() : 0;
+			const bTime = b.dateAt ? new Date(b.dateAt).getTime() : 0;
+			return bTime - aTime;
+		});
+
+		return {
+			items,
+			error: null,
+			requiresSignIn: false,
+			source: 'cloud',
+			truncated: (data ?? []).length >= ARCHIVE_PAGE_LIMIT
+		};
 	}
 
 	async restoreCompletedItem(id) {
-		if (!browser || !authStore.user || !supabase || !id) {
+		if (!id) return { success: false, error: 'Missing id' };
+
+		// Recently completed tasks are still in memory (with their links), so
+		// restore them locally - works offline and signed out, and syncs up.
+		if ((this.harada_chart.todos || []).some((t) => t.id === id)) {
+			this.updateTodo(id, { status: 'todo' });
+			return { success: true, error: null };
+		}
+
+		if (!browser || !authStore.user || !supabase) {
 			return { success: false, error: 'Sign in required to restore' };
 		}
 

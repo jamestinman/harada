@@ -1,4 +1,7 @@
 <script>
+	import { page } from '$app/state';
+	import { Archive } from 'lucide-svelte';
+
 	let {
 		goalMenuItems = [],
 		allTasksCount = 0,
@@ -11,6 +14,7 @@
 
 	const pinnedHref = '/todo/Z1';
 	const isPinnedActive = $derived(activeGoalIndex === -1);
+	const isArchiveActive = $derived(page.url.pathname.startsWith('/trash'));
 
 	function isMainGoalIndex(goalIndex) {
 		if (typeof goalIndex !== 'number' || goalIndex < 0 || goalIndex > 80) return false;
@@ -74,4 +78,19 @@
 			<span class="text-xs opacity-50">{item.count}</span>
 		</a>
 	{/each}
+	<!-- Recovery view for an accidental tick: completed tasks are not gone, they
+	     move here. Kept in the goal list so it is one tap away, not in settings. -->
+	<a
+		href="/trash/completed"
+		onclick={() => onGoalClick?.()}
+		class={`mt-1 flex items-center gap-2 rounded-lg border-t border-slate-200/60 px-2.5 pb-1.5 pt-2.5 text-sm transition dark:border-slate-700/50 ${
+			isArchiveActive
+				? 'text-violet-800 dark:text-violet-200'
+				: 'text-slate-500 hover:bg-slate-500/10 dark:text-slate-400 dark:hover:bg-white/5'
+		}`}
+		aria-current={isArchiveActive ? 'page' : undefined}
+	>
+		<Archive class="h-3.5 w-3.5 shrink-0" />
+		<span>Completed &amp; deleted</span>
+	</a>
 </div>

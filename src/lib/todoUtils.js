@@ -104,6 +104,39 @@ export function shouldRetainTodoInStore(todo, now = Date.now()) {
 	return isRecentlyCompletedTodo(todo, now);
 }
 
+/** Toast text after completing a task: 'Completed "Buy milk"'. */
+export function completionUndoLabel(title, maxTitleLength = 32) {
+	const trimmed = typeof title === 'string' ? title.trim() : '';
+	if (!trimmed) return 'Task completed';
+	const short =
+		trimmed.length > maxTitleLength ? `${trimmed.slice(0, maxTitleLength - 1)}…` : trimmed;
+	return `Completed “${short}”`;
+}
+
+/**
+ * Recovery-view time windows. The default is a week: the archive holds every
+ * completion and deletion ever made, so an unfiltered list is unusable on a
+ * long-lived account and buries the thing you just lost.
+ */
+export const ARCHIVE_RANGES = Object.freeze([
+	{ id: 'week', label: 'Past week', days: 7, emptyScope: 'in the past week' },
+	{ id: 'month', label: 'Past 30 days', days: 30, emptyScope: 'in the past 30 days' },
+	{ id: 'all', label: 'Everything', days: null, emptyScope: 'yet' }
+]);
+
+export const DEFAULT_ARCHIVE_RANGE_ID = 'week';
+
+export function archiveRangeById(id) {
+	return ARCHIVE_RANGES.find((range) => range.id === id) ?? ARCHIVE_RANGES[0];
+}
+
+/** Cutoff ms for an archive range id; null means no lower bound. */
+export function archiveRangeSinceMs(id, now = Date.now()) {
+	const range = archiveRangeById(id);
+	if (!range.days) return null;
+	return now - range.days * 24 * 60 * 60 * 1000;
+}
+
 export function filterRetainedTodos(todos, now = Date.now()) {
 	return (todos ?? []).filter((todo) => shouldRetainTodoInStore(todo, now));
 }

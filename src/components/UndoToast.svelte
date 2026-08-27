@@ -18,9 +18,16 @@
 
 	async function undo() {
 		if (undoing) return;
+		const toast = store.undoToast;
+		if (typeof toast?.undo !== 'function') return;
 		undoing = true;
 		try {
-			await store.undoLastChartOp();
+			await toast.undo();
+			// Retire the prompt once acted on - unless the undo itself queued a
+			// new toast, which is then the live one.
+			if (store.undoToast === toast) store.dismissUndoToast();
+		} catch (err) {
+			console.error('Undo failed:', err);
 		} finally {
 			undoing = false;
 		}
@@ -30,9 +37,9 @@
 		return !!el?.closest?.('input, textarea, select, [contenteditable], .cm-editor');
 	}
 
-	// Cmd/Ctrl+Z undoes the op ONLY while the toast is visible - outside that
-	// window the shortcut stays reserved for text editing, so a stray Cmd+Z
-	// can't silently revert a goal change from an hour ago.
+	// Cmd/Ctrl+Z undoes the action ONLY while the toast is visible - outside
+	// that window the shortcut stays reserved for text editing, so a stray
+	// Cmd+Z can't silently revert a change from an hour ago.
 	function onKeydown(event) {
 		if (!store.undoToast) return;
 		if (!(event.metaKey || event.ctrlKey) || event.shiftKey) return;

@@ -311,11 +311,11 @@ function startEditingName() {
 					<div>
 						<div class="settings-appearance-label">Recently completed / deleted</div>
 						<div class="settings-appearance-help">
-							Completed tasks and recently deleted items
+							Recover a task you completed or deleted by mistake
 						</div>
 					</div>
 					<a
-						href="/trash/deleted"
+						href="/trash/completed"
 						onclick={closeModal}
 						class="shrink-0 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
 					>

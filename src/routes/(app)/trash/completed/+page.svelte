@@ -2,33 +2,43 @@
 	import { browser } from '$app/environment';
 	import { authStore } from '$stores/auth.svelte.js';
 	import { store } from '$stores/store.svelte.js';
-	import { RECENTLY_COMPLETED_MS } from '$lib/todoUtils.js';
+	import {
+		DEFAULT_ARCHIVE_RANGE_ID,
+		RECENTLY_COMPLETED_MS,
+		archiveRangeById
+	} from '$lib/todoUtils.js';
+	import ArchiveRangeFilter from '$components/ArchiveRangeFilter.svelte';
 	import { Bookmark, ListTodo, RotateCcw, Trash2 } from 'lucide-svelte';
 
 	/** @type {Array<{ id: string; kind: 'task' | 'bookmark' | 'note'; title: string; preview: string; dateAt: string; url?: string }>} */
 	let items = $state([]);
 	let loading = $state(true);
 	let error = $state(/** @type {string | null} */ (null));
-	let requiresSignIn = $state(false);
+	let rangeId = $state(DEFAULT_ARCHIVE_RANGE_ID);
+	let truncated = $state(false);
+	let localOnly = $state(false);
 	/** @type {string | null} */
 	let busyKey = $state(null);
 	let emptying = $state(false);
 
 	const userId = $derived(authStore.user?.id ?? null);
 	const retentionDays = $derived(Math.round(RECENTLY_COMPLETED_MS / (24 * 60 * 60 * 1000)));
+	const emptyScope = $derived(archiveRangeById(rangeId).emptyScope);
 
 	$effect(() => {
 		if (!browser || authStore.loading) return;
 		void userId;
+		const range = rangeId;
 		let cancelled = false;
 		(async () => {
 			loading = true;
 			error = null;
-			const result = await store.loadCompletedTrash();
+			const result = await store.loadCompletedTrash({ rangeId: range });
 			if (cancelled) return;
 			items = result.items ?? [];
 			error = result.error;
-			requiresSignIn = !!result.requiresSignIn;
+			truncated = !!result.truncated;
+			localOnly = result.source === 'local';
 			loading = false;
 		})();
 		return () => {
@@ -90,8 +100,10 @@
 	async function handleDeleteAll() {
 		const count = items.length;
 		if (count === 0) return;
+		// emptyCompletedTrash clears ALL completed items, not just the visible
+		// window - say so, or the count in the prompt reads as the whole scope.
 		const confirmed = confirm(
-			`Move all ${count} completed item${count === 1 ? '' : 's'} to deleted trash? You can still restore them from Deleted.`
+			`Move every completed item to deleted trash (${count} shown here)? You can still restore them from Deleted.`
 		);
 		if (!confirmed) return;
 
@@ -116,24 +128,43 @@
 	Items older than about {retentionDays} days are hidden from your main lists but stay here.
 </p>
 
+<div class="mb-4 flex flex-wrap items-center gap-3">
+	<ArchiveRangeFilter
+		value={rangeId}
+		label="Completed time range"
+		onChange={(next) => (rangeId = next)}
+	/>
+	{#if truncated}
+		<span class="text-xs text-slate-500 dark:text-slate-400">
+			Showing the most recent 300 - narrow the range to see older items.
+		</span>
+	{/if}
+</div>
+
 {#if loading || authStore.loading}
 	<p class="text-sm text-slate-500 dark:text-slate-400">Loading…</p>
-{:else if requiresSignIn}
+{:else if localOnly}
 	<p
-		class="rounded-md border border-amber-300/70 bg-amber-50 px-3 py-3 text-sm text-amber-800 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-200"
+		class="mb-4 rounded-md border border-amber-300/70 bg-amber-50 px-3 py-3 text-sm text-amber-800 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-200"
 	>
-		Sign in to view completed items. Completions are kept in the cloud so you can recover them on
-		any device.
+		{#if authStore.user}
+			Offline - showing completions stored on this device (about the last {retentionDays} days).
+		{:else}
+			Showing completions stored on this device (about the last {retentionDays} days). Sign in to
+			keep full history and recover completions on any device.
+		{/if}
 	</p>
 {:else if error}
 	<p class="mb-4 text-sm text-red-600 dark:text-red-400">{error}</p>
 {/if}
 
-{#if !loading && !authStore.loading && !requiresSignIn && items.length === 0 && !error}
-	<p class="text-sm text-slate-500 dark:text-slate-400">No completed items.</p>
+{#if !loading && !authStore.loading && items.length === 0 && !error}
+	<p class="text-sm text-slate-500 dark:text-slate-400">
+		Nothing completed {emptyScope}.
+	</p>
 {/if}
 
-{#if items.length > 0}
+{#if items.length > 0 && !localOnly}
 	<div class="mb-4 flex justify-end">
 		<button
 			type="button"
@@ -149,6 +180,9 @@
 			{/if}
 		</button>
 	</div>
+{/if}
+
+{#if items.length > 0}
 	<ul class="space-y-3">
 		{#each items as item (itemKey(item))}
 			{@const busy = emptying || busyKey === itemKey(item)}

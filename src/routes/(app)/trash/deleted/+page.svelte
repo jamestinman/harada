@@ -2,6 +2,8 @@
 	import { browser } from '$app/environment';
 	import { authStore } from '$stores/auth.svelte.js';
 	import { store, TRASH_RETENTION_DAYS } from '$stores/store.svelte.js';
+	import { DEFAULT_ARCHIVE_RANGE_ID, archiveRangeById } from '$lib/todoUtils.js';
+	import ArchiveRangeFilter from '$components/ArchiveRangeFilter.svelte';
 	import { Bookmark, FileText, ListTodo, RotateCcw, Trash2 } from 'lucide-svelte';
 
 	/** @type {Array<{ id: string; kind: 'task' | 'bookmark' | 'note'; title: string; preview: string; dateAt: string; url?: string }>} */
@@ -9,24 +11,29 @@
 	let loading = $state(true);
 	let error = $state(/** @type {string | null} */ (null));
 	let requiresSignIn = $state(false);
+	let rangeId = $state(DEFAULT_ARCHIVE_RANGE_ID);
+	let truncated = $state(false);
 	/** @type {string | null} */
 	let busyKey = $state(null);
 	let emptying = $state(false);
 
 	const userId = $derived(authStore.user?.id ?? null);
+	const emptyScope = $derived(archiveRangeById(rangeId).emptyScope);
 
 	$effect(() => {
 		if (!browser || authStore.loading) return;
 		void userId;
+		const range = rangeId;
 		let cancelled = false;
 		(async () => {
 			loading = true;
 			error = null;
-			const result = await store.loadTrash();
+			const result = await store.loadTrash({ rangeId: range });
 			if (cancelled) return;
 			items = result.items ?? [];
 			error = result.error;
 			requiresSignIn = !!result.requiresSignIn;
+			truncated = !!result.truncated;
 			loading = false;
 		})();
 		return () => {
@@ -92,8 +99,9 @@
 	async function handleDeleteAll() {
 		const count = items.length;
 		if (count === 0) return;
+		// emptyTrash clears ALL soft-deleted rows, not just the visible window.
 		const confirmed = confirm(
-			`Permanently delete all ${count} item${count === 1 ? '' : 's'} in trash? This cannot be undone.`
+			`Permanently delete everything in trash (${count} shown here)? This cannot be undone.`
 		);
 		if (!confirmed) return;
 
@@ -118,6 +126,19 @@
 	Items may be removed automatically after {TRASH_RETENTION_DAYS} days in a future update.
 </p>
 
+<div class="mb-4 flex flex-wrap items-center gap-3">
+	<ArchiveRangeFilter
+		value={rangeId}
+		label="Deleted time range"
+		onChange={(next) => (rangeId = next)}
+	/>
+	{#if truncated}
+		<span class="text-xs text-slate-500 dark:text-slate-400">
+			Showing the most recent 300 - narrow the range to see older items.
+		</span>
+	{/if}
+</div>
+
 {#if loading || authStore.loading}
 	<p class="text-sm text-slate-500 dark:text-slate-400">Loading…</p>
 {:else if requiresSignIn}
@@ -132,7 +153,9 @@
 {/if}
 
 {#if !loading && !authStore.loading && !requiresSignIn && items.length === 0 && !error}
-	<p class="text-sm text-slate-500 dark:text-slate-400">Nothing in deleted trash.</p>
+	<p class="text-sm text-slate-500 dark:text-slate-400">
+		Nothing deleted {emptyScope}.
+	</p>
 {/if}
 
 {#if items.length > 0}

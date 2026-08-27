@@ -20,6 +20,11 @@ import {
 	getLinkedGoalIndex,
 	goalIndexMatchesCanonical,
 	RECENTLY_COMPLETED_MS,
+	completionUndoLabel,
+	ARCHIVE_RANGES,
+	DEFAULT_ARCHIVE_RANGE_ID,
+	archiveRangeById,
+	archiveRangeSinceMs,
 	isRecentlyCompletedTodo,
 	shouldRetainTodoInStore,
 	filterRetainedTodos,
@@ -595,4 +600,29 @@ test('renderMarkdown keeps safe links and external link attributes', () => {
 	assert.match(html, /href="https:\/\/example\.com"/);
 	assert.match(html, /target="_blank"/);
 	assert.match(html, /rel="noopener noreferrer"/);
+});
+
+test('completionUndoLabel quotes the task title and truncates long ones', () => {
+	assert.equal(completionUndoLabel('Buy milk'), 'Completed “Buy milk”');
+	assert.equal(completionUndoLabel('   '), 'Task completed');
+	assert.equal(completionUndoLabel(null), 'Task completed');
+	const label = completionUndoLabel('a'.repeat(60));
+	assert.equal(label.length, 'Completed “”'.length + 32);
+	assert.ok(label.endsWith('…”'));
+});
+
+test('archive ranges default to the past week and support an unbounded option', () => {
+	assert.equal(DEFAULT_ARCHIVE_RANGE_ID, 'week');
+	assert.deepEqual(
+		ARCHIVE_RANGES.map((range) => range.id),
+		['week', 'month', 'all']
+	);
+	assert.equal(archiveRangeById('nope').id, 'week');
+
+	const now = Date.UTC(2026, 0, 15);
+	assert.equal(archiveRangeSinceMs('week', now), now - 7 * 24 * 60 * 60 * 1000);
+	assert.equal(archiveRangeSinceMs('month', now), now - 30 * 24 * 60 * 60 * 1000);
+	assert.equal(archiveRangeSinceMs('all', now), null);
+	// Unknown ids fall back to the default window rather than showing everything.
+	assert.equal(archiveRangeSinceMs('bogus', now), now - 7 * 24 * 60 * 60 * 1000);
 });

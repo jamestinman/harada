@@ -384,6 +384,15 @@ const clearAll = () => {
 			>
 				Notes
 			</button>
+			<button
+				onclick={() => {
+					goto('/trash/completed');
+					store.mobileNavMenuOpen = false;
+				}}
+				class="mobile-menu-item"
+			>
+				Completed &amp; deleted
+			</button>
 
 			{#if authStore.user}
 				<button type="button" onclick={handleLogout} class="mobile-menu-item-logout">Logout</button>
