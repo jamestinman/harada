@@ -33,7 +33,8 @@ import {
 	collectDescendantTaskIds,
 	organizeTodosWithHierarchy,
 	getGoalViewIndentLevel,
-	renderMarkdown
+	renderMarkdown,
+	PINNED_GOAL_INDEX
 } from './todoUtils.js';
 
 // renderMarkdown sanitizes via DOMPurify, which needs a DOM. The app only ever
@@ -278,6 +279,60 @@ test('buildAllTasksFeed buckets todos in a single pass', () => {
 	assert.equal(feed.goalMenuItems[0].goalIndex, 10);
 	assert.equal(feed.goalMenuItems[0].goalOrdering, 1024);
 	assert.equal(feed.goalMenuItems[0].count, 1);
+});
+
+test('buildAllTasksFeed suppresses pinned no-goal todos when the feed shows a pinned block', () => {
+	const grid = Array.from({ length: 81 }, () => ({ text: '', status: 'todo', readme: '', color: 'default', updated_at: null }));
+	grid[10] = { ...grid[10], text: 'Goal A', todo_group_ordering: 1024 };
+	const todos = [
+		{ id: 'p1', title: 'Pinned no goal', listType: 'goal', goalIndex: null, pinned: true, status: 'todo', ordering: 1 },
+		{ id: 'n1', title: 'Plain no goal', listType: 'goal', goalIndex: null, status: 'todo', ordering: 2 },
+		{ id: 'g1', title: 'Pinned with goal', listType: 'goal', goalIndex: 10, pinned: true, status: 'todo', ordering: 3 }
+	];
+
+	const feed = buildAllTasksFeed({ todos, grid, suppressPinnedNoGoal: true });
+	const noGoal = feed.todoGroups.find((g) => g.id === 'no-goal');
+	assert.deepEqual(noGoal.todos.map((t) => t.id), ['n1']);
+	// Pinned tasks that belong to a goal still show under that goal.
+	assert.deepEqual(feed.todoGroups.find((g) => g.id === 'goal-10').todos.map((t) => t.id), ['g1']);
+
+	const unsuppressed = buildAllTasksFeed({ todos, grid });
+	assert.deepEqual(
+		unsuppressed.todoGroups.find((g) => g.id === 'no-goal').todos.map((t) => t.id),
+		['p1', 'n1']
+	);
+});
+
+test('buildAllTasksFeed keeps a pinned no-goal parent that has an unpinned child', () => {
+	const grid = Array.from({ length: 81 }, () => ({ text: '', status: 'todo', readme: '', color: 'default', updated_at: null }));
+	const todos = [
+		{ id: 'p1', title: 'Pinned parent', listType: 'goal', goalIndex: null, pinned: true, status: 'todo', ordering: 1 },
+		{ id: 'c1', title: 'Unpinned child', listType: 'goal', goalIndex: null, parentId: 'p1', status: 'todo', ordering: 2 },
+		{ id: 'p2', title: 'Pinned leaf', listType: 'goal', goalIndex: null, pinned: true, status: 'todo', ordering: 3 }
+	];
+
+	const feed = buildAllTasksFeed({ todos, grid, suppressPinnedNoGoal: true });
+	assert.deepEqual(
+		feed.todoGroups.find((g) => g.id === 'no-goal').todos.map((t) => t.id),
+		['p1', 'c1']
+	);
+});
+
+test('buildAllTasksFeed suppresses no-goal todos pinned via a task-goal link', () => {
+	const grid = Array.from({ length: 81 }, () => ({ text: '', status: 'todo', readme: '', color: 'default', updated_at: null }));
+	const todos = [
+		{ id: 'p1', title: 'Linked pin', listType: 'goal', goalIndex: null, status: 'todo', ordering: 1 },
+		{ id: 'n1', title: 'Plain', listType: 'goal', goalIndex: null, status: 'todo', ordering: 2 }
+	];
+
+	const feed = buildAllTasksFeed({
+		todos,
+		grid,
+		taskGoalKeySet: new Set([`p1:${PINNED_GOAL_INDEX}`]),
+		taskGoalLinks: [{ taskId: 'p1', goalIndex: PINNED_GOAL_INDEX }],
+		suppressPinnedNoGoal: true
+	});
+	assert.deepEqual(feed.todoGroups.find((g) => g.id === 'no-goal').todos.map((t) => t.id), ['n1']);
 });
 
 test('buildAllTasksFeed menu includes chart goals with zero tasks', () => {

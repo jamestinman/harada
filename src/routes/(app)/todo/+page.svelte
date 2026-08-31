@@ -376,7 +376,10 @@
 			taskGoalKeySet,
 			linkedTaskIdSet,
 			taskGoalLinks,
-			getTodoOrdering
+			getTodoOrdering,
+			// This view renders a dedicated Pinned block, so pinned no-goal tasks
+			// must not repeat in the no-goal group below it.
+			suppressPinnedNoGoal: true
 		})
 	);
 	const rawTodoGroups = $derived(tasksFeed.todoGroups);

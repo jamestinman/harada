@@ -1693,6 +1693,33 @@ export function buildTaskNoteIndexMaps(notes, noteTaskLinks, taskGoalLinks, todo
 const GOAL_GROUP_ORDER_STEP = 1024;
 
 /**
+ * The All Tasks feed renders its own Pinned block above the groups, so a pinned task
+ * with no goal would otherwise be listed twice. Drop those from the no-goal group, but
+ * keep any pinned task that still has an unpinned descendant so the child stays nested.
+ */
+function dropRedundantPinnedNoGoalTodos(noGoalTodos, taskGoalKeySet) {
+	const pinnedIds = new Set(
+		noGoalTodos
+			.filter((todo) => todoBelongsToGoalView(todo, PINNED_GOAL_INDEX, taskGoalKeySet))
+			.map((todo) => todo.id)
+	);
+	if (pinnedIds.size === 0) return noGoalTodos;
+
+	const parentById = new Map(noGoalTodos.map((todo) => [todo.id, todo.parentId ?? null]));
+	const keepIds = new Set();
+	for (const todo of noGoalTodos) {
+		if (pinnedIds.has(todo.id)) continue;
+		let currentId = todo.id;
+		while (currentId && !keepIds.has(currentId)) {
+			keepIds.add(currentId);
+			currentId = parentById.get(currentId) ?? null;
+		}
+	}
+
+	return noGoalTodos.filter((todo) => !pinnedIds.has(todo.id) || keepIds.has(todo.id));
+}
+
+/**
  * Single O(n) pass to build All Tasks feed groups, sidebar menu items, and counts.
  */
 export function buildAllTasksFeed({
@@ -1702,7 +1729,8 @@ export function buildAllTasksFeed({
 	linkedTaskIdSet = new Set(),
 	taskGoalLinks = [],
 	getTodoOrdering = getTodoOrderingValue,
-	goalGroupOrderStep = GOAL_GROUP_ORDER_STEP
+	goalGroupOrderStep = GOAL_GROUP_ORDER_STEP,
+	suppressPinnedNoGoal = false
 } = {}) {
 	const active = (todos ?? []).filter((t) => !t?.isDraft && t.status !== 'done');
 
@@ -1784,7 +1812,10 @@ export function buildAllTasksFeed({
 	});
 
 	const groups = [...goalGroups];
-	const organizedNoGoal = organizeTodosWithHierarchy(noGoalTodos, getTodoOrdering, {
+	const feedNoGoalTodos = suppressPinnedNoGoal
+		? dropRedundantPinnedNoGoalTodos(noGoalTodos, taskGoalKeySet)
+		: noGoalTodos;
+	const organizedNoGoal = organizeTodosWithHierarchy(feedNoGoalTodos, getTodoOrdering, {
 		goalIndex: NO_GOAL_PSEUDO_INDEX,
 		taskGoalLinks
 	});
