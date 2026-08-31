@@ -1181,7 +1181,7 @@
 				{/if}
 			{/if}
 		{:else}
-		<div class="overflow-hidden">
+		<div class={`overflow-hidden ${mobileMenuOpen ? 'max-h-[calc(100vh-8rem)]' : ''}`}>
 			<div
 				class="flex w-[200%] transition-transform duration-300 ease-out"
 				style={`transform: translateX(${mobileMenuOpen ? '0%' : '-50%'});`}

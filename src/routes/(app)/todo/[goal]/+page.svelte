@@ -1797,7 +1797,7 @@
 				{/if}
 			{/if}
 		{:else}
-		<div class="md:hidden overflow-hidden">
+		<div class={`md:hidden overflow-hidden ${mobileMenuOpen ? 'max-h-[calc(100vh-8rem)]' : ''}`}>
 			<div
 				class="flex w-[200%] transition-transform duration-300 ease-out"
 				style={`transform: translateX(${mobileMenuOpen ? '0%' : '-50%'});`}
