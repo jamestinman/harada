@@ -9,7 +9,7 @@
 		searchText = $bindable(''),
 		quickAddText = $bindable(''),
 		searchPlaceholder = 'Search',
-		quickAddPlaceholder = 'New task or search...',
+		quickAddPlaceholder = 'New task',
 		showSidebarToggle = false,
 		onSidebarToggle = null,
 		showHamburger = false,
@@ -66,7 +66,7 @@
 				placeholder={quickAddPlaceholder}
 				onkeydown={handleQuickAddKeydown}
 				class={inputClass}
-				clearLabel="Clear search"
+				clearLabel="Clear"
 			/>
 		{:else if inputMode === 'search'}
 			<ClearableTextInput
@@ -115,7 +115,7 @@
 					placeholder={quickAddPlaceholder}
 					onkeydown={handleQuickAddKeydown}
 					class="{inputClass} w-full"
-					clearLabel="Clear search"
+					clearLabel="Clear"
 				/>
 			</div>
 		{:else if inputMode === 'search'}

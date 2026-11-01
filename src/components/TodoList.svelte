@@ -43,6 +43,8 @@
 		pinnedGoalView = false,
 		feedPinnedRows = null,
 		feedPinnedGroup = null,
+		/** Rows aren't in a manual order (All Tasks by recency), so a drag can only nest one task inside another. Pinned rows still reorder among themselves. */
+		nestOnlyTaskDrag = false,
 		getPrimaryNoteForTodo = null,
 		getLinkedNotesForTodo = null,
 	onUpsertPrimaryNote = null,
@@ -89,6 +91,7 @@
 		isGroup: false
 	});
 	let justDidGroupDrag = false;
+	let dragStartedInPinnedStrip = false;
 	let collapsedTodos = $state(new Set());
 	let collapsedGroups = $state(new Set());
 	let renderedTodoLimit = $state(INITIAL_RENDERED_TODOS);
@@ -602,6 +605,7 @@
 		if (event.target?.closest('input, textarea, select, [contenteditable="true"]')) return;
 
 		clearPendingDrag();
+		dragStartedInPinnedStrip = Boolean(event.currentTarget?.closest?.('[data-feed-pinned-strip]'));
 		pendingDrag = {
 			kind: 'task',
 			pointerId: event.pointerId,
@@ -663,7 +667,12 @@
 			const ratio = (clientY - rect.top) / Math.max(rect.height, 1);
 
 			let dropMode;
-			if (ratio < CHILD_ZONE_TOP) {
+			const reorderAllowed =
+				!nestOnlyTaskDrag ||
+				(dragStartedInPinnedStrip && itemElement.closest('[data-feed-pinned-strip]'));
+			if (!reorderAllowed) {
+				dropMode = 'child';
+			} else if (ratio < CHILD_ZONE_TOP) {
 				dropMode = 'before';
 			} else if (ratio > CHILD_ZONE_BOTTOM) {
 				dropMode = 'after';
@@ -1012,7 +1021,7 @@
 >
 
 	{#if isMainTodoFeed && visibleFeedPinned.length > 0 && feedPinnedGroup}
-		<div class="mb-6 space-y-2">
+		<div class="mb-6 space-y-2" data-feed-pinned-strip>
 			<h2 class="text-sm font-semibold uppercase tracking-wide text-pink-300/90">
 				<a href="/todo/Z1" class="hover:text-pink-200 transition-colors">Pinned</a>
 			</h2>
@@ -1057,6 +1066,7 @@
 							onToggleCollapse={() => toggleCollapse(todo.id)}
 							isFeedPinnedDuplicate={true}
 							mainFeedPinStyle="top"
+							showGoalPicker={isMainTodoFeed}
 							isHighlighted={highlightTaskId === todo.id}
 							primaryNote={getPrimaryNoteForTodo ? getPrimaryNoteForTodo(todo.id) : null}
 							linkedNotes={getLinkedNotesForTodo ? getLinkedNotesForTodo(todo.id) : []}
@@ -1183,6 +1193,7 @@
 												isCollapsed={collapsedTodos.has(todo.id)}
 												onToggleCollapse={() => toggleCollapse(todo.id)}
 												mainFeedPinStyle={getMainFeedPinStyle(todo)}
+												showGoalPicker={isMainTodoFeed}
 												isHighlighted={highlightTaskId === todo.id}
 												primaryNote={getPrimaryNoteForTodo ? getPrimaryNoteForTodo(todo.id) : null}
 												linkedNotes={getLinkedNotesForTodo ? getLinkedNotesForTodo(todo.id) : []}
@@ -1248,6 +1259,7 @@
 								isCollapsed={collapsedTodos.has(todo.id)}
 								onToggleCollapse={() => toggleCollapse(todo.id)}
 								mainFeedPinStyle={getMainFeedPinStyle(todo)}
+								showGoalPicker={isMainTodoFeed}
 								isHighlighted={highlightTaskId === todo.id}
 								primaryNote={getPrimaryNoteForTodo ? getPrimaryNoteForTodo(todo.id) : null}
 								linkedNotes={getLinkedNotesForTodo ? getLinkedNotesForTodo(todo.id) : []}

@@ -64,7 +64,8 @@ import {
 	DEFAULT_ARCHIVE_RANGE_ID,
 	getRecentlyCompletedCutoffIso,
 	shouldRetainTodoInStore,
-	todoBelongsToGoalView
+	todoBelongsToGoalView,
+	getTodoRecency
 } from '$lib/todoUtils.js';
 import { authStore } from './auth.svelte.js';
 import { fetchUrlContent } from '$lib/urlContent.mjs';
@@ -106,6 +107,8 @@ const defaultCell = (i = null) => {
   return { text, status: 'todo', readme: '', color: 'default', updated_at }
 }
 const GOAL_GROUP_ORDER_STEP = 1024;
+// Task fields that say which goal or list it is filed under.
+const LIST_META_KEYS = new Set(['goalIndex', 'listType', 'listId', 'listName']);
 const LOCAL_SAVE_DEBOUNCE_MS = 200;
 const CLOUD_SYNC_DEBOUNCE_MS = 1200;
 const REFRESH_THROTTLE_MS = 10000;
@@ -233,7 +236,7 @@ class Store {
   showHowItWorksModal = $state(false);
   showOnboardingWizard = $state(false);
 
-	/** Mobile top bar + desktop sidebar: global task search / quick-add; Enter creates a task and clears this. */
+	/** Sidebar task search. The new-task field does not write here. */
 	todoWorkspaceQuery = $state('');
 
 	/**
@@ -3066,7 +3069,8 @@ class Store {
 					? row.ordering
 					: createdAt,
 			createdAt,
-			updatedAt
+			updatedAt,
+			activeAt: row.active_at ? new Date(row.active_at).getTime() : null
 		});
 	}
 
@@ -3102,6 +3106,10 @@ class Store {
 					: createdAtMs,
 			created_at: new Date(createdAtMs).toISOString(),
 			updated_at: new Date(updatedAtMs).toISOString(),
+			active_at:
+				typeof normalized.activeAt === 'number' && Number.isFinite(normalized.activeAt)
+					? new Date(normalized.activeAt).toISOString()
+					: null,
 			deleted_at: null
 		};
 	}
@@ -3346,7 +3354,7 @@ class Store {
 		this.harada_chart = {
 			...this.harada_chart,
 			todos: this.harada_chart.todos.map((t) =>
-				t.id === taskId ? { ...t, pinned: pinned === true, updatedAt: ts } : t
+				t.id === taskId ? { ...t, pinned: pinned === true, activeAt: ts, updatedAt: ts } : t
 			)
 		};
 		this._markTaskDirty(taskId);
@@ -3573,8 +3581,6 @@ class Store {
 			nextPatch = { ...patch, ...buildGoalListMeta(patch.goalIndex) };
 		}
 
-		nextPatch = { ...nextPatch, updatedAt: Date.now() };
-
 		const previousTodos = this.harada_chart.todos || [];
 		let previousTodo = null;
 		for (const todo of previousTodos) {
@@ -3583,6 +3589,15 @@ class Store {
 				break;
 			}
 		}
+
+		// Moving a task between goals or lists is filing, not using it, so it keeps its recency.
+		const now = Date.now();
+		const filingOnly = Object.keys(patch).every((key) => LIST_META_KEYS.has(key));
+		nextPatch = {
+			...nextPatch,
+			activeAt: filingOnly && previousTodo ? getTodoRecency(previousTodo) : now,
+			updatedAt: now
+		};
 
 		const materializesDraft =
 			previousTodo?.isDraft === true &&
@@ -3637,7 +3652,7 @@ class Store {
 					if (!todo || todo.id === id) return todo;
 					if (!isDescendant(todo.id, id)) return todo;
 					this._markTaskDirty(todo.id);
-					return { ...todo, ...sharedMeta, updatedAt: ts };
+					return { ...todo, ...sharedMeta, activeAt: getTodoRecency(todo), updatedAt: ts };
 				});
 			}
 		}
@@ -3789,7 +3804,7 @@ class Store {
 		}
 
 		const nextTodos = previousTodos.map((t) =>
-			t.id === id ? { ...t, status: nextStatus, updatedAt: Date.now() } : t
+			t.id === id ? { ...t, status: nextStatus, activeAt: Date.now(), updatedAt: Date.now() } : t
 		);
 		this.harada_chart = { ...this.harada_chart, todos: nextTodos };
 		this._markTaskDirty(id);
@@ -4125,6 +4140,36 @@ class Store {
 			}
 		}
 		this.queueSave();
+	}
+
+	/**
+	 * Replace the task's primary goal (the one shown beside it on All Tasks).
+	 * Other goal links stay. `null` removes the task from every goal.
+	 */
+	setTaskPrimaryGoal(taskId, goalIndex) {
+		const todo = this.harada_chart.todos.find((t) => t.id === taskId);
+		if (!todo) return;
+		const next = typeof goalIndex === 'number' ? canonicalGoalIndex(goalIndex) : null;
+		const isCustom = todo.listType === 'custom';
+		const previous =
+			!isCustom && typeof todo.goalIndex === 'number' ? canonicalGoalIndex(todo.goalIndex) : null;
+		if (!isCustom && previous === next) return;
+
+		if (next === null) {
+			if (isCustom) {
+				this.updateTodo(taskId, buildGoalListMeta(null));
+				return;
+			}
+			for (const idx of getTaskGoalIndicesForTodo(todo, this.taskGoalLinks)) {
+				this.unlinkTaskFromGoal(taskId, idx);
+			}
+			return;
+		}
+
+		this.linkTaskToGoal(taskId, next);
+		if (previous === null) return;
+		this.updateTodo(taskId, buildGoalListMeta(next));
+		this.unlinkTaskFromGoal(taskId, previous);
 	}
 
 	createLinkedTaskNote(taskId, { content = '', goalIndex = null, isPrimary = false } = {}) {

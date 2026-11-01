@@ -626,7 +626,7 @@
 		todoDesktopLayout && store.todoWorkspaceQuery.trim().length > 0
 	);
 
-	let goalSearchQuery = $state('');
+	let quickAddText = $state('');
 
 	onMount(() => {
 		const mq = window.matchMedia('(min-width: 768px)');
@@ -666,9 +666,10 @@
 		const trimmed = q.trim();
 		const started = !prevTodoWorkspaceQuery.trim() && trimmed;
 		prevTodoWorkspaceQuery = q;
-		if (started) {
-			store.latchTodoMobileSearchScope(mobileMenuOpen, false);
-		}
+		if (!started) return;
+		store.latchTodoMobileSearchScope(mobileMenuOpen, false);
+		activeGoalTab = 'tasks';
+		mobileMenuOpen = false;
 	});
 
 	/** Re-opened goal list while a query is active → search across all tasks again */
@@ -676,13 +677,6 @@
 		if (!browser || todoDesktopLayout) return;
 		if (!store.todoWorkspaceQuery.trim() || !mobileMenuOpen) return;
 		store.latchTodoMobileSearchScope(true, false);
-	});
-
-	$effect(() => {
-		if (!browser || todoDesktopLayout) return;
-		if (!store.todoWorkspaceQuery.trim()) return;
-		activeGoalTab = 'tasks';
-		mobileMenuOpen = false;
 	});
 
 	$effect(() => {
@@ -808,16 +802,9 @@
 	}
 
 	function submitQuickAddTask() {
-		const title = store.todoWorkspaceQuery.trim();
+		const title = quickAddText.trim();
 		if (!title) return;
-		store.todoWorkspaceQuery = '';
-		createTodoFromComposer({ title, shouldNavigate: false });
-	}
-
-	function submitQuickAddGoalTask() {
-		const title = goalSearchQuery.trim();
-		if (!title) return;
-		goalSearchQuery = '';
+		quickAddText = '';
 		createTodoFromComposer({ title, shouldNavigate: false });
 	}
 
@@ -1326,8 +1313,9 @@
 		<div class="mb-3 md:hidden">
 			<WorkspaceToolbar
 				mode="mobile"
-				inputMode="quickAdd"
-				bind:quickAddText={store.todoWorkspaceQuery}
+				inputMode={mobileTodoSearchActive ? 'search' : 'quickAdd'}
+				bind:searchText={store.todoWorkspaceQuery}
+				bind:quickAddText
 				onQuickAdd={submitQuickAddTask}
 				showSidebarToggle={!mobileMenuOpen && !mobileTodoSearchActive}
 				onSidebarToggle={() => (mobileMenuOpen = true)}
@@ -1421,8 +1409,8 @@
 						<WorkspaceToolbar
 							mode="desktop"
 							inputMode="quickAdd"
-							bind:quickAddText={goalSearchQuery}
-							onQuickAdd={submitQuickAddGoalTask}
+							bind:quickAddText
+							onQuickAdd={submitQuickAddTask}
 							composeTabDefault={goalComposeTabDefault}
 							onNew={activeGoalTab === 'notes' ? createNoteFromComposer : null}
 						/>
@@ -1601,7 +1589,6 @@
 							{taskGoalKeySet}
 							allowCrossListMove={false}
 							enableGroupDrag={false}
-							searchText={goalSearchQuery}
 						{targetTodoId}
 						activeTodoId={activeTodoId}
 						{focusTodoId}
@@ -1661,7 +1648,6 @@
 							{taskGoalKeySet}
 							allowCrossListMove={false}
 							enableGroupDrag={false}
-							searchText={goalSearchQuery}
 							{targetTodoId}
 							activeTodoId={activeTodoId}
 							{focusTodoId}
@@ -1816,6 +1802,14 @@
 							<option value="alpha">Alpha</option>
 							<option value="harada">Harada</option>
 						</select>
+					</div>
+					<div class="mb-3 px-1">
+						<WorkspaceToolbar
+							mode="desktop"
+							inputMode="search"
+							bind:searchText={store.todoWorkspaceQuery}
+							showPrimaryAction={false}
+						/>
 					</div>
 					<TodoSidebarNav
 						{goalMenuItems}

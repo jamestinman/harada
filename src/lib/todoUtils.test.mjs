@@ -6,6 +6,7 @@ import {
 	buildFeedPinnedRows,
 	filterFeedPinnedRowsBySearch,
 	buildAllTasksFeed,
+	buildRecentTasksList,
 	buildTaskNoteIndexMaps,
 	buildGoalBlockSwapMap,
 	buildGoalBlockRelocateMap,
@@ -680,4 +681,34 @@ test('archive ranges default to the past week and support an unbounded option', 
 	assert.equal(archiveRangeSinceMs('all', now), null);
 	// Unknown ids fall back to the default window rather than showing everything.
 	assert.equal(archiveRangeSinceMs('bogus', now), now - 7 * 24 * 60 * 60 * 1000);
+});
+
+test('buildRecentTasksList orders every task by recency across goals', () => {
+	const todos = [
+		{ id: 'a', listType: 'goal', goalIndex: 10, status: 'todo', updatedAt: 100 },
+		{ id: 'b', listType: 'goal', goalIndex: 20, status: 'todo', updatedAt: 300 },
+		{ id: 'c', listType: 'goal', goalIndex: 10, status: 'todo', updatedAt: 200 },
+		{ id: 'd', listType: 'goal', goalIndex: null, status: 'todo', createdAt: 250 },
+		{ id: 'done', listType: 'goal', goalIndex: 10, status: 'done', updatedAt: 999 }
+	];
+	assert.deepEqual(buildRecentTasksList(todos).map((t) => t.id), ['b', 'd', 'c', 'a']);
+});
+
+test('buildRecentTasksList lifts a parent by its newest child and drops pinned leaves', () => {
+	const todos = [
+		{ id: 'p', listType: 'goal', goalIndex: 10, status: 'todo', updatedAt: 100 },
+		{ id: 'c', listType: 'goal', goalIndex: 10, parentId: 'p', status: 'todo', updatedAt: 500 },
+		{ id: 'x', listType: 'goal', goalIndex: 20, status: 'todo', updatedAt: 300 },
+		{ id: 'pin', listType: 'goal', goalIndex: 20, pinned: true, status: 'todo', updatedAt: 900 }
+	];
+	assert.deepEqual(buildRecentTasksList(todos).map((t) => t.id), ['p', 'c', 'x']);
+});
+
+test('buildRecentTasksList ranks by activeAt so filing a task does not lift it', () => {
+	const todos = [
+		// Filed into a goal just now, but last edited before 'b'.
+		{ id: 'a', listType: 'goal', goalIndex: 10, status: 'todo', activeAt: 100, updatedAt: 900 },
+		{ id: 'b', listType: 'goal', goalIndex: 20, status: 'todo', updatedAt: 200 }
+	];
+	assert.deepEqual(buildRecentTasksList(todos).map((t) => t.id), ['b', 'a']);
 });

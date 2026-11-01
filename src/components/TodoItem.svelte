@@ -12,6 +12,7 @@
 	import { store } from '$stores/store.svelte.js';
 	import { todoEditorStore } from '$stores/todoEditor.svelte.js';
 	import GoalSelect from './GoalSelect.svelte';
+	import GoalPicker from './GoalPicker.svelte';
 	import NoteHybridMarkdownEditor from './NoteHybridMarkdownEditor.svelte';
 	import SpeechPlayButton from './SpeechPlayButton.svelte';
 	import { playback } from '$stores/playback.svelte.js';
@@ -52,7 +53,9 @@
 		isHighlighted = false,
 		/** Parent requested title edit + focus (e.g. Return → new task below) */
 		focusTitle = false,
-		onFocusTitleHandled = null
+		onFocusTitleHandled = null,
+		/** All Tasks feed: show the goal before the pin and let it be changed. Subtasks follow their parent, so they hide it. */
+		showGoalPicker = false
 	} = $props();
 
 	let isEditing = $state(false);
@@ -69,6 +72,7 @@
 	let isEditingUrl = $state(false);
 	let editUrl = $state('');
 	let urlInputElement = $state(null);
+	let goalPickerAnchor = $state(null);
 
 	const taskNoteContent = $derived(
 		(primaryNote?.content || todo.markdown || linkedNotes[0]?.content || '')
@@ -347,8 +351,10 @@
 
 	const linkedGoalsForDisplay = $derived(filterDisplayGoalIndices([...new Set(linkedGoalIndices)]));
 
-	const pinnedRowGoal = $derived.by(() => {
-		if (mainFeedPinStyle !== 'top') return null;
+	const rowGoal = $derived.by(() => {
+		if (todo.listType === 'custom') {
+			return { index: null, label: todo.listName || 'List', href: null };
+		}
 		let goalIdx = null;
 		if (typeof todo.goalIndex === 'number') {
 			const canonical = canonicalGoalIndex(todo.goalIndex);
@@ -366,6 +372,17 @@
 			href: `/todo/${indexToNomenclature(goalIdx)}`
 		};
 	});
+
+	const pinnedRowGoal = $derived(mainFeedPinStyle === 'top' && rowGoal?.href ? rowGoal : null);
+
+	function openGoalPicker(event) {
+		event.stopPropagation();
+		goalPickerAnchor = event.currentTarget.getBoundingClientRect();
+	}
+
+	function selectGoal(goalIndex) {
+		store.setTaskPrimaryGoal(todo.id, goalIndex);
+	}
 
 	function cancelEdit() {
 		todoEditorStore.close(todo.id);
@@ -648,7 +665,40 @@
 				</button>
 			{/if}
 		{/if}
-		{#if pinnedRowGoal}
+		{#if showGoalPicker && indentLevel === 0}
+			<button
+				type="button"
+				onpointerdown={(e) => e.stopPropagation()}
+				onclick={openGoalPicker}
+				class={`flex-shrink-0 rounded px-1 py-0.5 text-sm font-bold transition hover:bg-slate-500/10 ${
+					isHighlighted ? '!text-black' : 'text-slate-600 hover:text-violet-600 dark:text-slate-400 dark:hover:text-violet-300'
+				}`}
+				title={rowGoal ? `Goal: ${rowGoal.label} (change)` : 'Choose a goal'}
+				aria-label={rowGoal ? `Change goal from ${rowGoal.label}` : 'Choose a goal'}
+				aria-haspopup="dialog"
+			>
+				{#if rowGoal}
+					<span class="block max-w-[7rem] truncate md:max-w-[12rem]">{rowGoal.label}</span>
+				{:else}
+					<span
+						class="my-1 block h-2.5 w-8 rounded-full border border-dashed border-slate-400/70 dark:border-slate-500/70"
+						aria-hidden="true"
+					></span>
+				{/if}
+			</button>
+			{#if goalPickerAnchor}
+				<GoalPicker
+					goals={goalsWithTitles.slice().sort((a, b) =>
+						a.label.localeCompare(b.label, undefined, { sensitivity: 'base', numeric: true })
+					)}
+					currentGoalIndex={rowGoal?.index ?? null}
+					allowClear={Boolean(rowGoal)}
+					anchorRect={goalPickerAnchor}
+					onSelect={selectGoal}
+					onClose={() => (goalPickerAnchor = null)}
+				/>
+			{/if}
+		{:else if pinnedRowGoal}
 			<a
 				href={pinnedRowGoal.href}
 				class="ml-auto flex-shrink-0 text-sm font-bold text-slate-600 underline-offset-2 hover:text-violet-600 hover:underline dark:text-slate-400 dark:hover:text-violet-300"

@@ -1903,3 +1903,37 @@ export function buildAllTasksFeed({
 
 	return { todoGroups, goalMenuItems, allTodos, groupsByTodoId, goalGroups };
 }
+
+/**
+ * When a task was last used. `activeAt` records the last real edit; goal changes leave it alone,
+ * so a task keeps its place in All Tasks when it is filed. Older tasks fall back to `updatedAt`.
+ */
+export function getTodoRecency(todo) {
+	if (typeof todo?.activeAt === 'number' && Number.isFinite(todo.activeAt)) return todo.activeAt;
+	if (typeof todo?.updatedAt === 'number' && Number.isFinite(todo.updatedAt)) return todo.updatedAt;
+	if (typeof todo?.createdAt === 'number' && Number.isFinite(todo.createdAt)) return todo.createdAt;
+	return 0;
+}
+
+/**
+ * All Tasks as one list, most recently used first, regardless of goal.
+ * A parent ranks by its most recent descendant so subtasks stay under it.
+ * Pinned tasks are left to the pinned block unless an unpinned child needs them as context.
+ */
+export function buildRecentTasksList(todos = [], { taskGoalKeySet = new Set() } = {}) {
+	const active = (todos ?? []).filter((t) => !t?.isDraft && t.status !== 'done');
+	const visible = dropRedundantPinnedNoGoalTodos(active, taskGoalKeySet);
+	const byId = new Map(visible.map((todo) => [todo.id, todo]));
+	const recencyById = new Map();
+	for (const todo of visible) {
+		const recency = getTodoRecency(todo);
+		const seen = new Set();
+		let current = todo;
+		while (current && !seen.has(current.id)) {
+			seen.add(current.id);
+			if ((recencyById.get(current.id) ?? -Infinity) < recency) recencyById.set(current.id, recency);
+			current = current.parentId ? byId.get(current.parentId) : null;
+		}
+	}
+	return organizeTodosWithHierarchy(visible, (todo) => -(recencyById.get(todo.id) ?? 0));
+}

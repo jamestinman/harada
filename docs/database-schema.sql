@@ -82,6 +82,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   parent_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
   ordering DOUBLE PRECISION NOT NULL DEFAULT (extract(epoch from now()) * 1000),
   pinned BOOLEAN NOT NULL DEFAULT false,
+  active_at TIMESTAMPTZ NULL, -- last real edit; goal changes leave it alone (All Tasks ordering)
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   deleted_at TIMESTAMPTZ NULL
@@ -90,6 +91,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 -- Existing databases: add pin support (safe to run once)
 -- ALTER TABLE tasks ADD COLUMN IF NOT EXISTS pinned BOOLEAN NOT NULL DEFAULT false;
 -- ALTER TABLE tasks ADD COLUMN IF NOT EXISTS url TEXT;
+-- ALTER TABLE tasks ADD COLUMN IF NOT EXISTS active_at TIMESTAMPTZ NULL;
 
 CREATE INDEX IF NOT EXISTS idx_tasks_user_updated ON tasks(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tasks_user_list_parent_order ON tasks(user_id, list_id, parent_id, ordering);
@@ -168,6 +170,7 @@ BEGIN
       parent_id,
       ordering,
       pinned,
+      active_at,
       created_at,
       updated_at,
       deleted_at
@@ -186,6 +189,7 @@ BEGIN
       row_data->>'parent_id',
       COALESCE((row_data->>'ordering')::double precision, extract(epoch from now()) * 1000),
       COALESCE((row_data->>'pinned')::boolean, false),
+      NULLIF(row_data->>'active_at', '')::timestamptz,
       COALESCE((row_data->>'created_at')::timestamptz, NOW()),
       COALESCE((row_data->>'updated_at')::timestamptz, NOW()),
       NULLIF(row_data->>'deleted_at', '')::timestamptz
@@ -203,6 +207,7 @@ BEGIN
       parent_id = EXCLUDED.parent_id,
       ordering = EXCLUDED.ordering,
       pinned = EXCLUDED.pinned,
+      active_at = EXCLUDED.active_at,
       updated_at = EXCLUDED.updated_at,
       deleted_at = EXCLUDED.deleted_at
     WHERE

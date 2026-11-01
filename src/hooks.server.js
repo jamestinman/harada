@@ -16,6 +16,17 @@ export async function handle({ event, resolve }) {
 		throw redirect(308, `/harada${suffix}${event.url.search}`);
 	}
 
+	// Signed-in visitors skip the marketing home page. Auth lives in the browser,
+	// so authStore sets this cookie to let us redirect before anything renders.
+	// Requests with a query string (e.g. OAuth `?code=`) are left for the client.
+	if (
+		event.url.pathname === '/' &&
+		!event.url.search &&
+		event.cookies.get('harada_signed_in')
+	) {
+		throw redirect(307, '/harada');
+	}
+
 	if (event.url.pathname.startsWith('/api/agent')) {
 		if (event.request.method === 'OPTIONS') {
 			return new Response(null, { headers: agentCorsHeaders() });

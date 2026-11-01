@@ -7,6 +7,15 @@ import {
 } from '$lib/authRedirect.js';
 
 const LAST_USER_KEY = 'harada_last_user';
+/** Read by hooks.server.js to send signed-in visitors from / straight to /harada. */
+const SIGNED_IN_COOKIE = 'harada_signed_in';
+
+function setSignedInCookie(signedIn) {
+	if (!browser) return;
+	const secure = location.protocol === 'https:' ? '; Secure' : '';
+	const maxAge = signedIn ? 60 * 60 * 24 * 365 : 0;
+	document.cookie = `${SIGNED_IN_COOKIE}=1; Path=/; Max-Age=${maxAge}; SameSite=Lax${secure}`;
+}
 
 class AuthStore {
 	user = $state(null);
@@ -106,6 +115,7 @@ class AuthStore {
 		this.session = session;
 		const user = session?.user ?? null;
 		this.user = user ? { ...user } : null;
+		if (user) setSignedInCookie(true);
 	}
 
 	_persistLastKnownUser(user) {
@@ -122,6 +132,7 @@ class AuthStore {
 
 	_clearLastKnownUser() {
 		this.lastKnownUser = null;
+		setSignedInCookie(false);
 		try {
 			localStorage.removeItem(LAST_USER_KEY);
 		} catch {}
