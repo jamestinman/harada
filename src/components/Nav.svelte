@@ -233,14 +233,14 @@ const clearAll = () => {
 	const mobileNavLinkClass = (section) => {
 		const active = activeWorkspace === section;
 		return active
-			? 'mobile-bottom-nav-link font-semibold text-orange-500 dark:text-orange-400'
+			? 'mobile-bottom-nav-link font-semibold text-violet-600 dark:text-violet-300'
 			: 'mobile-bottom-nav-link';
 	};
 
 	const mobileMenuItemClass = (section) => {
 		const active = activeWorkspace === section;
 		return active
-			? 'mobile-menu-item font-semibold text-orange-600 dark:text-orange-400'
+			? 'mobile-menu-item font-semibold text-violet-700 dark:text-violet-300'
 			: 'mobile-menu-item';
 	};
 

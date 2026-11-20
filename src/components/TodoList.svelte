@@ -37,9 +37,9 @@
 		/** One-shot: open title editor on this row without scrolling or URL side effects */
 		focusTodoId = null,
 		onFocusTitleHandled = null,
-		/** When true, pinned tasks show pink inline chrome on the All Tasks feed */
+		/** When true, pinned tasks get their own strip at the top of the All Tasks feed */
 		isMainTodoFeed = false,
-		/** When true (e.g. /todo/Z1), all task rows use pinned pink chrome */
+		/** When true (e.g. /todo/Z1), all task rows render as pinned rows */
 		pinnedGoalView = false,
 		feedPinnedRows = null,
 		feedPinnedGroup = null,
@@ -1022,8 +1022,8 @@
 
 	{#if isMainTodoFeed && visibleFeedPinned.length > 0 && feedPinnedGroup}
 		<div class="mb-6 space-y-2" data-feed-pinned-strip>
-			<h2 class="text-sm font-semibold uppercase tracking-wide text-pink-300/90">
-				<a href="/todo/Z1" class="hover:text-pink-200 transition-colors">Pinned</a>
+			<h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+				<a href="/todo/Z1" class="hover:text-violet-500 transition-colors">Pinned</a>
 			</h2>
 			<div class="space-y-2">
 				{#each visibleFeedPinned as row (row.todo.id)}

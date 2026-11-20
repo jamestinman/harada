@@ -1420,7 +1420,7 @@
 						<div class="mb-4 flex items-start justify-between gap-4">
 							<div class="flex-1">
 								{#if isPinnedGoalView}
-									<h1 class="goal-header-title text-pink-400 dark:text-pink-300">Pinned</h1>
+									<h1 class="goal-header-title">Pinned</h1>
 								{:else if isEditingGoal}
 									<div class="space-y-3">
 										<input
@@ -1836,7 +1836,7 @@
 							<div class="mb-4 flex items-start justify-between gap-4">
 								<div class="flex-1">
 									{#if isPinnedGoalView}
-										<h1 class="goal-header-title text-pink-400 dark:text-pink-300">Pinned</h1>
+										<h1 class="goal-header-title">Pinned</h1>
 									{:else if isEditingGoal}
 										<div class="space-y-3">
 											<input

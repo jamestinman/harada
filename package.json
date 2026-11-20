@@ -59,5 +59,12 @@
 		"marked-katex-extension": "^5.1.10",
 		"undici": "^8.5.0",
 		"unpdf": "^1.6.2"
+	},
+	"allowScripts": {
+		"electron@41.10.5": true,
+		"esbuild@0.28.2": true,
+		"fsevents@2.3.3": true,
+		"protobufjs@7.6.5": true,
+		"sharp@0.32.6": true
 	}
 }

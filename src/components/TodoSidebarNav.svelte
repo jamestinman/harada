@@ -52,15 +52,15 @@
 	<a
 		href={pinnedHref}
 		onclick={() => onGoalClick?.()}
-		class={`flex items-center justify-between rounded-lg px-2.5 py-1.5 text-sm font-bold transition ${
+		class={`flex items-center justify-between rounded-lg px-2.5 py-1.5 text-sm font-semibold transition ${
 			isPinnedActive
-				? 'bg-pink-500/15 text-pink-400 dark:bg-pink-500/20 dark:text-pink-300'
-				: 'text-pink-400 hover:bg-pink-500/10 dark:text-pink-300 dark:hover:bg-pink-500/10'
+				? 'bg-violet-500/20 text-violet-800 dark:bg-violet-500/25 dark:text-violet-200'
+				: 'text-slate-700 hover:bg-slate-500/10 dark:text-slate-200 dark:hover:bg-white/5'
 		}`}
 		aria-current={isPinnedActive ? 'page' : undefined}
 	>
 		<span>Pinned</span>
-		<span class="text-xs opacity-70">{pinnedCount}</span>
+		<span class="text-xs opacity-50">{pinnedCount}</span>
 	</a>
 
 	{#each goalMenuItems as item (item.id)}
@@ -70,7 +70,9 @@
 			class={`flex items-center justify-between rounded-lg px-2.5 py-1.5 text-sm transition ${
 				item.goalIndex === activeGoalIndex
 					? 'bg-violet-500/20 text-violet-800 dark:bg-violet-500/25 dark:text-violet-200'
-					: 'text-slate-700 hover:bg-slate-500/10 dark:text-slate-200 dark:hover:bg-white/5'
+					: `text-slate-700 hover:bg-slate-500/10 dark:text-slate-200 dark:hover:bg-white/5 ${
+							item.count === 0 ? 'opacity-50 hover:opacity-100' : ''
+						}`
 			}`}
 			aria-current={item.goalIndex === activeGoalIndex ? 'page' : undefined}
 		>

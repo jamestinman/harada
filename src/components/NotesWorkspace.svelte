@@ -469,6 +469,35 @@ $effect(() => {
 	{/if}
 {/snippet}
 
+{#snippet notesDesktopToolbarActions()}
+	<div class="hidden items-center gap-2 md:flex">
+		{@render notesDesktopHeaderActions()}
+	</div>
+{/snippet}
+
+{#snippet noteViewActions()}
+	{#if selectedNote}
+		{#if speechSupported}
+			<SpeechPlayButton
+				boxed
+				active={playback.isActiveItem(selectedNote.id)}
+				ariaLabel="Read note aloud"
+				title="Read aloud"
+				onclick={playSelectedNote}
+			/>
+		{/if}
+		<button
+			type="button"
+			onclick={() => (presentationOpen = true)}
+			class={notesToolbarIconButtonClass}
+			aria-label="Present note"
+			title="Present fullscreen"
+		>
+			<Maximize2 class="h-4 w-4" />
+		</button>
+	{/if}
+{/snippet}
+
 {#snippet notesDesktopHeaderActions()}
 	<button
 		type="button"
@@ -662,63 +691,40 @@ $effect(() => {
 							<p class="todo-empty-section-text">No notes yet for this view.</p>
 						</div>
 					{:else}
-					<div class={`p-4 ${isEditing ? 'rounded-lg bg-white dark:bg-slate-900/70 dark:ring-1 dark:ring-slate-700/70' : 'todo-panel'}`}>
-							{#if isEditing || isNoteEmpty(selectedNote)}
-							<div class="mb-3 hidden justify-end md:flex gap-2">
-								{@render notesDesktopHeaderActions()}
-							</div>
+					<div class="todo-panel p-4">
+						{#if isEditing || isNoteEmpty(selectedNote)}
 							<NoteHybridMarkdownEditor
 								bind:this={editEditorDesktop}
 								bind:value={editContent}
 								treatFirstLineAsTitle={true}
 								showFormattingToolbar={true}
+								toolbarActions={notesDesktopToolbarActions}
 								onsave={saveNote}
 								minHeight="22rem"
 								placeholder="Write in markdown. First line becomes the title."
 							/>
-					{:else}
-					<div class="mb-3 flex items-center gap-2">
-						<h1 class="min-w-0 flex-1 text-lg font-semibold leading-tight text-slate-900 dark:text-slate-100">
-							<button
-								type="button"
-								class="inline-block w-full cursor-text border-0 bg-transparent p-0 text-left font-semibold tracking-tight text-inherit outline-none focus-visible:rounded focus-visible:ring-2 focus-visible:ring-violet-500/50 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900"
+						{:else}
+							<div class="note-seamless-bar justify-end gap-2">
+								{@render noteViewActions()}
+								<div class="hidden items-center gap-2 md:flex">
+									{@render notesDesktopHeaderActions()}
+								</div>
+							</div>
+							<h1 class="min-w-0">
+								<button type="button" class="note-seamless-title" onclick={enterEditMode}>
+									{getNoteTitle(selectedNote.content)}
+								</button>
+							</h1>
+							<div
+								role="button"
+								tabindex="0"
+								class="notes-markdown-display note-seamless-body markdown min-h-[22rem]"
 								onclick={enterEditMode}
+								onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && enterEditMode()}
 							>
-								{getNoteTitle(selectedNote.content)}
-							</button>
-						</h1>
-						{#if speechSupported}
-							<SpeechPlayButton
-								boxed
-								active={playback.isActiveItem(selectedNote.id)}
-								ariaLabel="Read note aloud"
-								title="Read aloud"
-								onclick={playSelectedNote}
-							/>
+								{@html renderNoteBodyMarkdown(selectedNote.content)}
+							</div>
 						{/if}
-						<button
-							type="button"
-							onclick={() => (presentationOpen = true)}
-							class="shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-violet-500/10 hover:text-violet-400 dark:hover:text-violet-300"
-							aria-label="Present note"
-							title="Present fullscreen"
-						>
-							<Maximize2 class="h-4 w-4" />
-						</button>
-						<div class="hidden shrink-0 items-center gap-2 md:flex">
-							{@render notesDesktopHeaderActions()}
-						</div>
-					</div>
-					<div
-						role="button"
-						tabindex="0"
-						class="notes-markdown-display markdown min-h-[22rem] !bg-transparent !border-transparent"
-						onclick={enterEditMode}
-						onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && enterEditMode()}
-					>
-						{@html renderNoteBodyMarkdown(selectedNote.content)}
-					</div>
-					{/if}
 
 						<div class="mt-4 pt-4">
 							{@render noteLinkControls()}
@@ -801,56 +807,34 @@ $effect(() => {
 						</div>
 					{:else}
 						{#if isEditing || isNoteEmpty(selectedNote)}
-						<NoteHybridMarkdownEditor
-							bind:this={editEditorMobile}
-							bind:value={editContent}
-							treatFirstLineAsTitle={true}
-							showFormattingToolbar={true}
-							onsave={saveNote}
-							minHeight="18rem"
-							placeholder="Write in markdown. First line becomes the title."
-						/>
-					{:else}
-					<div class="mb-3 flex items-start gap-2">
-						<h1 class="min-w-0 flex-1 text-lg font-semibold leading-tight text-slate-900 dark:text-slate-100">
-							<button
-								type="button"
-								class="inline-block w-full cursor-text border-0 bg-transparent p-0 text-left font-semibold tracking-tight text-inherit outline-none focus-visible:rounded focus-visible:ring-2 focus-visible:ring-violet-500/50 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900"
-								onclick={enterEditMode}
-							>
-								{getNoteTitle(selectedNote.content)}
-							</button>
-						</h1>
-						{#if speechSupported}
-							<SpeechPlayButton
-								boxed
-								class="mt-0.5"
-								active={playback.isActiveItem(selectedNote.id)}
-								ariaLabel="Read note aloud"
-								title="Read aloud"
-								onclick={playSelectedNote}
+							<NoteHybridMarkdownEditor
+								bind:this={editEditorMobile}
+								bind:value={editContent}
+								treatFirstLineAsTitle={true}
+								showFormattingToolbar={true}
+								onsave={saveNote}
+								minHeight="18rem"
+								placeholder="Write in markdown. First line becomes the title."
 							/>
+						{:else}
+							<div class="note-seamless-bar justify-end gap-2">
+								{@render noteViewActions()}
+							</div>
+							<h1 class="min-w-0">
+								<button type="button" class="note-seamless-title" onclick={enterEditMode}>
+									{getNoteTitle(selectedNote.content)}
+								</button>
+							</h1>
+							<div
+								role="button"
+								tabindex="0"
+								class="notes-markdown-display note-seamless-body markdown min-h-[18rem]"
+								onclick={enterEditMode}
+								onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && enterEditMode()}
+							>
+								{@html renderNoteBodyMarkdown(selectedNote.content)}
+							</div>
 						{/if}
-						<button
-							type="button"
-							onclick={() => (presentationOpen = true)}
-							class="mt-0.5 shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-violet-500/10 hover:text-violet-400 dark:hover:text-violet-300"
-							aria-label="Present note"
-							title="Present fullscreen"
-						>
-							<Maximize2 class="h-4 w-4" />
-						</button>
-					</div>
-				<div
-					role="button"
-					tabindex="0"
-					class="notes-markdown-display markdown min-h-[18rem] !p-3 !bg-transparent !border-transparent"
-					onclick={enterEditMode}
-					onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && enterEditMode()}
-				>
-					{@html renderNoteBodyMarkdown(selectedNote.content)}
-				</div>
-					{/if}
 
 						<div class="my-4">
 							{@render noteLinkControls()}

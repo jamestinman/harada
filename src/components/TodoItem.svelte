@@ -535,7 +535,7 @@
 		data-todo-item-id={isFeedPinnedDuplicate ? undefined : todo.id}
 		class={`group task ${
 			isHighlighted ? 'rounded-md' : ''
-		} ${mainFeedPinStyle === 'top' ? 'task-pinned-top' : ''}`}
+		}`}
 		style="margin-left: {indentLevel * 1.5}rem;"
 	>
 		{#if indentLevel > 0 && Array.isArray(treeContinues) && treeContinues.length === indentLevel}
@@ -609,9 +609,7 @@
 			>
 				<div class="flex flex-col">
 					<span
-						class={`${!todo.title || todo.title.trim() === '' ? 'opacity-0' : ''} ${
-							mainFeedPinStyle === 'top' ? 'text-pink-400 dark:text-pink-300' : ''
-						}`}
+						class={!todo.title || todo.title.trim() === '' ? 'opacity-0' : ''}
 					>
 						{todo.title || '\u00A0'}
 					</span>
@@ -670,8 +668,8 @@
 				type="button"
 				onpointerdown={(e) => e.stopPropagation()}
 				onclick={openGoalPicker}
-				class={`flex-shrink-0 rounded px-1 py-0.5 text-sm font-bold transition hover:bg-slate-500/10 ${
-					isHighlighted ? '!text-black' : 'text-slate-600 hover:text-violet-600 dark:text-slate-400 dark:hover:text-violet-300'
+				class={`flex-shrink-0 rounded px-1 py-0.5 text-xs font-medium transition hover:bg-slate-500/10 ${
+					isHighlighted ? '!text-black' : 'text-slate-400 hover:text-violet-600 dark:text-slate-500 dark:hover:text-violet-300'
 				}`}
 				title={rowGoal ? `Goal: ${rowGoal.label} (change)` : 'Choose a goal'}
 				aria-label={rowGoal ? `Change goal from ${rowGoal.label}` : 'Choose a goal'}
@@ -701,7 +699,7 @@
 		{:else if pinnedRowGoal}
 			<a
 				href={pinnedRowGoal.href}
-				class="ml-auto flex-shrink-0 text-sm font-bold text-slate-600 underline-offset-2 hover:text-violet-600 hover:underline dark:text-slate-400 dark:hover:text-violet-300"
+				class="ml-auto flex-shrink-0 text-xs font-medium text-slate-400 underline-offset-2 hover:text-violet-600 hover:underline dark:text-slate-500 dark:hover:text-violet-300"
 				onclick={(e) => e.stopPropagation()}
 			>
 				{pinnedRowGoal.label}
@@ -713,7 +711,7 @@
 			onclick={togglePinned}
 			class={`flex-shrink-0 rounded p-1 transition ${
 				isPinned
-					? 'text-pink-400 hover:bg-pink-500/20 hover:text-pink-300'
+					? 'text-violet-500 hover:bg-violet-500/15 hover:text-violet-400'
 					: isHighlighted
 						? '!text-black hover:!text-black hover:bg-black/10'
 						: 'text-slate-500 hover:bg-slate-700/50 hover:text-slate-300'
@@ -769,7 +767,7 @@
 				onclick={togglePinned}
 				class={`flex-shrink-0 rounded p-1.5 transition ${
 					isPinned
-						? 'text-pink-400 hover:bg-pink-500/20 hover:text-pink-300'
+						? 'text-violet-500 hover:bg-violet-500/15 hover:text-violet-400'
 						: 'text-slate-500 hover:bg-slate-700/50 hover:text-slate-300'
 				}`}
 				title={isPinned ? 'Unpin' : 'Pin to top of Todo feed'}
@@ -849,7 +847,7 @@
 					onclick={togglePinned}
 					class={`flex-shrink-0 rounded p-1.5 transition ${
 						isPinned
-							? 'text-pink-400 hover:bg-pink-500/20 hover:text-pink-300'
+							? 'text-violet-500 hover:bg-violet-500/15 hover:text-violet-400'
 							: 'text-slate-500 hover:bg-slate-700/50 hover:text-slate-300'
 					}`}
 					title={isPinned ? 'Unpin' : 'Pin to top of Todo feed'}

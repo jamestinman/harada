@@ -64,10 +64,6 @@ h4 {
   }
 }
 
-.task.task-pinned-top {
-  @apply rounded-md border border-pink-400/50 bg-pink-500/5;
-}
-
 .rounded-btn {
   @apply w-full rounded-md px-4 py-2 text-sm font-medium transition;
   .dark & {
@@ -833,6 +829,59 @@ h4 {
 
 .light .notes-hybrid-markdown-editor .cm-placeholder {
   --cm-placeholder-color: #94a3b8;
+}
+
+/* Borderless note editor: the toolbar row and text sit exactly where the
+   view mode's action row and rendered note sit, so switching modes does not
+   move anything. */
+.note-seamless-bar {
+  @apply mb-3 flex h-8 items-center gap-0.5;
+}
+
+.notes-hybrid-markdown-editor.note-seamless-content {
+  @apply resize-none;
+  max-height: none;
+}
+
+.notes-hybrid-markdown-editor.note-seamless-content .cm-scroller {
+  max-height: none;
+}
+
+.notes-hybrid-markdown-editor.note-seamless-content .cm-content {
+  padding: 0;
+  line-height: 1.5;
+}
+
+.notes-hybrid-markdown-editor.note-seamless-content .cm-line {
+  padding: 0;
+}
+
+.notes-hybrid-markdown-editor.note-seamless-content:has(.cm-focused) {
+  @apply ring-0 ring-offset-0;
+}
+
+.note-seamless-title {
+  @apply mb-[1.3125rem] block w-full cursor-text border-0 bg-transparent p-0 text-left outline-none focus-visible:rounded focus-visible:ring-2 focus-visible:ring-violet-500/50;
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  .dark & {
+    @apply text-slate-100;
+  }
+  .light & {
+    @apply text-slate-900;
+  }
+}
+
+.notes-markdown-display.note-seamless-body {
+  @apply rounded-none !border-0 !bg-transparent p-0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.notes-markdown-display.note-seamless-body > :first-child {
+  margin-top: 0;
 }
 
 .composer-input {

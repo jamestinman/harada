@@ -72,12 +72,12 @@
 
 	const appNavActive = $derived(
 		isLight
-			? 'rounded px-3 py-1.5 text-sm font-semibold text-orange-600 bg-orange-50'
-			: 'rounded px-3 py-1.5 text-sm font-semibold text-orange-400 bg-orange-500/15'
+			? 'rounded px-3 py-1.5 text-sm font-semibold text-violet-700 bg-violet-500/10'
+			: 'rounded px-3 py-1.5 text-sm font-semibold text-violet-300 bg-violet-500/20'
 	);
 
 	const websiteLinkActive = $derived(
-		isLight ? 'text-orange-600 font-semibold' : 'text-orange-400 font-semibold'
+		isLight ? 'text-violet-700 font-semibold' : 'text-violet-300 font-semibold'
 	);
 
 	const brandHref = $derived(isApp || authStore.user ? '/harada' : '/');

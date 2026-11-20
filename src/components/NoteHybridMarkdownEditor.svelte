@@ -21,6 +21,8 @@
 		showFormattingToolbar = false,
 		onsave = undefined,
 		onchange = undefined,
+		/** Extra controls rendered at the right of the formatting toolbar. */
+		toolbarActions = undefined,
 		class: className = ''
 	} = $props();
 
@@ -140,19 +142,16 @@
 	});
 
 	const editorClass = $derived(
-		'notes-hybrid-markdown-editor composer-textarea !min-h-0' +
-			(showFormattingToolbar ? '' : ' notes-markdown-editor') +
-			(className ? ` ${className}` : '')
+		showFormattingToolbar
+			? 'notes-hybrid-markdown-editor note-seamless-content'
+			: 'notes-hybrid-markdown-editor composer-textarea !min-h-0 notes-markdown-editor' +
+				(className ? ` ${className}` : '')
 	);
 </script>
 
 {#if showFormattingToolbar}
-	<div class="notes-markdown-editor notes-markdown-editor-with-toolbar overflow-hidden p-0 {className}">
-		<div
-			class="note-formatting-toolbar flex items-center gap-0.5 border-b px-2 py-1"
-			role="toolbar"
-			aria-label="Text formatting"
-		>
+	<div class="note-seamless-editor {className}">
+		<div class="note-seamless-bar" role="toolbar" aria-label="Text formatting">
 			<button
 				type="button"
 				class="note-formatting-toolbar-btn"
@@ -189,17 +188,20 @@
 			>
 				<Link class="h-3.5 w-3.5" strokeWidth={2.25} />
 			</button>
-			{#if onsave}
-				<button
-					type="button"
-					class="note-formatting-toolbar-save ml-auto"
-					aria-label="Save note"
-					title="Save"
-					onclick={onsave}
-				>
-					Save
-				</button>
-			{/if}
+			<div class="ml-auto flex items-center gap-2">
+				{#if onsave}
+					<button
+						type="button"
+						class="note-formatting-toolbar-save"
+						aria-label="Save note"
+						title="Save"
+						onclick={onsave}
+					>
+						Save
+					</button>
+				{/if}
+				{@render toolbarActions?.()}
+			</div>
 		</div>
 		<div
 			bind:this={container}
