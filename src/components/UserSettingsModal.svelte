@@ -453,6 +453,12 @@ function startEditingName() {
 				>
 					Privacy Policy
 				</a>
+				<a
+					href="/terms"
+					class="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 underline-offset-2 hover:underline"
+				>
+					Terms of Service
+				</a>
 			</div>
       <p class="italic text-xs text-slate-500 dark:text-slate-400 text-right">Version {store.version}</p>
 		</div>

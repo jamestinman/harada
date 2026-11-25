@@ -71,7 +71,7 @@
 		class="playback-control-bar"
 		role="region"
 		aria-label="Playback controls"
-		style="padding-bottom: env(safe-area-inset-bottom, 0px);"
+		style="padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));"
 	>
 		<div class="playback-control-bar-inner mx-auto flex max-w-3xl flex-col gap-2 px-4 py-3">
 			<div class="relative flex items-center justify-center">

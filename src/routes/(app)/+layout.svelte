@@ -229,8 +229,8 @@
 
 <div
   id="root-container"
-	class="{store.activeTheme} min-h-dvh overflow-x-hidden {playbackBarVisible ? 'has-playback-bar' : ''} {needsSignIn ? 'pt-[calc(env(safe-area-inset-top,0px)+2.75rem)] lg:pt-[8.5rem]' : 'pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] lg:pt-[3rem]'}"
-	style="padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem);"
+	class="{store.activeTheme} min-h-dvh overflow-x-hidden {playbackBarVisible ? 'has-playback-bar' : ''} {needsSignIn ? 'pt-[calc(var(--safe-area-inset-top,env(safe-area-inset-top,0px))+2.75rem)] lg:pt-[8.5rem]' : 'pt-[calc(var(--safe-area-inset-top,env(safe-area-inset-top,0px))+0.75rem)] lg:pt-[3rem]'}"
+	style="padding-bottom: calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 0.75rem);"
 >
 	{#if needsSignIn}
 		<SignInBanner onSignIn={() => authStore.openSignInModal()} />

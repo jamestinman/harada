@@ -313,7 +313,7 @@ h4 {
   /* Prefer the full visible viewport on mobile so long task forms remain scrollable. */
   max-height: calc(100vh - 0.5rem);
   max-height: calc(100dvh - 0.5rem);
-  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  padding-bottom: max(1rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
   .dark & {
     @apply bg-slate-900 text-slate-100;
   }
@@ -326,7 +326,7 @@ h4 {
 .todo-mobile-panel {
   @apply fixed bottom-0 left-0 right-0 z-50 overflow-x-hidden overflow-y-auto rounded-t-2xl p-4 shadow-2xl;
   max-height: calc(100dvh - 0.5rem);
-  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  padding-bottom: max(1rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
   .dark & {
     @apply bg-slate-900 text-slate-100;
   }
@@ -1318,7 +1318,7 @@ h4 {
 
 .has-playback-bar {
   --playback-bar-offset: 6.5rem;
-  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem + var(--playback-bar-height, 6.5rem)) !important;
+  padding-bottom: calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 0.75rem + var(--playback-bar-height, 6.5rem)) !important;
 }
 
 .mobile-bottom-nav-inner {

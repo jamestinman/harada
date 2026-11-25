@@ -84,6 +84,8 @@
 				<a href="/free-todoist-alternative" class="hover:text-emerald-600 dark:hover:text-emerald-400">Free Todoist Alternative</a>
 				<a href="/articles" class="hover:text-emerald-600 dark:hover:text-emerald-400">Articles</a>
 				<a href="/for-agents" class="hover:text-emerald-600 dark:hover:text-emerald-400">For Agents</a>
+				<a href="/privacy" class="hover:text-emerald-600 dark:hover:text-emerald-400">Privacy</a>
+				<a href="/terms" class="hover:text-emerald-600 dark:hover:text-emerald-400">Terms</a>
 				{#if consentStore && showWebsiteTracking}
 					<button
 						type="button"

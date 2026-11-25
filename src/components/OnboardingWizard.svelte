@@ -108,7 +108,7 @@
 	>
 		<div
 			transition:fly={{ y: 24, duration: 220 }}
-			class="flex w-full flex-col bg-white shadow-2xl dark:bg-slate-900 sm:max-w-lg sm:rounded-3xl sm:border sm:border-slate-200 sm:dark:border-slate-800"
+			class="flex w-full flex-col bg-white pt-[var(--safe-area-inset-top,env(safe-area-inset-top,0px))] pb-[var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px))] shadow-2xl dark:bg-slate-900 sm:max-w-lg sm:pt-0 sm:pb-0 sm:rounded-3xl sm:border sm:border-slate-200 sm:dark:border-slate-800"
 			style="max-height: 100dvh;"
 		>
 			<!-- Header -->

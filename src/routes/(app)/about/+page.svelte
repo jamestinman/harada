@@ -145,6 +145,13 @@
 			>
 				Privacy Policy
 			</a>
+			·
+			<a
+				href="/terms"
+				class="text-emerald-600 dark:text-emerald-400 hover:underline font-medium"
+			>
+				Terms of Service
+			</a>
 		</p>
 	</footer>
 </div>

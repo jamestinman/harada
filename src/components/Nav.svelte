@@ -270,8 +270,8 @@ const clearAll = () => {
 	<div
 		class="fixed z-40 lg:hidden"
 		style="
-			top: calc(env(safe-area-inset-top, 0px) + {needsSignIn ? '2.75rem' : '1rem'});
-			right: calc(env(safe-area-inset-right, 0px) + 1rem);
+			top: calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + {needsSignIn ? '2.75rem' : '1rem'});
+			right: calc(var(--safe-area-inset-right, env(safe-area-inset-right, 0px)) + 1rem);
 		"
 	>
 		<button
@@ -290,7 +290,7 @@ const clearAll = () => {
 {#if store.mobileNavMenuOpen}
 	<div
 		class="mobile-menu-panel fixed right-4 z-50 lg:hidden"
-		style="top: calc(env(safe-area-inset-top, 0px) + 3.25rem);"
+		style="top: calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + 3.25rem);"
 	>
 		<div class="py-2">
 			{#if authStore.user}
@@ -413,7 +413,7 @@ const clearAll = () => {
 <div
 	class="mobile-bottom-nav"
 	class:has-playback-bar={playback.curItem != null}
-	style="padding-bottom: env(safe-area-inset-bottom, 0px);"
+	style="padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));"
 >
 	<div class="mobile-bottom-nav-inner {borderColorClass}">
 		<div class="mobile-bottom-nav-actions">

@@ -58,7 +58,7 @@
 	<div
 		in:fly={{ y: 16, duration: 150 }}
 		class="undo-toast fixed left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-full bg-slate-900/95 py-2 pl-4 pr-2 text-sm text-white shadow-lg ring-1 ring-white/10 backdrop-blur dark:bg-slate-800/95"
-		style="bottom: calc(env(safe-area-inset-bottom, 0px) + 5.5rem);"
+		style="bottom: calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 5.5rem);"
 		role="status"
 	>
 		<span>{store.undoToast.label}</span>

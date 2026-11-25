@@ -251,16 +251,18 @@
 			lastSavedContent = content;
 		}
 
-		// Open every selected note in edit mode (Apple Notes style).
-		// Explicit save / navigate / note-switch flush exits to preview for non-empty notes;
-		// tab-hide only persists and keeps editing.
+		// Open notes in view mode; tapping the title or body switches to editing.
+		// Empty notes have nothing to view, so they open straight into the editor.
+		// Tab-hide only persists and keeps the current mode.
 		if (selectedNoteChanged) {
-			isEditing = true;
-			setTimeout(() => {
-				void tick().then(() => {
-					activeNoteEditorEl()?.focus();
-				});
-			}, 0);
+			isEditing = content.trim().length === 0;
+			if (isEditing) {
+				setTimeout(() => {
+					void tick().then(() => {
+						activeNoteEditorEl()?.focus();
+					});
+				}, 0);
+			}
 		}
 	});
 

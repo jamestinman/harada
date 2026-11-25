@@ -1,0 +1,134 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Haradato App Store header</title>
+<style>
+  :root {
+    --bg: #070b16;
+    --tile: 300px;
+    --gap: 24px;
+    --pitch: calc(var(--tile) + var(--gap));
+  }
+  html, body { margin: 0; padding: 0; }
+  body {
+    width: 5244px; height: 2950px; overflow: hidden;
+    background: var(--bg);
+    font-family: -apple-system, "SF Pro Display", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  #stage { position: relative; width: 5244px; height: 2950px; }
+  .tile {
+    position: absolute; width: var(--tile); height: var(--tile);
+    border-radius: 34px; box-sizing: border-box;
+    display: flex; align-items: center; justify-content: center; text-align: center;
+    padding: 18px; line-height: 1.2; letter-spacing: 0.01em;
+    font-size: 40px; font-weight: 500; color: rgba(30, 41, 59, 0.85);
+    border: 2px solid rgba(255,255,255,0.10);
+  }
+  .tile.sub   { background: linear-gradient(135deg, #5a6478, #3f475a); color: #f1f5f9; font-weight: 700; }
+  .tile.ring  { background: linear-gradient(135deg, #7c3aed, #a02bb6); color: #fff; font-weight: 700; }
+  .tile.core  {
+    background: linear-gradient(135deg, #8b2cf5, #c026d3); color: #fff; font-weight: 800; font-size: 46px;
+    box-shadow: 0 0 0 10px rgba(192, 132, 252, 0.28), 0 0 220px 60px rgba(168, 85, 247, 0.7);
+    border-color: rgba(255,255,255,0.35);
+  }
+  .tile.done  { background: linear-gradient(135deg, #22a35a, #3fae5f); color: #fff; font-weight: 700;
+                box-shadow: 0 0 60px 6px rgba(52, 211, 153, 0.35); }
+  .tile.done::after { content: "✓"; position: absolute; left: 24px; bottom: 16px; font-size: 34px; }
+  .tile.hot   { background: #d9772f; color: #fff; font-weight: 600; }
+  .tile.ghost { border-color: rgba(255,255,255,0.05); }
+  #vignette {
+    position: absolute; inset: 0; pointer-events: none;
+    background:
+      radial-gradient(ellipse 1500px 1150px at 50% 50%, rgba(7,11,22,0) 0%, rgba(7,11,22,0) 55%, rgba(7,11,22,0.4) 80%, rgba(7,11,22,0.85) 100%),
+      linear-gradient(90deg, rgba(7,11,22,0.85) 0%, rgba(7,11,22,0) 22%, rgba(7,11,22,0) 78%, rgba(7,11,22,0.85) 100%);
+  }
+  #glow {
+    position: absolute; left: 50%; top: 50%; width: 2600px; height: 2600px;
+    transform: translate(-50%, -50%); pointer-events: none;
+    background: radial-gradient(circle, rgba(139, 92, 246, 0.22) 0%, rgba(139, 92, 246, 0) 60%);
+  }
+</style>
+</head>
+<body>
+<div id="stage"><div id="glow"></div></div>
+<script>
+  const W = 5244, H = 2950, TILE = 300, GAP = 24, PITCH = TILE + GAP;
+  const BLOCK_GAP = 22; // extra space between 3×3 blocks, as in the app
+
+  // Eight areas around the central goal, each with eight actions.
+  const core = 'Happiness';
+  const areas = [
+    ['Health',   ['Run 5k', 'Sleep by 11', 'Cook at home', 'Stretch daily', 'Walk at lunch', 'Drink water', 'Yoga', 'Phone out of bedroom']],
+    ['Career',   ['Ship side project', 'Ask for feedback', 'Find a mentor', 'Write weekly', 'Speak at meetup', 'Learn SQL', 'Update CV', 'Deep work mornings']],
+    ['Family',   ['Sunday lunch', 'Call Mum', 'Plan a holiday', 'Board game night', 'School run', 'Photo album', 'Visit Gran', 'Date night']],
+    ['Money',    ['Monthly budget', 'Emergency fund', 'Pension check', 'Cancel unused subs', 'Pay off card', 'Index fund', 'Price a mortgage', 'Track spending']],
+    ['Learning', ['Read 20 books', 'Learn Spanish', 'Online course', 'Piano practice', 'Podcast walks', 'Museum trip', 'Note-taking habit', 'Teach someone']],
+    ['Friends',  ['Monthly dinner', 'Reply to messages', 'Host a BBQ', 'Join a club', 'Birthday cards', 'Weekend away', 'Five-a-side', 'Check in on Sam']],
+    ['Home',     ['Declutter garage', 'Grow herbs', 'Fix the shed', 'Paint hallway', 'New bookshelf', 'Compost bin', 'Fix leaky tap', 'Plant a tree']],
+    ['Creativity', ['Sketch daily', 'Write a song', 'Photo walk', 'Short story', 'Film a video', 'Pottery class', 'Start a blog', 'Make a zine']],
+  ];
+  // Muted group tints taken from the app's chart
+  const tints = ['#a48b9b', '#a59a92', '#9aa597', '#95a5b2', '#a891b3', '#94a5a8', '#a39295', '#9d9aae'];
+  // Position of each area's block in the 3×3 arrangement (skipping the centre)
+  const order = [[0,0],[1,0],[2,0],[0,1],[2,1],[0,2],[1,2],[2,2]];
+  const cellOrder = [[0,0],[1,0],[2,0],[0,1],[2,1],[0,2],[1,2],[2,2]];
+
+  const stage = document.getElementById('stage');
+  const cx = W / 2, cy = H / 2;
+
+  function pos(col, row) {
+    // col/row are 0..8 for the main chart; may extend beyond for ghost tiles
+    const blockCol = Math.floor(col / 3), blockRow = Math.floor(row / 3);
+    const x = cx + (col - 4) * PITCH + (blockCol - 1) * BLOCK_GAP - TILE / 2;
+    const y = cy + (row - 4) * PITCH + (blockRow - 1) * BLOCK_GAP - TILE / 2;
+    return [x, y];
+  }
+  function tile(col, row, text, cls, bg, opacity) {
+    const el = document.createElement('div');
+    el.className = 'tile ' + (cls || '');
+    const [x, y] = pos(col, row);
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    if (bg) el.style.background = bg;
+    if (opacity != null) el.style.opacity = opacity;
+    el.textContent = text || '';
+    stage.appendChild(el);
+  }
+
+  // Ghost tiles extending the chart sideways to the canvas edges
+  for (let col = -6; col <= 14; col++) {
+    for (let row = -1; row <= 9; row++) {
+      if (col >= 0 && col <= 8 && row >= 0 && row <= 8) continue;
+      const blk = ((Math.floor(col / 3) + 30) * 7 + (Math.floor(row / 3) + 30) * 3) % tints.length;
+      tile(col, row, '', 'ghost', tints[blk], 0.16);
+    }
+  }
+
+  // A few tiles marked as done or highlighted, like the app
+  const done = new Set(['Health:Run 5k', 'Career:Learn SQL', 'Family:Call Mum', 'Money:Emergency fund', 'Learning:Read 20 books', 'Friends:Host a BBQ']);
+  const hot = new Set(['Home:Grow herbs', 'Creativity:Write a song']);
+
+  areas.forEach(([name, actions], i) => {
+    const [bc, br] = order[i];
+    // Outer block: area name in the middle, actions around it
+    tile(bc * 3 + 1, br * 3 + 1, name, 'sub');
+    actions.forEach((a, j) => {
+      const [c, r] = cellOrder[j];
+      const key = name + ':' + a;
+      if (done.has(key)) tile(bc * 3 + c, br * 3 + r, a, 'done');
+      else if (hot.has(key)) tile(bc * 3 + c, br * 3 + r, a, 'hot');
+      else tile(bc * 3 + c, br * 3 + r, a, '', tints[i], 0.92);
+    });
+    // Central block: the same area names ring the core goal
+    tile(3 + order[i][0], 3 + order[i][1], name, 'ring');
+  });
+  tile(4, 4, core, 'core');
+
+  const v = document.createElement('div');
+  v.id = 'vignette';
+  stage.appendChild(v);
+</script>
+</body>
+</html>

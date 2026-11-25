@@ -4,7 +4,7 @@
 
 <div
 	class="sign-in-banner fixed left-0 right-0 z-50 flex items-center justify-center gap-2 bg-red-600 px-4 py-2 text-center text-sm text-white shadow-md"
-	style="top: env(safe-area-inset-top, 0px);"
+	style="top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));"
 	role="status"
 >
 	<span>Your session expired — changes won't sync.</span>

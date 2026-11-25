@@ -120,7 +120,7 @@
 		aria-label="Choose a goal"
 		class={`absolute flex flex-col overflow-hidden border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900 ${
 			isNarrow
-				? 'inset-x-0 bottom-0 max-h-[70vh] rounded-t-2xl pb-[env(safe-area-inset-bottom)]'
+				? 'inset-x-0 bottom-0 max-h-[70vh] rounded-t-2xl pb-[var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px))]'
 				: 'max-h-80 rounded-lg'
 		}`}
 		style={panelStyle}

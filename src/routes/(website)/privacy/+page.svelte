@@ -17,6 +17,12 @@
 			Haradato is a focused goal-planning and todo app. We collect and store only the minimum
 			information necessary to provide the service, sync your data, and keep your account secure.
 		</p>
+		<p>
+			Use of Haradato is also covered by our
+			<a href="/terms" class="text-emerald-600 dark:text-emerald-400 hover:underline font-medium"
+				>Terms of Service</a
+			>.
+		</p>
 	</section>
 
 	<section class="space-y-3">
