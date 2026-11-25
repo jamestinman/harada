@@ -143,6 +143,8 @@
 	// Skip MRU resume when navigation already requested a specific note (e.g. new note from composer).
 	let resumeNoteId = $state(store.pendingSelectNoteId ? null : store.lastOpenedNoteId);
 	let isEditing = $state(false);
+	// Set by the compose button so the newly created note opens in the editor.
+	let newNoteIdToEdit = null;
 	let editContent = $state('');
 	let linkPanelOpen = $state(false);
 	let linkGoalValue = $state('');
@@ -251,11 +253,12 @@
 			lastSavedContent = content;
 		}
 
-		// Open notes in view mode; tapping the title or body switches to editing.
-		// Empty notes have nothing to view, so they open straight into the editor.
-		// Tab-hide only persists and keeps the current mode.
+		// Open notes in view mode, including empty ones; tapping the title or body
+		// switches to editing. Only a note just made with the compose button opens
+		// in the editor. Tab-hide only persists and keeps the current mode.
 		if (selectedNoteChanged) {
-			isEditing = content.trim().length === 0;
+			isEditing = selectedNote.id === newNoteIdToEdit;
+			newNoteIdToEdit = null;
 			if (isEditing) {
 				setTimeout(() => {
 					void tick().then(() => {
@@ -360,8 +363,7 @@ $effect(() => {
 		if (!selectedNote) return;
 		persistCurrentNoteEdits();
 		flushPendingNoteLinkSave();
-		const noteIsEmpty = editContent.trim().length === 0;
-		isEditing = noteIsEmpty;
+		isEditing = false;
 	}
 
 	function flushNoteEditsIfNeeded() {
@@ -369,8 +371,7 @@ $effect(() => {
 			persistCurrentNoteEdits();
 		}
 		flushPendingNoteLinkSave();
-		const noteIsEmpty = editContent.trim().length === 0;
-		isEditing = noteIsEmpty;
+		isEditing = false;
 	}
 
 	function handleVisibilityChange() {
@@ -412,14 +413,10 @@ $effect(() => {
 		if (typeof scopedGoalIndex === 'number') {
 			store.linkNoteToGoal(note.id, scopedGoalIndex);
 		}
+		newNoteIdToEdit = note.id;
 		selectedNoteId = note.id;
 		store.recordLastOpenedNote(note.id);
 		mobileMenuOpen = false;
-		setTimeout(() => {
-			void tick().then(() => {
-				activeNoteEditorEl()?.focus();
-			});
-		}, 0);
 	}
 
 	function activeNoteEditorEl() {
@@ -694,7 +691,7 @@ $effect(() => {
 						</div>
 					{:else}
 					<div class="todo-panel p-4">
-						{#if isEditing || isNoteEmpty(selectedNote)}
+						{#if isEditing}
 							<NoteHybridMarkdownEditor
 								bind:this={editEditorDesktop}
 								bind:value={editContent}
@@ -724,7 +721,11 @@ $effect(() => {
 								onclick={enterEditMode}
 								onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && enterEditMode()}
 							>
-								{@html renderNoteBodyMarkdown(selectedNote.content)}
+								{#if isNoteEmpty(selectedNote)}
+									<p class="!text-slate-400">Tap to write…</p>
+								{:else}
+									{@html renderNoteBodyMarkdown(selectedNote.content)}
+								{/if}
 							</div>
 						{/if}
 
@@ -808,7 +809,7 @@ $effect(() => {
 							<p class="todo-empty-section-text">No notes yet for this view.</p>
 						</div>
 					{:else}
-						{#if isEditing || isNoteEmpty(selectedNote)}
+						{#if isEditing}
 							<NoteHybridMarkdownEditor
 								bind:this={editEditorMobile}
 								bind:value={editContent}
@@ -834,7 +835,11 @@ $effect(() => {
 								onclick={enterEditMode}
 								onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && enterEditMode()}
 							>
-								{@html renderNoteBodyMarkdown(selectedNote.content)}
+								{#if isNoteEmpty(selectedNote)}
+									<p class="!text-slate-400">Tap to write…</p>
+								{:else}
+									{@html renderNoteBodyMarkdown(selectedNote.content)}
+								{/if}
 							</div>
 						{/if}
 
